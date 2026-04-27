@@ -37,8 +37,7 @@ def format_source(src: bytes) -> bytes:
         # Identity-pass policy: refuse to rewrite a routine that did not
         # parse cleanly. Caller decides whether to skip or fail.
         raise ParseError(
-            f"source did not parse cleanly "
-            f"({_count_errors(tree.root_node)} error nodes)"
+            f"source did not parse cleanly ({_count_errors(tree.root_node)} error nodes)"
         )
     out = tree.root_node.text
     assert out is not None

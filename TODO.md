@@ -2,23 +2,17 @@
 
 Pick up from this list. Top section is "next session" — concrete, ordered. Lower sections are deferred / parking lot.
 
-## Next session — Tier 1 Step 3: `m test`
+## Tier 1 Step 3 (`m test`) — DONE
 
-Parser-aware port of the legacy `ytest` shell script (see `~/projects/m-tools/bin/ytest` for reference). Test-runner adapter is YottaDB-specific (unlike `fmt` and `lint` which are engine-neutral).
+Shipped: `src/m_cli/test/` with discovery, runner, output formatters (text/tap/json), and CLI integration. Smoke-tested against `m-tools/routines/tests/` — 11 suites, 224/224 assertions pass against real ydb. Single-test selection (`SUITE::tLabel`) folds Step 4 into the same release.
 
-- [ ] **Read the reference.** `~/projects/m-tools/bin/ytest` and `~/projects/m-tools/routines/tests/TESTRUN.m`. Understand the discovery/run/report contract before designing.
-- [ ] **Spec the discovery rule.** YottaDB convention is `routines/tests/<NAME>TST.m` containing labels `tXxx`. Should `m test` walk a configurable test root, or follow ydb_routines? Decide; document in CLAUDE.md.
-- [ ] **Write tests first.** `tests/test_runner.py`: discovery (find suites + labels via tree-sitter, not regex), single-suite invocation, single-test selection (`m test SUITE::tCase`), TAP output, JSON output.
-- [ ] **Implement `src/m_cli/test/`.**
-  - `discovery.py` — parse routines via `m_cli.parser`, yield (suite, label) pairs from `label` AST nodes matching `tXxx`
-  - `runner.py` — exec `ydb -run ^TESTRUN <SUITE>` (or single-test variant if available), capture stdout, parse pass/fail
-  - `cli.py` — argparse: `m test [PATH...]`, `--filter`, `--format=tap|json`, `--list`
-- [ ] **Wire into `m_cli/cli.py`.** Register `test` subcommand alongside `fmt` and `lint`.
-- [ ] **Smoke-test against m-tools/routines/tests/.** That repo has real `*TST.m` suites (HELLOTST, GLOBALTST, etc.) — use as a fixture; don't fabricate one.
-- [ ] **Single-test selection (Step 4).** Fold into the same PR: `m test SUITE::tLabel` runs a single label. May require a small helper routine in M (see if `^TESTRUN` already supports it; if not, add it to m-tools).
-- [ ] **Commit as `Tier 1 Step 3: m test runner`** when green.
+Deferred from Step 3:
+- [ ] **`m test --watch`** — inotify-based; deferred to Step 5 below.
+- [ ] **JUnit XML output** — useful for CI integrations; not needed yet.
+- [ ] **Per-label results in whole-suite mode.** Today `m test` parses TESTRUN's `PASS`/`FAIL` lines but cannot map them back to labels because TESTRUN doesn't emit a per-label header. Either (a) modify `TESTRUN.m` to emit headers, or (b) make whole-suite runs internally invoke each label separately when fine-grained reporting is requested. Option (a) is cleaner but lives in m-tools.
+- [ ] **Set up env in `m test` itself.** Right now you must `source scripts/ydb-env.sh` first. Worth a `--ydb-dist` / `--routines-path` flag pair so `m test` can stand alone. Check if `m_cli.test.runner._build_env` is good enough to drop the bash sourcing entirely.
 
-## After Step 3 — Tier 1 Step 5: `m watch`
+## Next session — Tier 1 Step 5: `m watch`
 
 - [ ] Inotify-based file watcher; on `*.m` save → re-run affected suites
 - [ ] Debounce + suite-affinity (only re-run suites whose source changed)

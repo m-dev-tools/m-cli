@@ -15,10 +15,10 @@ from collections.abc import Iterable
 from m_cli.lint.diagnostic import Diagnostic, Severity
 
 _SEV_COLOR = {
-    Severity.FATAL: "\033[1;31m",   # bold red
+    Severity.FATAL: "\033[1;31m",  # bold red
     Severity.STANDARD: "\033[33m",  # yellow
-    Severity.WARNING: "\033[33m",   # yellow
-    Severity.INFO: "\033[36m",      # cyan
+    Severity.WARNING: "\033[33m",  # yellow
+    Severity.INFO: "\033[36m",  # cyan
 }
 _RESET = "\033[0m"
 

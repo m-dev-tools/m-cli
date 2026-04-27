@@ -13,6 +13,7 @@ from pathlib import Path
 from m_cli import __version__
 from m_cli.fmt import fmt_command
 from m_cli.lint import lint_command
+from m_cli.test import test_command
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -20,7 +21,7 @@ def main(argv: list[str] | None = None) -> int:
         prog="m",
         description=(
             "M (MUMPS) source-level toolchain. Subcommands: "
-            "fmt (format), lint (lint), test (planned)."
+            "fmt (format), lint (lint), test (run test suites)."
         ),
     )
     parser.add_argument(
@@ -118,6 +119,51 @@ def main(argv: list[str] | None = None) -> int:
         help="Suppress summary output",
     )
     lint_parser.set_defaults(func=lint_command)
+
+    # `m test`
+    test_parser = subparsers.add_parser(
+        "test",
+        help="Run M test suites against YottaDB",
+        description=(
+            "Discover and run M test suites. A suite is a `.m` file whose "
+            "stem ends in `TST`; test labels follow the `t<UpperCase>"
+            "(pass,fail)` convention (m-tools / TESTRUN). Pass paths to "
+            "files or directories; with no path, falls back to "
+            "`./routines/tests/`. Use `FILE::tLabel` to run one test."
+        ),
+    )
+    test_parser.add_argument(
+        "paths",
+        nargs="*",
+        type=Path,
+        help=(
+            "Files, directories, or `FILE::tLabel` selectors. With no "
+            "argument, looks for `./routines/tests/`."
+        ),
+    )
+    test_parser.add_argument(
+        "--list",
+        action="store_true",
+        help="List discovered suites and tests without running them",
+    )
+    test_parser.add_argument(
+        "--filter",
+        default=None,
+        help="Only run suites whose name contains this substring",
+    )
+    test_parser.add_argument(
+        "--format",
+        choices=("text", "tap", "json"),
+        default="text",
+        help="Output format (default: text)",
+    )
+    test_parser.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="Suppress summary output",
+    )
+    test_parser.set_defaults(func=test_command)
 
     args = parser.parse_args(argv)
     return args.func(args)

@@ -15,8 +15,8 @@
 |------|------|--------|
 | 1 | `m fmt` | **Shipped.** Identity round-trip; 99.04% (38,954/39,330) byte-for-byte; ~26 s |
 | 2 | `m lint --rules=xindex` | **Step 2.1 shipped.** 36 of XINDEX's 66 rules; 28 fire on VistA → 62,806 findings across 24,877 routines (63.9%); 42 fatal call-to-missing-label findings are real bugs |
-| 3 | `m test` | **Next.** Parser-aware port of legacy `ytest` |
-| 4 | Single-test selection | Folded into Step 3 |
+| 3 | `m test` | **Shipped.** Parser-aware discovery (`*TST.m` files, `t<UpperCase>(pass,fail)` labels via tree-sitter); ydb runner; text / TAP / JSON output; whole-suite, single-suite, single-label runs. Smoke gate: 11 m-tools suites / 224 assertions pass. |
+| 4 | Single-test selection | **Shipped** as part of Step 3 (`m test FILE.m::tLabel`). |
 | 5 | `m watch` | Planned |
 
 See [`TODO.md`](TODO.md) for the punch list to pick up from.
@@ -50,13 +50,18 @@ src/m_cli/
 ├── fmt/
 │   ├── cli.py              # `m fmt` argparse + file orchestration
 │   └── formatter.py        # round-trip pretty-printer (identity for now)
-└── lint/
-    ├── cli.py              # `m lint` argparse (--rules, --format, --error-on)
-    ├── runner.py           # select_rules(), lint_source() with rule isolation
-    ├── rules.py            # all M-XINDX-NN rule implementations + register()
-    ├── diagnostic.py       # Diagnostic dataclass + Severity enum
-    ├── output.py           # text / json / tap formatters
-    └── _keywords.py        # loads command/ISV/function sets from m-standard
+├── lint/
+│   ├── cli.py              # `m lint` argparse (--rules, --format, --error-on)
+│   ├── runner.py           # select_rules(), lint_source() with rule isolation
+│   ├── rules.py            # all M-XINDX-NN rule implementations + register()
+│   ├── diagnostic.py       # Diagnostic dataclass + Severity enum
+│   ├── output.py           # text / json / tap formatters
+│   └── _keywords.py        # loads command/ISV/function sets from m-standard
+└── test/
+    ├── cli.py              # `m test` argparse (--list, --filter, --format)
+    ├── discovery.py        # tree-sitter-based suite + label discovery
+    ├── runner.py           # ydb subprocess + TESTRUN output parser
+    └── output.py           # text / tap / json formatters
 
 tests/                      # one test file per source module
 scripts/
@@ -75,6 +80,14 @@ scripts/
 - Line length: 88
 - Pre-commit hooks enforce style on every commit
 - All Makefile targets use `.venv/bin/` prefixes — never bare `python`/`pytest`/`ruff`/`mypy`
+
+## Test-runner conventions (project-specific)
+
+- **Discovery is parser-aware.** Suites are `.m` files whose stem matches `[A-Z][A-Z0-9]*TST`; test labels match `t[A-Z]…` and have formals `(pass,fail)`. The first label in a file (the routine entry) is never a test, even if it accidentally matches.
+- **Runner is YottaDB-specific.** Whole-suite runs use `ydb -run ^SUITE`; single-label runs use `ydb -run %XCMD "new pass,fail … do tCase^SUITE(.pass,.fail) … do report^TESTRUN"`. The runner shells out via an injectable `RunnerFn` so unit tests don't need a live ydb.
+- **Output dialects.** `text` (default, human), `tap` (TAP v13 — one point per parsed assertion), `json` (CI-friendly). All three are smoke-tested against m-tools suites.
+- **Env composition.** `m_cli.test.runner._build_env` honours an existing `ydb_routines` if exported; otherwise it derives one from the suite's parent dir + a sibling `routines/` if present. `$YDB` overrides binary location, falling back to `$ydb_dist/ydb`, then plain `ydb` on PATH.
+- **TESTRUN protocol.** Output parser keys off `  PASS  desc` / `  FAIL  desc` / `         expected: …` / `         actual:   …` and the `Results: N tests  P passed  F failed` summary, plus the `All tests passed.` / `<n> test(s) FAILED.` banner. Source of truth: `m-tools/routines/tests/TESTRUN.m`.
 
 ## Linter conventions (project-specific)
 

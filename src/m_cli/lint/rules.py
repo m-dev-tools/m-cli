@@ -87,6 +87,7 @@ def rules_by_tag(tag: str) -> list[Rule]:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _decode_line(b: bytes) -> str:
     """Decode a line for human-readable output. M source is mostly ASCII;
     we pass through unknown bytes via latin-1."""
@@ -103,6 +104,7 @@ def _walk(node) -> Iterator:
 # ---------------------------------------------------------------------------
 # Text-based rules (don't need the AST)
 # ---------------------------------------------------------------------------
+
 
 def _check_trailing_blanks(src: bytes, _tree, path: Path) -> Iterator[Diagnostic]:
     """M-XINDX-013 — Blank(s) at end of line."""
@@ -121,13 +123,15 @@ def _check_trailing_blanks(src: bytes, _tree, path: Path) -> Iterator[Diagnostic
             )
 
 
-register(Rule(
-    id="M-XINDX-013",
-    severity=Severity.WARNING,
-    title="Blank(s) at end of line",
-    tags=("xindex",),
-    check=_check_trailing_blanks,
-))
+register(
+    Rule(
+        id="M-XINDX-013",
+        severity=Severity.WARNING,
+        title="Blank(s) at end of line",
+        tags=("xindex",),
+        check=_check_trailing_blanks,
+    )
+)
 
 
 def _check_control_chars(src: bytes, _tree, path: Path) -> Iterator[Diagnostic]:
@@ -149,13 +153,15 @@ def _check_control_chars(src: bytes, _tree, path: Path) -> Iterator[Diagnostic]:
                 break  # one diagnostic per line is enough
 
 
-register(Rule(
-    id="M-XINDX-018",
-    severity=Severity.WARNING,
-    title="Line contains a CONTROL (non-graphic) character",
-    tags=("xindex",),
-    check=_check_control_chars,
-))
+register(
+    Rule(
+        id="M-XINDX-018",
+        severity=Severity.WARNING,
+        title="Line contains a CONTROL (non-graphic) character",
+        tags=("xindex",),
+        check=_check_control_chars,
+    )
+)
 
 
 def _check_line_length(src: bytes, _tree, path: Path) -> Iterator[Diagnostic]:
@@ -174,13 +180,15 @@ def _check_line_length(src: bytes, _tree, path: Path) -> Iterator[Diagnostic]:
             )
 
 
-register(Rule(
-    id="M-XINDX-019",
-    severity=Severity.STANDARD,
-    title="Line is longer than 245 bytes",
-    tags=("xindex",),
-    check=_check_line_length,
-))
+register(
+    Rule(
+        id="M-XINDX-019",
+        severity=Severity.STANDARD,
+        title="Line is longer than 245 bytes",
+        tags=("xindex",),
+        check=_check_line_length,
+    )
+)
 
 
 def _check_null_line(src: bytes, tree, path: Path) -> Iterator[Diagnostic]:
@@ -203,18 +211,21 @@ def _check_null_line(src: bytes, tree, path: Path) -> Iterator[Diagnostic]:
             )
 
 
-register(Rule(
-    id="M-XINDX-042",
-    severity=Severity.WARNING,
-    title="Null line (no commands or comment)",
-    tags=("xindex",),
-    check=_check_null_line,
-))
+register(
+    Rule(
+        id="M-XINDX-042",
+        severity=Severity.WARNING,
+        title="Null line (no commands or comment)",
+        tags=("xindex",),
+        check=_check_null_line,
+    )
+)
 
 
 # ---------------------------------------------------------------------------
 # AST-based rules
 # ---------------------------------------------------------------------------
+
 
 def _node_line_col(node, src: bytes) -> tuple[int, int]:
     """Return (1-based line, 1-based column) of a tree-sitter node."""
@@ -275,13 +286,15 @@ def _check_first_label(src: bytes, tree, path: Path) -> Iterator[Diagnostic]:
             return  # only check the first label
 
 
-register(Rule(
-    id="M-XINDX-017",
-    severity=Severity.WARNING,
-    title="First line label NOT routine name",
-    tags=("xindex",),
-    check=_check_first_label,
-))
+register(
+    Rule(
+        id="M-XINDX-017",
+        severity=Severity.WARNING,
+        title="First line label NOT routine name",
+        tags=("xindex",),
+        check=_check_first_label,
+    )
+)
 
 
 def _check_duplicate_labels(src: bytes, tree, path: Path) -> Iterator[Diagnostic]:
@@ -294,8 +307,7 @@ def _check_duplicate_labels(src: bytes, tree, path: Path) -> Iterator[Diagnostic
                     rule_id="M-XINDX-015",
                     severity=Severity.WARNING,
                     message=(
-                        f"Duplicate label: '{name}' "
-                        f"(first defined at line {occurrences[0][0]})"
+                        f"Duplicate label: '{name}' (first defined at line {occurrences[0][0]})"
                     ),
                     path=path,
                     line=line,
@@ -306,13 +318,15 @@ def _check_duplicate_labels(src: bytes, tree, path: Path) -> Iterator[Diagnostic
                 )
 
 
-register(Rule(
-    id="M-XINDX-015",
-    severity=Severity.WARNING,
-    title="Duplicate label",
-    tags=("xindex",),
-    check=_check_duplicate_labels,
-))
+register(
+    Rule(
+        id="M-XINDX-015",
+        severity=Severity.WARNING,
+        title="Duplicate label",
+        tags=("xindex",),
+        check=_check_duplicate_labels,
+    )
+)
 
 
 def _check_missing_label_call(src: bytes, tree, path: Path) -> Iterator[Diagnostic]:
@@ -457,13 +471,15 @@ def _check_extrinsic_label_call(
         )
 
 
-register(Rule(
-    id="M-XINDX-014",
-    severity=Severity.FATAL,
-    title="Call to missing label in this routine",
-    tags=("xindex",),
-    check=_check_missing_label_call,
-))
+register(
+    Rule(
+        id="M-XINDX-014",
+        severity=Severity.FATAL,
+        title="Call to missing label in this routine",
+        tags=("xindex",),
+        check=_check_missing_label_call,
+    )
+)
 
 
 def _check_break_command(src: bytes, tree, path: Path) -> Iterator[Diagnostic]:
@@ -485,13 +501,15 @@ def _check_break_command(src: bytes, tree, path: Path) -> Iterator[Diagnostic]:
                 )
 
 
-register(Rule(
-    id="M-XINDX-025",
-    severity=Severity.STANDARD,
-    title="BREAK command used",
-    tags=("xindex",),
-    check=_check_break_command,
-))
+register(
+    Rule(
+        id="M-XINDX-025",
+        severity=Severity.STANDARD,
+        title="BREAK command used",
+        tags=("xindex",),
+        check=_check_break_command,
+    )
+)
 
 
 def _check_lowercase_command(src: bytes, tree, path: Path) -> Iterator[Diagnostic]:
@@ -524,13 +542,15 @@ def _check_lowercase_command(src: bytes, tree, path: Path) -> Iterator[Diagnosti
                 )
 
 
-register(Rule(
-    id="M-XINDX-047",
-    severity=Severity.STANDARD,
-    title="Lowercase command(s) used in line",
-    tags=("xindex",),
-    check=_check_lowercase_command,
-))
+register(
+    Rule(
+        id="M-XINDX-047",
+        severity=Severity.STANDARD,
+        title="Lowercase command(s) used in line",
+        tags=("xindex",),
+        check=_check_lowercase_command,
+    )
+)
 
 
 def _check_routine_size(src: bytes, _tree, path: Path) -> Iterator[Diagnostic]:
@@ -547,13 +567,15 @@ def _check_routine_size(src: bytes, _tree, path: Path) -> Iterator[Diagnostic]:
         )
 
 
-register(Rule(
-    id="M-XINDX-035",
-    severity=Severity.STANDARD,
-    title="Routine exceeds SACC maximum size of 20000 bytes",
-    tags=("xindex",),
-    check=_check_routine_size,
-))
+register(
+    Rule(
+        id="M-XINDX-035",
+        severity=Severity.STANDARD,
+        title="Routine exceeds SACC maximum size of 20000 bytes",
+        tags=("xindex",),
+        check=_check_routine_size,
+    )
+)
 
 
 def _check_second_line_sac(src: bytes, _tree, path: Path) -> Iterator[Diagnostic]:
@@ -581,18 +603,21 @@ def _check_second_line_sac(src: bytes, _tree, path: Path) -> Iterator[Diagnostic
         )
 
 
-register(Rule(
-    id="M-XINDX-044",
-    severity=Severity.STANDARD,
-    title="2nd line of routine violates the SAC",
-    tags=("xindex",),
-    check=_check_second_line_sac,
-))
+register(
+    Rule(
+        id="M-XINDX-044",
+        severity=Severity.STANDARD,
+        title="2nd line of routine violates the SAC",
+        tags=("xindex",),
+        check=_check_second_line_sac,
+    )
+)
 
 
 # ---------------------------------------------------------------------------
 # Helpers for command-keyword-based rules
 # ---------------------------------------------------------------------------
+
 
 def _commands(tree, src: bytes) -> Iterator[tuple]:
     """Yield (command_node, keyword_text_upper, kw_node) for every command."""
@@ -643,6 +668,7 @@ def _payload(arg_node):
 # Additional XINDEX rules
 # ---------------------------------------------------------------------------
 
+
 # --- M-XINDX-020: VIEW command used --------------------------------------
 def _check_view_command(src, tree, path):
     for cmd, kw, kw_node in _commands(tree, src):
@@ -660,13 +686,15 @@ def _check_view_command(src, tree, path):
             )
 
 
-register(Rule(
-    id="M-XINDX-020",
-    severity=Severity.STANDARD,
-    title="VIEW command used",
-    tags=("xindex",),
-    check=_check_view_command,
-))
+register(
+    Rule(
+        id="M-XINDX-020",
+        severity=Severity.STANDARD,
+        title="VIEW command used",
+        tags=("xindex",),
+        check=_check_view_command,
+    )
+)
 
 
 # --- M-XINDX-022: Exclusive Kill (`KILL (var,...)`) ----------------------
@@ -691,13 +719,15 @@ def _check_exclusive_kill(src, tree, path):
                 break
 
 
-register(Rule(
-    id="M-XINDX-022",
-    severity=Severity.STANDARD,
-    title="Exclusive Kill",
-    tags=("xindex",),
-    check=_check_exclusive_kill,
-))
+register(
+    Rule(
+        id="M-XINDX-022",
+        severity=Severity.STANDARD,
+        title="Exclusive Kill",
+        tags=("xindex",),
+        check=_check_exclusive_kill,
+    )
+)
 
 
 # --- M-XINDX-023: Unargumented Kill --------------------------------------
@@ -719,13 +749,15 @@ def _check_unargumented_kill(src, tree, path):
             )
 
 
-register(Rule(
-    id="M-XINDX-023",
-    severity=Severity.STANDARD,
-    title="Unargumented Kill",
-    tags=("xindex",),
-    check=_check_unargumented_kill,
-))
+register(
+    Rule(
+        id="M-XINDX-023",
+        severity=Severity.STANDARD,
+        title="Unargumented Kill",
+        tags=("xindex",),
+        check=_check_unargumented_kill,
+    )
+)
 
 
 # --- M-XINDX-024: Kill of unsubscripted global ---------------------------
@@ -755,13 +787,15 @@ def _check_kill_unsubscripted_global(src, tree, path):
                 )
 
 
-register(Rule(
-    id="M-XINDX-024",
-    severity=Severity.STANDARD,
-    title="Kill of an unsubscripted global",
-    tags=("xindex",),
-    check=_check_kill_unsubscripted_global,
-))
+register(
+    Rule(
+        id="M-XINDX-024",
+        severity=Severity.STANDARD,
+        title="Kill of an unsubscripted global",
+        tags=("xindex",),
+        check=_check_kill_unsubscripted_global,
+    )
+)
 
 
 # --- M-XINDX-026: Exclusive or Unargumented NEW --------------------------
@@ -799,13 +833,15 @@ def _check_new_exclusive_or_unargumented(src, tree, path):
                 break
 
 
-register(Rule(
-    id="M-XINDX-026",
-    severity=Severity.STANDARD,
-    title="Exclusive or Unargumented NEW command",
-    tags=("xindex",),
-    check=_check_new_exclusive_or_unargumented,
-))
+register(
+    Rule(
+        id="M-XINDX-026",
+        severity=Severity.STANDARD,
+        title="Exclusive or Unargumented NEW command",
+        tags=("xindex",),
+        check=_check_new_exclusive_or_unargumented,
+    )
+)
 
 
 # --- M-XINDX-027: $VIEW function used ------------------------------------
@@ -829,13 +865,15 @@ def _check_dollar_view(src, tree, path):
                     )
 
 
-register(Rule(
-    id="M-XINDX-027",
-    severity=Severity.STANDARD,
-    title="$View function used",
-    tags=("xindex",),
-    check=_check_dollar_view,
-))
+register(
+    Rule(
+        id="M-XINDX-027",
+        severity=Severity.STANDARD,
+        title="$View function used",
+        tags=("xindex",),
+        check=_check_dollar_view,
+    )
+)
 
 
 # --- M-XINDX-030: LABEL+OFFSET syntax ------------------------------------
@@ -852,9 +890,7 @@ def _check_label_offset(src, tree, path):
             for sub in _walk(payload):
                 if sub.type != "binary_expression":
                     continue
-                op = next(
-                    (c for c in sub.children if c.type == "operator"), None
-                )
+                op = next((c for c in sub.children if c.type == "operator"), None)
                 if op is None:
                     continue
                 op_text = _node_text(op, src)
@@ -875,13 +911,15 @@ def _check_label_offset(src, tree, path):
                 break  # one diagnostic per arg
 
 
-register(Rule(
-    id="M-XINDX-030",
-    severity=Severity.STANDARD,
-    title="LABEL+OFFSET syntax",
-    tags=("xindex",),
-    check=_check_label_offset,
-))
+register(
+    Rule(
+        id="M-XINDX-030",
+        severity=Severity.STANDARD,
+        title="LABEL+OFFSET syntax",
+        tags=("xindex",),
+        check=_check_label_offset,
+    )
+)
 
 
 # --- M-XINDX-032: HALT command should be invoked through G ^XUSCLEAN -----
@@ -905,13 +943,15 @@ def _check_halt_command(src, tree, path):
             )
 
 
-register(Rule(
-    id="M-XINDX-032",
-    severity=Severity.STANDARD,
-    title="HALT should be invoked through G ^XUSCLEAN",
-    tags=("xindex",),
-    check=_check_halt_command,
-))
+register(
+    Rule(
+        id="M-XINDX-032",
+        severity=Severity.STANDARD,
+        title="HALT should be invoked through G ^XUSCLEAN",
+        tags=("xindex",),
+        check=_check_halt_command,
+    )
+)
 
 
 # --- M-XINDX-033: READ command without timeout ---------------------------
@@ -935,13 +975,15 @@ def _check_read_no_timeout(src, tree, path):
                 break  # one per command
 
 
-register(Rule(
-    id="M-XINDX-033",
-    severity=Severity.STANDARD,
-    title="READ command does not have a timeout",
-    tags=("xindex",),
-    check=_check_read_no_timeout,
-))
+register(
+    Rule(
+        id="M-XINDX-033",
+        severity=Severity.STANDARD,
+        title="READ command does not have a timeout",
+        tags=("xindex",),
+        check=_check_read_no_timeout,
+    )
+)
 
 
 # --- M-XINDX-034: OPEN command should be invoked through ^%ZIS ----------
@@ -962,13 +1004,15 @@ def _check_open_command(src, tree, path):
         )
 
 
-register(Rule(
-    id="M-XINDX-034",
-    severity=Severity.STANDARD,
-    title="OPEN should be invoked through ^%ZIS",
-    tags=("xindex",),
-    check=_check_open_command,
-))
+register(
+    Rule(
+        id="M-XINDX-034",
+        severity=Severity.STANDARD,
+        title="OPEN should be invoked through ^%ZIS",
+        tags=("xindex",),
+        check=_check_open_command,
+    )
+)
 
 
 # --- M-XINDX-029: CLOSE should be invoked through D ^%ZISC ---------------
@@ -989,13 +1033,15 @@ def _check_close_command(src, tree, path):
         )
 
 
-register(Rule(
-    id="M-XINDX-029",
-    severity=Severity.STANDARD,
-    title="CLOSE should be invoked through D ^%ZISC",
-    tags=("xindex",),
-    check=_check_close_command,
-))
+register(
+    Rule(
+        id="M-XINDX-029",
+        severity=Severity.STANDARD,
+        title="CLOSE should be invoked through D ^%ZISC",
+        tags=("xindex",),
+        check=_check_close_command,
+    )
+)
 
 
 # --- M-XINDX-036: Should use TASKMAN instead of JOB ----------------------
@@ -1016,13 +1062,15 @@ def _check_job_command(src, tree, path):
         )
 
 
-register(Rule(
-    id="M-XINDX-036",
-    severity=Severity.STANDARD,
-    title="Should use TASKMAN instead of JOB",
-    tags=("xindex",),
-    check=_check_job_command,
-))
+register(
+    Rule(
+        id="M-XINDX-036",
+        severity=Severity.STANDARD,
+        title="Should use TASKMAN instead of JOB",
+        tags=("xindex",),
+        check=_check_job_command,
+    )
+)
 
 
 # --- M-XINDX-041: Star or pound READ used --------------------------------
@@ -1052,13 +1100,15 @@ def _check_star_pound_read(src, tree, path):
                 )
 
 
-register(Rule(
-    id="M-XINDX-041",
-    severity=Severity.INFO,
-    title="Star or pound READ used",
-    tags=("xindex",),
-    check=_check_star_pound_read,
-))
+register(
+    Rule(
+        id="M-XINDX-041",
+        severity=Severity.INFO,
+        title="Star or pound READ used",
+        tags=("xindex",),
+        check=_check_star_pound_read,
+    )
+)
 
 
 # --- M-XINDX-045: Set to a '%' global ------------------------------------
@@ -1099,13 +1149,15 @@ def _check_set_percent_global(src, tree, path):
                 )
 
 
-register(Rule(
-    id="M-XINDX-045",
-    severity=Severity.STANDARD,
-    title="Set to a '%' global",
-    tags=("xindex",),
-    check=_check_set_percent_global,
-))
+register(
+    Rule(
+        id="M-XINDX-045",
+        severity=Severity.STANDARD,
+        title="Set to a '%' global",
+        tags=("xindex",),
+        check=_check_set_percent_global,
+    )
+)
 
 
 # --- M-XINDX-050: Extended reference -------------------------------------
@@ -1128,13 +1180,15 @@ def _check_extended_reference(src, tree, path):
                 )
 
 
-register(Rule(
-    id="M-XINDX-050",
-    severity=Severity.STANDARD,
-    title="Extended reference",
-    tags=("xindex",),
-    check=_check_extended_reference,
-))
+register(
+    Rule(
+        id="M-XINDX-050",
+        severity=Severity.STANDARD,
+        title="Extended reference",
+        tags=("xindex",),
+        check=_check_extended_reference,
+    )
+)
 
 
 # --- M-XINDX-056: Patch number missing from second line ------------------
@@ -1157,13 +1211,15 @@ def _check_patch_number_missing(src, _tree, path):
         )
 
 
-register(Rule(
-    id="M-XINDX-056",
-    severity=Severity.STANDARD,
-    title="Patch number missing from second line",
-    tags=("xindex",),
-    check=_check_patch_number_missing,
-))
+register(
+    Rule(
+        id="M-XINDX-056",
+        severity=Severity.STANDARD,
+        title="Patch number missing from second line",
+        tags=("xindex",),
+        check=_check_patch_number_missing,
+    )
+)
 
 
 # --- M-XINDX-058: Routine code exceeds SACC max of 15000 -----------------
@@ -1190,13 +1246,15 @@ def _check_routine_code_size(src, tree, path):
         )
 
 
-register(Rule(
-    id="M-XINDX-058",
-    severity=Severity.STANDARD,
-    title="Routine code exceeds SACC max of 15000 bytes",
-    tags=("xindex",),
-    check=_check_routine_code_size,
-))
+register(
+    Rule(
+        id="M-XINDX-058",
+        severity=Severity.STANDARD,
+        title="Routine code exceeds SACC max of 15000 bytes",
+        tags=("xindex",),
+        check=_check_routine_code_size,
+    )
+)
 
 
 # --- M-XINDX-060: LOCK command missing timeout ---------------------------
@@ -1220,13 +1278,15 @@ def _check_lock_no_timeout(src, tree, path):
                 break  # one per command
 
 
-register(Rule(
-    id="M-XINDX-060",
-    severity=Severity.STANDARD,
-    title="LOCK missing timeout",
-    tags=("xindex",),
-    check=_check_lock_no_timeout,
-))
+register(
+    Rule(
+        id="M-XINDX-060",
+        severity=Severity.STANDARD,
+        title="LOCK missing timeout",
+        tags=("xindex",),
+        check=_check_lock_no_timeout,
+    )
+)
 
 
 # --- M-XINDX-061: Non-incremental LOCK -----------------------------------
@@ -1258,13 +1318,15 @@ def _check_non_incremental_lock(src, tree, path):
             break  # one per command
 
 
-register(Rule(
-    id="M-XINDX-061",
-    severity=Severity.STANDARD,
-    title="Non-incremental LOCK",
-    tags=("xindex",),
-    check=_check_non_incremental_lock,
-))
+register(
+    Rule(
+        id="M-XINDX-061",
+        severity=Severity.STANDARD,
+        title="Non-incremental LOCK",
+        tags=("xindex",),
+        check=_check_non_incremental_lock,
+    )
+)
 
 
 # --- M-XINDX-062: First line of routine violates SAC ---------------------
@@ -1288,13 +1350,15 @@ def _check_first_line_sac(src, _tree, path):
         )
 
 
-register(Rule(
-    id="M-XINDX-062",
-    severity=Severity.STANDARD,
-    title="First line of routine violates the SAC",
-    tags=("xindex",),
-    check=_check_first_line_sac,
-))
+register(
+    Rule(
+        id="M-XINDX-062",
+        severity=Severity.STANDARD,
+        title="First line of routine violates the SAC",
+        tags=("xindex",),
+        check=_check_first_line_sac,
+    )
+)
 
 
 # --- M-XINDX-002: Non-standard Z command ---------------------------------
@@ -1318,13 +1382,15 @@ def _check_non_standard_z_command(src, tree, path):
         )
 
 
-register(Rule(
-    id="M-XINDX-002",
-    severity=Severity.FATAL,
-    title="Non-standard 'Z' command",
-    tags=("xindex",),
-    check=_check_non_standard_z_command,
-))
+register(
+    Rule(
+        id="M-XINDX-002",
+        severity=Severity.FATAL,
+        title="Non-standard 'Z' command",
+        tags=("xindex",),
+        check=_check_non_standard_z_command,
+    )
+)
 
 
 # --- M-XINDX-028: Non-standard $Z special variable -----------------------
@@ -1357,13 +1423,15 @@ def _check_non_standard_dollar_z_isv(src, tree, path):
         )
 
 
-register(Rule(
-    id="M-XINDX-028",
-    severity=Severity.STANDARD,
-    title="Non-standard $Z special variable",
-    tags=("xindex",),
-    check=_check_non_standard_dollar_z_isv,
-))
+register(
+    Rule(
+        id="M-XINDX-028",
+        severity=Severity.STANDARD,
+        title="Non-standard $Z special variable",
+        tags=("xindex",),
+        check=_check_non_standard_dollar_z_isv,
+    )
+)
 
 
 # --- M-XINDX-031: Non-standard $Z function -------------------------------
@@ -1393,13 +1461,15 @@ def _check_non_standard_dollar_z_function(src, tree, path):
         )
 
 
-register(Rule(
-    id="M-XINDX-031",
-    severity=Severity.STANDARD,
-    title="Non-standard $Z function",
-    tags=("xindex",),
-    check=_check_non_standard_dollar_z_function,
-))
+register(
+    Rule(
+        id="M-XINDX-031",
+        severity=Severity.STANDARD,
+        title="Non-standard $Z function",
+        tags=("xindex",),
+        check=_check_non_standard_dollar_z_function,
+    )
+)
 
 
 # --- M-XINDX-054: Access to SSVN's or $SYSTEM restricted to Kernel -------
@@ -1422,13 +1492,15 @@ def _check_ssvn_system_access(src, tree, path):
                 )
 
 
-register(Rule(
-    id="M-XINDX-054",
-    severity=Severity.STANDARD,
-    title="Access to SSVN's or $SYSTEM restricted to Kernel",
-    tags=("xindex",),
-    check=_check_ssvn_system_access,
-))
+register(
+    Rule(
+        id="M-XINDX-054",
+        severity=Severity.STANDARD,
+        title="Access to SSVN's or $SYSTEM restricted to Kernel",
+        tags=("xindex",),
+        check=_check_ssvn_system_access,
+    )
+)
 
 
 # --- M-XINDX-005, M-XINDX-006, M-XINDX-021, M-XINDX-051: parse errors ----
@@ -1462,10 +1534,12 @@ def _check_parse_errors(src, tree, path):
             )
 
 
-register(Rule(
-    id="M-XINDX-021",
-    severity=Severity.FATAL,
-    title="General syntax error",
-    tags=("xindex",),
-    check=_check_parse_errors,
-))
+register(
+    Rule(
+        id="M-XINDX-021",
+        severity=Severity.FATAL,
+        title="General syntax error",
+        tags=("xindex",),
+        check=_check_parse_errors,
+    )
+)

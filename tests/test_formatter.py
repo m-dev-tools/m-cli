@@ -20,22 +20,12 @@ from m_cli.fmt.formatter import ParseError, format_source
 
 SAMPLES = {
     "minimal": b"hello ;the simplest routine\n quit\n",
-    "label_with_args": (
-        b"add(a,b) ;adder\n new sum\n set sum=a+b\n quit sum\n"
-    ),
-    "dot_block": (
-        b"loop ;trivial dot block\n new i\n for i=1:1:5 do\n . write i,!\n quit\n"
-    ),
-    "global_set": (
-        b"setpat(id,name) ;set patient name\n set ^DPT(id,0)=name\n quit\n"
-    ),
+    "label_with_args": (b"add(a,b) ;adder\n new sum\n set sum=a+b\n quit sum\n"),
+    "dot_block": (b"loop ;trivial dot block\n new i\n for i=1:1:5 do\n . write i,!\n quit\n"),
+    "global_set": (b"setpat(id,name) ;set patient name\n set ^DPT(id,0)=name\n quit\n"),
     "comment_only": b";; package metadata\n;;5.1;Routines;;Jan 23, 1996\n",
-    "multiline_string": (
-        b'msg ;message\n write "line one",!\n write "line two",!\n quit\n'
-    ),
-    "naked_reference": (
-        b"naked ;naked references\n set ^DPT(1,0)=\"a\"\n set ^(1)=\"b\"\n quit\n"
-    ),
+    "multiline_string": (b'msg ;message\n write "line one",!\n write "line two",!\n quit\n'),
+    "naked_reference": (b'naked ;naked references\n set ^DPT(1,0)="a"\n set ^(1)="b"\n quit\n'),
 }
 
 

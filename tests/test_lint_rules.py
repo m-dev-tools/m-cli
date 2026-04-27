@@ -23,6 +23,7 @@ def _lint(src: bytes, rule_id: str, path: Path | None = None):
 # Text-based rules
 # ---------------------------------------------------------------------------
 
+
 class TestTrailingBlanks:
     """M-XINDX-013 — Blank(s) at end of line."""
 
@@ -86,7 +87,7 @@ class TestRoutineSize:
     """M-XINDX-035 — Routine exceeds 20000 bytes."""
 
     def test_fires_above_20kb(self):
-        src = b"hello\n" + (b" w \"x\"\n" * 4000)  # ~24kb
+        src = b"hello\n" + (b' w "x"\n' * 4000)  # ~24kb
         diags = _lint(src, "M-XINDX-035")
         assert len(diags) == 1
 
@@ -112,6 +113,7 @@ class TestSecondLineSAC:
 # ---------------------------------------------------------------------------
 # AST-based rules
 # ---------------------------------------------------------------------------
+
 
 class TestFirstLabel:
     """M-XINDX-017 — First label != routine name."""
@@ -187,6 +189,7 @@ class TestBreakCommand:
 # Framework tests
 # ---------------------------------------------------------------------------
 
+
 class TestRuleSelection:
     def test_xindex_tag_returns_xindex_rules(self):
         rules = select_rules("xindex")
@@ -210,11 +213,12 @@ class TestRuleSelection:
 # Newer rules added in coverage expansion
 # ---------------------------------------------------------------------------
 
+
 class TestViewCommand:
     """M-XINDX-020"""
 
     def test_fires_on_view(self):
-        src = b"x ;ok\n V \"NEW\":\"VAR\":1\n quit\n"
+        src = b'x ;ok\n V "NEW":"VAR":1\n quit\n'
         diags = _lint(src, "M-XINDX-020")
         assert len(diags) == 1
 
@@ -360,7 +364,7 @@ class TestRoutineCodeSize:
 
     def test_fires_above_15kb(self):
         # Make code-only content (no comments) above 15000 bytes
-        src = b"x\n" + (b" w \"x\"\n" * 3000)
+        src = b"x\n" + (b' w "x"\n' * 3000)
         diags = _lint(src, "M-XINDX-058")
         assert len(diags) == 1
 
