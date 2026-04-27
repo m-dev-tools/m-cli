@@ -2,15 +2,21 @@
 
 Argparse-driven. Resolves paths to .m files, runs the selected rule
 family, and writes results in the requested format.
+
+When ``--jobs > 1`` (the default — ``os.cpu_count()``), per-file lint
+runs in a ``ProcessPoolExecutor``. Each routine is independent, so
+linear scale-up is the expected pattern.
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
-from m_cli.lint.diagnostic import Severity
+from m_cli.lint.diagnostic import Diagnostic, Severity
 from m_cli.lint.output import write_output
 from m_cli.lint.runner import lint_source, select_rules
 from m_cli.parser import parse
@@ -43,7 +49,56 @@ def lint_command(args: argparse.Namespace) -> int:
         print(f"m lint: invalid --error-on value: {args.error_on!r}", file=sys.stderr)
         return 2
 
-    all_diags = []
+    jobs = args.jobs if args.jobs is not None else (os.cpu_count() or 1)
+    if jobs < 1:
+        print(f"m lint: --jobs must be >= 1 (got {jobs})", file=sys.stderr)
+        return 2
+
+    if jobs == 1 or len(files) <= 1:
+        all_diags, n_files, n_parse_errors = _run_serial(files, rules, args.lint_unparseable)
+    else:
+        all_diags, n_files, n_parse_errors = _run_parallel(
+            files, args.rules, args.lint_unparseable, jobs
+        )
+
+    write_output(all_diags, fmt=args.format)
+
+    if not args.quiet:
+        _print_summary(args, n_files, n_parse_errors, all_diags, len(rules))
+
+    fail = any(_severity_rank(d.severity) >= _severity_rank(threshold) for d in all_diags)
+    return 1 if fail else 0
+
+
+# ---------------------------------------------------------------------------
+# Per-file work (single source of truth for both serial and parallel paths)
+# ---------------------------------------------------------------------------
+
+
+def _lint_one_file(
+    path: Path, rule_filter: str, lint_unparseable: bool
+) -> tuple[list[Diagnostic], bool, str | None]:
+    """Read, parse, and lint a single file.
+
+    Returns (diagnostics, parseable, error_message). On unrecoverable
+    I/O failure, ``error_message`` carries a human-readable string.
+    """
+    try:
+        src = path.read_bytes()
+    except OSError as e:
+        return [], True, f"{path}: {e}"
+    tree = parse(src)
+    if tree.root_node.has_error and not lint_unparseable:
+        return [], False, None
+    rules = select_rules(rule_filter)
+    return lint_source(path, src, rules), True, None
+
+
+def _run_serial(
+    files: list[Path], rules: list, lint_unparseable: bool
+) -> tuple[list[Diagnostic], int, int]:
+    """Lint every file in the current process (no pool overhead)."""
+    all_diags: list[Diagnostic] = []
     n_files = 0
     n_parse_errors = 0
     for path in files:
@@ -52,24 +107,49 @@ def lint_command(args: argparse.Namespace) -> int:
         except OSError as e:
             print(f"m lint: {path}: {e}", file=sys.stderr)
             continue
-        # Run only on routines that parse cleanly. (XINDEX behaves
-        # similarly: severe parse errors short-circuit further checks.)
         tree = parse(src)
-        if tree.root_node.has_error and not args.lint_unparseable:
+        if tree.root_node.has_error and not lint_unparseable:
             n_parse_errors += 1
             continue
-        diags = lint_source(path, src, rules)
-        all_diags.extend(diags)
+        all_diags.extend(lint_source(path, src, rules))
         n_files += 1
+    return all_diags, n_files, n_parse_errors
 
-    write_output(all_diags, fmt=args.format)
 
-    if not args.quiet:
-        _print_summary(args, n_files, n_parse_errors, all_diags, len(rules))
+def _run_parallel(
+    files: list[Path], rule_filter: str, lint_unparseable: bool, jobs: int
+) -> tuple[list[Diagnostic], int, int]:
+    """Lint files across ``jobs`` worker processes."""
+    all_diags: list[Diagnostic] = []
+    n_files = 0
+    n_parse_errors = 0
+    chunksize = max(1, len(files) // (jobs * 8))
+    with ProcessPoolExecutor(max_workers=jobs) as pool:
+        for diags, parseable, err in pool.map(
+            _lint_one_file_packed,
+            [(p, rule_filter, lint_unparseable) for p in files],
+            chunksize=chunksize,
+        ):
+            if err is not None:
+                print(f"m lint: {err}", file=sys.stderr)
+                continue
+            if not parseable:
+                n_parse_errors += 1
+                continue
+            all_diags.extend(diags)
+            n_files += 1
+    all_diags.sort(key=lambda d: (d.path.as_posix(), d.line, d.column, d.rule_id))
+    return all_diags, n_files, n_parse_errors
 
-    # Exit code based on threshold
-    fail = any(_severity_rank(d.severity) >= _severity_rank(threshold) for d in all_diags)
-    return 1 if fail else 0
+
+def _lint_one_file_packed(args):
+    """ProcessPoolExecutor.map needs a single-arg callable."""
+    return _lint_one_file(*args)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 
 def _collect_files(paths: list[Path]) -> list[Path]:

@@ -17,13 +17,29 @@ Use --rules to override the rule family (default: xindex).
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 from collections import Counter
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 from m_cli.lint.runner import lint_source, select_rules
 from m_cli.parser import parse
+
+
+def _lint_one(args: tuple[Path, str]) -> tuple[Path, list, bool, bool]:
+    """(path, rule_filter) -> (path, diags, parseable, io_error)."""
+    path, rule_filter = args
+    try:
+        src = path.read_bytes()
+    except OSError:
+        return path, [], True, True
+    tree = parse(src)
+    if tree.root_node.has_error:
+        return path, [], False, False
+    rules = select_rules(rule_filter)
+    return path, lint_source(path, src, rules), True, False
 
 
 def main() -> int:
@@ -32,6 +48,12 @@ def main() -> int:
     parser.add_argument("--sample", type=int, default=0, help="Lint only first N routines (0 = all)")
     parser.add_argument("--rules", default="xindex", help="Rule family or comma-separated IDs")
     parser.add_argument("--top", type=int, default=10, help="Show top-N noisiest routines")
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        default=os.cpu_count() or 1,
+        help="Parallel worker processes (default: os.cpu_count())",
+    )
     args = parser.parse_args()
 
     if not args.root.is_dir():
@@ -56,31 +78,35 @@ def main() -> int:
     sev_counts: Counter[str] = Counter()
     per_routine: list[tuple[int, Path]] = []  # (n_findings, path)
 
-    print(f"VistA lint — {n_total} routines, --rules={args.rules} ({len(rules)} rules)")
+    print(
+        f"VistA lint — {n_total} routines, --rules={args.rules} "
+        f"({len(rules)} rules), --jobs={args.jobs}"
+    )
     t0 = time.monotonic()
 
-    for i, path in enumerate(routines, 1):
-        try:
-            src = path.read_bytes()
-        except OSError:
-            n_io += 1
-            continue
-        tree = parse(src)
-        if tree.root_node.has_error:
-            n_skipped_parse += 1
-            continue
-        diags = lint_source(path, src, rules)
-        n_linted += 1
-        for d in diags:
-            rule_counts[d.rule_id] += 1
-            sev_counts[d.severity.value] += 1
-        if diags:
-            per_routine.append((len(diags), path))
+    work = [(p, args.rules) for p in routines]
+    chunksize = max(1, len(work) // (args.jobs * 8))
 
-        if i % 5000 == 0:
-            elapsed = time.monotonic() - t0
-            rate = i / elapsed if elapsed > 0 else 0
-            print(f"  {i:>5}/{n_total} ({rate:.0f}/s)")
+    with ProcessPoolExecutor(max_workers=args.jobs) as pool:
+        for i, (path, diags, parseable, io_error) in enumerate(
+            pool.map(_lint_one, work, chunksize=chunksize), 1
+        ):
+            if io_error:
+                n_io += 1
+            elif not parseable:
+                n_skipped_parse += 1
+            else:
+                n_linted += 1
+                for d in diags:
+                    rule_counts[d.rule_id] += 1
+                    sev_counts[d.severity.value] += 1
+                if diags:
+                    per_routine.append((len(diags), path))
+
+            if i % 5000 == 0:
+                elapsed = time.monotonic() - t0
+                rate = i / elapsed if elapsed > 0 else 0
+                print(f"  {i:>5}/{n_total} ({rate:.0f}/s)")
 
     elapsed = time.monotonic() - t0
 

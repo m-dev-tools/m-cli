@@ -25,7 +25,7 @@ Deferred from Step 5:
 
 ## Next session — pick from below
 
-Tier 1 is complete. The remaining work is split across linter coverage, performance, and integrations.
+Tier 1 is complete and lint perf is under budget. Remaining work is XINDEX rule expansion and integrations.
 
 ## XINDEX rule expansion (Step 2.x)
 
@@ -38,12 +38,11 @@ These are deferred to a later linter phase. **Do not** chase 100% XINDEX parity 
 
 The 8 currently-silent registered rules (M-XINDX-002, 015, 018, 021, 027, 028, 031, 054) fire on patterns rare in VistA but common in other corpora — leave them registered.
 
-## Performance follow-up (Step 2.x)
+## Performance follow-up (Step 2.x) — DONE
 
-- [x] **Single-pass AST walk via `NodeIndex`.** Walk once per file, bucket by node type, dispatch rules off the bucket. Landed: VistA gate **166 s** (was ~1458 s — 8.7× faster). Microbenchmark: 3.75 ms/file (was 32.94 ms/file).
-- [ ] **Parallelize across routines** with `concurrent.futures.ProcessPoolExecutor`. Each routine's `lint_source` is independent. With 4 workers we should land well under the 120 s budget. Pass `--jobs N` (default `os.cpu_count()`).
+- [x] **Single-pass AST walk via `NodeIndex`.** Walk once per file, bucket by node type, dispatch rules off the bucket. VistA gate **166 s** (was ~1458 s — 8.7× faster).
+- [x] **Parallelize across routines** with `concurrent.futures.ProcessPoolExecutor`. `m lint --jobs N` (default `os.cpu_count()`). 16-core host: VistA gate **22.6 s** — 5.3× under the 120 s budget, 64.5× faster than the original baseline.
 - [ ] Cache parsed trees for incremental lint (only meaningful with a daemon / LSP — defer until LSP work).
-- [ ] Profile with `make lint-vista` before/after each change — never optimise blind.
 
 ## Smaller cleanups / nice-to-haves
 

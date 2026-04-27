@@ -115,6 +115,15 @@ def main(argv: list[str] | None = None) -> int:
         help="Lint files that have parse errors (default: skip them)",
     )
     lint_parser.add_argument(
+        "-j",
+        "--jobs",
+        type=int,
+        default=None,
+        help=(
+            "Number of parallel worker processes (default: os.cpu_count(); 1 to disable the pool)"
+        ),
+    )
+    lint_parser.add_argument(
         "-q",
         "--quiet",
         action="store_true",
