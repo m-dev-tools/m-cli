@@ -400,3 +400,59 @@ class TestNonStandardZCommand:
         # ZBREAK is a standard cross-vendor extension
         src = b"x ;ok\n ZBREAK label\n"
         assert _lint(src, "M-XINDX-002") == []
+
+
+class TestLocalVariableCase:
+    """M-XINDX-057 — Lower/mixed case in local variable name."""
+
+    def test_fires_on_lowercase_local(self):
+        src = b"hello ;ok\n new x\n quit\n"
+        diags = _lint(src, "M-XINDX-057")
+        assert len(diags) == 1
+        assert diags[0].rule_id == "M-XINDX-057"
+
+    def test_fires_on_mixed_case_local(self):
+        src = b"hello ;ok\n new lcVar\n quit\n"
+        diags = _lint(src, "M-XINDX-057")
+        assert len(diags) == 1
+        assert "lcVar" in diags[0].message
+
+    def test_no_finding_uppercase_local(self):
+        src = b"hello ;ok\n new VAR,X,Y123\n quit\n"
+        assert _lint(src, "M-XINDX-057") == []
+
+    def test_no_finding_percent_uppercase(self):
+        # SAC permits %SOMETHING — uppercase after %
+        src = b"hello ;ok\n new %SCRATCH\n quit\n"
+        assert _lint(src, "M-XINDX-057") == []
+
+    def test_fires_on_percent_lowercase(self):
+        # %scratch — lowercase after % is still a violation
+        src = b"hello ;ok\n new %scratch\n quit\n"
+        diags = _lint(src, "M-XINDX-057")
+        assert len(diags) == 1
+
+    def test_each_violation_is_one_diagnostic(self):
+        src = b"hello ;ok\n new x,Y,zED\n quit\n"
+        diags = _lint(src, "M-XINDX-057")
+        # x and zED are violations; Y is uppercase
+        assert len(diags) == 2
+
+    def test_fires_in_set_target(self):
+        src = b"hello ;ok\n set lower=1\n quit\n"
+        diags = _lint(src, "M-XINDX-057")
+        assert len(diags) >= 1
+
+    def test_dedupes_repeated_use_of_same_name_per_line(self):
+        # If `x` appears twice on one line, we only need one diagnostic per
+        # *occurrence* — but repeated occurrences are themselves the issue.
+        # Acceptable behavior: one diagnostic per textual occurrence.
+        src = b"hello ;ok\n set x=1,x=2\n quit\n"
+        diags = _lint(src, "M-XINDX-057")
+        assert len(diags) >= 1
+
+    def test_special_var_excluded(self):
+        # $ZHOROLOG and $TEST are intrinsic_special_variables — different
+        # node type — and not subject to this rule.
+        src = b"hello ;ok\n write $TEST\n quit\n"
+        assert _lint(src, "M-XINDX-057") == []

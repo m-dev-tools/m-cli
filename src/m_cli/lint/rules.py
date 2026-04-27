@@ -13,14 +13,13 @@ regression check.
 XINDEX rules NOT yet implemented (deferred — require deeper semantic
 analysis or richer m-standard integration than is currently wired in):
 
-  1, 3      undefined command / function — needs full keyword set
-  5, 6      unmatched parens / quotes — implicitly handled by parser
-            ERROR nodes; not yet surfaced as discrete diagnostics
-  8         FOR without `=`
-  10        unrecognized SET argument
+  1, 3, 8, 10, 53, 59  undefined command / function / numeric / WRITE
+                       syntax — implicitly caught by tree-sitter ERROR
+                       nodes (surfaced via M-XINDX-021)
+  5, 6      unmatched parens / quotes — also implicitly caught
   11, 12    invalid local / global variable name — need naming rules
+            (parser only validates structure, not naming)
   16        error in pattern code
-  21, 51    general syntax error / block-structure mismatch
   37        invalid label
   38        call-to-this format-specific
   39        kill of protected variable
@@ -28,9 +27,7 @@ analysis or richer m-standard integration than is currently wired in):
   43        wrong arg count to function
   46, 48, 49  postconditional / argument issues
   52        routine reference doesn't exist (cross-file)
-  53, 59    bad number / WRITE syntax
   55        violates VA programming standards (catch-all)
-  57        lower/mixed case variable name
   63        GO/DO mismatch from block structure
   64, 66    Cache / ICR-specific
 """
@@ -1544,5 +1541,58 @@ register(
         title="General syntax error",
         tags=("xindex",),
         check=_check_parse_errors,
+    )
+)
+
+
+# --- M-XINDX-057: Lower/mixed case in local variable name ----------------
+def _check_local_variable_case(src, _tree, path, index):
+    """M-XINDX-057 — Local variable name contains a lowercase letter.
+
+    SAC §3.6 requires variable names to be uppercase A-Z, digits, and
+    optionally a leading ``%``. We flag any ``local_variable`` whose
+    identifier text contains a lowercase ASCII letter.
+
+    Excludes ``intrinsic_special_variable`` (``$TEST``, ``$ZHOROLOG``)
+    — those are tracked by separate rules and aren't subject to the
+    SAC variable-naming rule.
+    """
+    seen_per_line: set[tuple[int, int, str]] = set()
+    for var_node in index.of("local_variable"):
+        ident = next((c for c in var_node.children if c.type == "identifier"), None)
+        if ident is None:
+            continue
+        name = _node_text(ident, src)
+        if not _has_lowercase(name):
+            continue
+        line, col = _node_line_col(ident, src)
+        key = (line, col, name)
+        if key in seen_per_line:
+            continue
+        seen_per_line.add(key)
+        yield Diagnostic(
+            rule_id="M-XINDX-057",
+            severity=Severity.STANDARD,
+            message=f"Lower/mixed case in local variable name: '{name}'",
+            path=path,
+            line=line,
+            column=col,
+            column_end=col + len(name),
+            line_text=_line_text(src, line),
+            extra={"name": name},
+        )
+
+
+def _has_lowercase(name: str) -> bool:
+    return any("a" <= ch <= "z" for ch in name)
+
+
+register(
+    Rule(
+        id="M-XINDX-057",
+        severity=Severity.STANDARD,
+        title="Lower/mixed case in local variable name",
+        tags=("xindex", "sac"),
+        check=_check_local_variable_case,
     )
 )

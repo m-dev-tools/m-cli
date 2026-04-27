@@ -14,7 +14,7 @@
 | Step | Tool | Status |
 |------|------|--------|
 | 1 | `m fmt` | **Shipped.** Identity round-trip; 99.04% (38,954/39,330) byte-for-byte; ~26 s |
-| 2 | `m lint --rules=xindex` | **Step 2.1 shipped.** 36 of XINDEX's 66 rules; 28 fire on VistA → 62,806 findings across 24,877 routines (63.9%); 42 fatal call-to-missing-label findings are real bugs |
+| 2 | `m lint --rules=xindex` | **37 of XINDEX's 66 rules.** Latest: M-XINDX-057 (lower/mixed case local variable, SAC §3.6). VistA: 64,195 findings / 42 fatal. 22.6 s on 16 cores (5.3× under §3.5 budget). |
 | 3 | `m test` | **Shipped.** Parser-aware discovery (`*TST.m` files, `t<UpperCase>(pass,fail)` labels via tree-sitter); ydb runner; text / TAP / JSON output; whole-suite, single-suite, single-label runs. Smoke gate: 11 m-tools suites / 224 assertions pass. |
 | 4 | Single-test selection | **Shipped** as part of Step 3 (`m test FILE.m::tLabel`). |
 | 5 | `m watch` | **Shipped.** Polling-based file watcher (default 0.5 s); on `*.m` save → re-run affected suites. Affinity: `foo.m` → `FOOTST.m`; suite-file edits re-run only that suite; non-mappable changes re-run all. `--once` runs the initial pass and exits. |
