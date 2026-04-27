@@ -1,35 +1,72 @@
 """Rule definitions for `m lint`.
 
 Each rule is a callable that takes the source bytes, the parsed tree,
-and the file path, and yields zero or more Diagnostics.
+the file path, and a per-file ``NodeIndex``, and yields zero or more
+``Diagnostic`` instances.
 
-Rules are organised by tag (`xindex`, `sac`, …). The `--rules` toggle
-filters which tag(s) run.
+Rules are organised by tag (``xindex``, ``sac``, …). The ``--rules``
+toggle filters which tag(s) run.
 
-Coverage of XINDEX's 66 rules grows incrementally. Each rule has at
-least one positive and one negative unit test, plus a VistA-corpus
-regression check.
+XINDEX coverage policy
+======================
 
-XINDEX rules NOT yet implemented (deferred — require deeper semantic
-analysis or richer m-standard integration than is currently wired in):
+37 of XINDEX's 66 rules are registered. The remaining 29 fall into
+four buckets — recorded here so future contributors don't re-litigate
+each one:
 
-  1, 3, 8, 10, 53, 59  undefined command / function / numeric / WRITE
-                       syntax — implicitly caught by tree-sitter ERROR
-                       nodes (surfaced via M-XINDX-021)
-  5, 6      unmatched parens / quotes — also implicitly caught
-  11, 12    invalid local / global variable name — need naming rules
-            (parser only validates structure, not naming)
-  16        error in pattern code
+**Permanently skipped — redundant with the parser ERROR catch-all
+(``M-XINDX-021`` already surfaces these as fatal diagnostics).**
+XINDEX was a text-based scanner; tree-sitter-m gives us proper
+structural validation, so these no longer need their own rules:
+
+  1, 3      undefined command / undefined function — typo'd
+            keywords show up as command_keyword + ERROR child
+  5, 6      unmatched parens / unmatched quotes
+  8, 10     FOR without ``=`` / unrecognized SET argument
+  11, 12    invalid local / global variable name (parser only emits
+            ``local_variable`` / ``global_variable`` nodes for valid
+            identifiers; anything else is ERROR)
   37        invalid label
-  38        call-to-this format-specific
-  39        kill of protected variable
-  40        space where command should be
-  43        wrong arg count to function
-  46, 48, 49  postconditional / argument issues
-  52        routine reference doesn't exist (cross-file)
-  55        violates VA programming standards (catch-all)
-  63        GO/DO mismatch from block structure
-  64, 66    Cache / ICR-specific
+  40        space where a command should be
+  53, 59    bad numeric literal / WRITE syntax
+  51        block-structure mismatch (already mapped to M-XINDX-021)
+
+**Deferred — out of scope for single-file lint.** These need a
+workspace index of all routines, a call graph, or data-flow tracking;
+none currently exist. Re-evaluate when a workspace-wide analysis
+phase is funded:
+
+  39        kill of protected variable (needs scope tracking)
+  43        wrong argument count to function (needs signatures)
+  52        cross-routine reference doesn't exist (needs workspace index)
+  55        violates VA programming standards (catch-all — too vague
+            without explicit mapping to specific SAC sections)
+  63        GO/DO mismatch from block structure (needs control-flow
+            analysis)
+
+**Deferred — niche, low value-per-rule.** Each is doable on a single
+file but the per-rule design and false-positive-tuning cost is high
+relative to the editor-UX payoff. Pick these up if they surface as
+real complaints from `m lint` users in the wild rather than working
+through them mechanically:
+
+  16        error in pattern code (M's ``?`` pattern grammar)
+  38        call-to-this format-specific (XINDEX-internal classifier)
+  46, 48, 49  postconditional / argument quirks per command
+
+**Permanently skipped — engine-specific.**
+
+  64, 66    Caché / ICR-specific rules (m-cli's source-level tools are
+            engine-neutral; runtime tools target YottaDB)
+
+A higher-leverage future direction than chasing the XINDEX edge cases:
+refining ``M-XINDX-021`` to emit *specific* parse-error messages by
+inspecting what comes before each ERROR node. ``FOOBAR`` parsing as
+``FO`` (FOR abbreviation) + ERROR ``OBAR`` could become
+"Unknown command keyword 'FOOBAR'"; ``$NOSUCH(...)`` parsing as
+``$N`` + ERROR ``OSUCH(...)`` could become "Unknown intrinsic
+function '$NOSUCH'". Best done after the LSP ships so the win lands
+in-editor.
 """
 
 from __future__ import annotations
