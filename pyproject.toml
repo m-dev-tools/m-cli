@@ -1,0 +1,65 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "m-cli"
+version = "0.1.0"
+description = "The M (MUMPS) source-level toolchain — `m fmt`, `m lint`, `m test`. Tier 1 of the M ecosystem gap-remediation plan."
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [{ name = "Rafael Richards" }]
+license = { text = "AGPL-3.0" }
+keywords = ["mumps", "m", "yottadb", "formatter", "linter", "tree-sitter"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Compilers",
+    "Topic :: Text Processing :: Linguistic",
+]
+dependencies = [
+    "tree-sitter~=0.24",
+    "tree-sitter-m",
+]
+
+[project.scripts]
+m = "m_cli.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov",
+    "pytest-watch",
+    "pytest-randomly",
+    "ruff",
+    "mypy",
+    "pre-commit",
+]
+
+[tool.uv.sources]
+tree-sitter-m = { path = "../tree-sitter-m", editable = true }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+
+[tool.coverage.run]
+source = ["src"]
+
+[tool.coverage.report]
+fail_under = 70
+show_missing = true
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = false
+ignore_missing_imports = true
