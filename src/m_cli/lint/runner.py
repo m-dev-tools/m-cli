@@ -15,6 +15,18 @@ from m_cli.lint.rules import Rule, all_rules, rules_by_tag
 from m_cli.parser import parse
 
 
+def fixer_for(rule_id: str) -> str | None:
+    """Return the ``m fmt`` rule id that auto-fixes ``rule_id``, if any.
+
+    Public helper for tooling consumers (LSP wrapper, CI integrations)
+    that want to resolve lint findings to their auto-fixers without
+    importing the rule registry. Returns ``None`` when the rule is
+    unknown or has no auto-fix.
+    """
+    rule = next((r for r in all_rules() if r.id == rule_id), None)
+    return rule.fixer_id if rule is not None else None
+
+
 def select_rules(rule_filter: str = "xindex") -> list[Rule]:
     """Pick rules by family or comma-separated id list.
 

@@ -13,6 +13,7 @@ import sys
 from collections.abc import Iterable
 
 from m_cli.lint.diagnostic import Diagnostic, Severity
+from m_cli.lint.runner import fixer_for
 
 _SEV_COLOR = {
     Severity.FATAL: "\033[1;31m",  # bold red
@@ -38,8 +39,13 @@ def format_text(diagnostics: Iterable[Diagnostic], use_color: bool = True) -> st
 
 
 def format_json(diagnostics: Iterable[Diagnostic]) -> str:
-    """Single JSON array of all diagnostics."""
-    return json.dumps([d.to_json() for d in diagnostics], indent=2)
+    """Single JSON array of all diagnostics, enriched with ``fixer_id``."""
+    out = []
+    for d in diagnostics:
+        obj = d.to_json()
+        obj["fixer_id"] = fixer_for(d.rule_id)
+        out.append(obj)
+    return json.dumps(out, indent=2)
 
 
 def format_tap(diagnostics: Iterable[Diagnostic]) -> str:

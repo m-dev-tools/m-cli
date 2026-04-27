@@ -2,6 +2,10 @@
 
 A thin façade over the tree_sitter_m Python bindings, hiding the
 Language/Parser construction so callers just say `parse(src)`.
+
+Public library surface (stable for out-of-tree tooling):
+
+    from m_cli.parser import parse  # (src: bytes) -> tree_sitter.Tree
 """
 
 from __future__ import annotations
@@ -10,6 +14,8 @@ from functools import lru_cache
 
 import tree_sitter_m
 from tree_sitter import Language, Parser, Tree
+
+__all__ = ["parse"]
 
 
 @lru_cache(maxsize=1)

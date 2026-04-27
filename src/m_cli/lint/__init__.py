@@ -19,10 +19,27 @@ Rule families (selected via `m lint --rules <family>`):
 The framework is parser-aware (tree-sitter-m AST) so it can express
 checks that pure text scanners cannot (postconditional argument
 analysis, naked-reference flow, label-call resolution).
+
+Public library surface (stable for out-of-tree tooling):
+
+    from m_cli.lint import (
+        lint_source,        # (path, src, rules) -> list[Diagnostic]
+        select_rules,       # (str) -> list[Rule]    (e.g. "xindex", "M-XINDX-013")
+        Rule, Diagnostic, Severity,
+    )
 """
 
 from m_cli.lint.cli import lint_command
 from m_cli.lint.diagnostic import Diagnostic, Severity
-from m_cli.lint.runner import lint_source
+from m_cli.lint.rules import Rule
+from m_cli.lint.runner import fixer_for, lint_source, select_rules
 
-__all__ = ["lint_command", "lint_source", "Diagnostic", "Severity"]
+__all__ = [
+    "lint_command",
+    "lint_source",
+    "select_rules",
+    "fixer_for",
+    "Rule",
+    "Diagnostic",
+    "Severity",
+]

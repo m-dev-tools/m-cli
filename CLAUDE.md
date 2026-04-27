@@ -109,6 +109,27 @@ scripts/
 - **Per-rule isolation:** `runner.lint_source` wraps each rule in try/except so one buggy rule can't crash a lint pass — it emits an `M-INTERNAL-RULE-CRASH` diagnostic instead.
 - **VistA is the gate:** every rule should be sanity-checked with `make lint-vista` to catch wild-corpus surprises before commit.
 
+## Library API for tooling consumers
+
+The LSP wrapper, IDE plugins, pre-commit integrations, and other out-of-tree tooling import a stable surface from the top-level package:
+
+```python
+from m_cli import (
+    parse,                                # parse M source bytes -> Tree
+    format_source, canonical_rules,       # m fmt
+    select_fmt_rules, FmtRule, ParseError,
+    lint_source, select_rules, Rule,      # m lint
+    Diagnostic, Severity,
+)
+from m_cli.lint import fixer_for          # rule_id -> fmt rule id (or None)
+```
+
+Anything in `__all__` is locked: future internal refactors keep these importable. Internal helpers (rule check fns, AST walkers, registry internals) are not part of the public surface and may move. The `tests/test_library_api.py` smoke gate enforces this.
+
+## Lint → fmt fixer linkage
+
+Each lint `Rule` carries an optional `fixer_id` pointing to an `m fmt` rule that auto-fixes the diagnostic. Today: `M-XINDX-013 ↔ trim-trailing-whitespace` and `M-XINDX-047 ↔ uppercase-command-keywords`. The link surfaces in `--format=json` output (`"fixer_id": ...` per diagnostic) and via the `m_cli.lint.fixer_for(rule_id)` helper. The LSP wrapper uses this to expose Quick Fix code actions; new pairings are pinned by `tests/test_lint_fixer_linkage.py`.
+
 ## Pre-commit integration
 
 Downstream M projects opt into `m fmt --check` and `m lint --error-on=fatal` via the [pre-commit framework](https://pre-commit.com):

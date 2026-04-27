@@ -61,6 +61,10 @@ class Rule:
     title: str
     tags: tuple[str, ...]
     check: RuleFn
+    # Optional id of an `m fmt` rule that auto-fixes this diagnostic. The
+    # LSP wrapper exposes this as a Quick Fix code action; CI tools can
+    # surface it as "auto-fixable". `None` when no auto-fix exists.
+    fixer_id: str | None = None
 
 
 _REGISTRY: dict[str, Rule] = {}
@@ -130,6 +134,7 @@ register(
         title="Blank(s) at end of line",
         tags=("xindex",),
         check=_check_trailing_blanks,
+        fixer_id="trim-trailing-whitespace",
     )
 )
 
@@ -549,6 +554,7 @@ register(
         title="Lowercase command(s) used in line",
         tags=("xindex",),
         check=_check_lowercase_command,
+        fixer_id="uppercase-command-keywords",
     )
 )
 
