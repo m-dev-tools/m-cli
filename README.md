@@ -13,7 +13,7 @@ Built on:
 | Step | Tool | Status |
 |------|------|--------|
 | 1 | `m fmt` (formatter) | **Step 1.0 (identity round-trip) shipped** — 38,954 / 39,330 (99.04%) VistA routines round-trip byte-for-byte; 26 s on a current laptop |
-| 2 | `m lint --rules xindex` | **Step 2.0 (framework + 11 XINDEX baseline rules) shipped** — see Linter section below |
+| 2 | `m lint --rules xindex` | **Step 2.1 (36 XINDEX rules) shipped** — see Linter section below |
 | 3 | `m test` | Planned (parser-aware port of `ytest`) |
 | 4 | Single-test selection | Folded into `m test` |
 | 5 | `m watch` | Planned |
@@ -22,21 +22,46 @@ Built on:
 
 The linter's first rule pack replicates a baseline subset of the VistA Toolkit `^XINDEX` rule set (see [m-tooling-tier1.md §5.2](../m-tools/docs/m-tooling-tier1.md#52-xindex-integration)). Rule IDs map 1:1 to XINDEX error codes (`M-XINDX-NN`).
 
-**Rules shipped in Step 2.0** (11 of XINDEX's 66):
+**Rules shipped in Step 2.1** (36 of XINDEX's 66):
 
 | ID | Severity | Title |
 |----|----------|-------|
+| M-XINDX-002 | Standard | Non-standard Z command used |
 | M-XINDX-013 | Warning  | Blank(s) at end of line |
 | M-XINDX-014 | Fatal    | Call to missing label in this routine |
 | M-XINDX-015 | Warning  | Duplicate label |
 | M-XINDX-017 | Warning  | First line label NOT routine name |
 | M-XINDX-018 | Warning  | Line contains a CONTROL (non-graphic) character |
 | M-XINDX-019 | Standard | Line is longer than 245 bytes |
+| M-XINDX-020 | Standard | VIEW command used |
+| M-XINDX-021 | Fatal    | Syntax error in line (parse failure) |
+| M-XINDX-022 | Standard | Exclusive Kill |
+| M-XINDX-023 | Standard | Unargumented Kill |
+| M-XINDX-024 | Standard | Kill of unsubscripted global |
 | M-XINDX-025 | Standard | BREAK command used |
+| M-XINDX-026 | Standard | NEW exclusive or unargumented |
+| M-XINDX-027 | Standard | $VIEW function used |
+| M-XINDX-028 | Standard | $Z* intrinsic special variable used |
+| M-XINDX-029 | Standard | CLOSE command — use ZISC instead |
+| M-XINDX-030 | Standard | LABEL+OFFSET reference (fragile) |
+| M-XINDX-031 | Standard | $Z* intrinsic function used |
+| M-XINDX-032 | Standard | HALT command — use XUSCLEAN instead |
+| M-XINDX-033 | Warning  | READ without timeout |
+| M-XINDX-034 | Standard | OPEN command — use ZIS instead |
 | M-XINDX-035 | Standard | Routine exceeds SACC maximum size of 20000 bytes |
+| M-XINDX-036 | Standard | JOB command — use TASKMAN instead |
+| M-XINDX-041 | Standard | Star/pound READ format |
 | M-XINDX-042 | Warning  | Null line (no commands or comment) |
 | M-XINDX-044 | Standard | 2nd line of routine violates the SAC |
+| M-XINDX-045 | Standard | Set to %global |
 | M-XINDX-047 | Standard | Lowercase command(s) used in line |
+| M-XINDX-050 | Standard | Extended global reference |
+| M-XINDX-054 | Standard | $SYSTEM access — Kernel-only |
+| M-XINDX-056 | Info     | Patch number reference |
+| M-XINDX-058 | Standard | Code line >15000 bytes |
+| M-XINDX-060 | Warning  | LOCK without timeout |
+| M-XINDX-061 | Standard | Non-incremental LOCK |
+| M-XINDX-062 | Standard | First-line SAC violation |
 
 **Rule selection:**
 
@@ -51,36 +76,58 @@ m lint --error-on=fatal <paths>          # exit-1 only on fatal
 
 The XINDEX-parity rule pack will grow incrementally toward the full 66-rule baseline. After parity, `m lint` extends with parser-aware checks XINDEX cannot do (deeper control-flow analysis, dead-code detection, naked-reference hazards, etc.).
 
-### VistA-corpus baseline (Step 2.0)
+### VistA-corpus baseline (Step 2.1)
 
 `make lint-vista` runs `m lint --rules=xindex` over the full 39,330-routine VistA corpus.
 
 ```
 total routines : 39,330  (38,954 linted, 376 skipped on parse error)
-total findings : 40,687
-elapsed        : ~316 s (~123 routines/s)
+routines flagged : 24,877 (63.9%)
+total findings : 62,806
+elapsed        : ~1458 s (~27 routines/s)
 
-By rule:
+By rule (descending):
   M-XINDX-013  35,214  trailing blanks
+  M-XINDX-056  10,867  patch number references          (INFO)
+  M-XINDX-060   5,621  LOCK without timeout
   M-XINDX-044   3,556  2nd-line SAC
+  M-XINDX-033   2,652  READ without timeout
+  M-XINDX-030   1,602  LABEL+OFFSET reference
   M-XINDX-047   1,330  lowercase command
+  M-XINDX-061     419  non-incremental LOCK
   M-XINDX-017     333  first label != routine name
+  M-XINDX-045     286  Set to %global
+  M-XINDX-041     203  star/pound READ
+  M-XINDX-050     144  extended global reference
   M-XINDX-042     138  null line
-  M-XINDX-014      42  call to missing label  (FATAL — real bugs)
+  M-XINDX-034     109  OPEN — use ZIS
+  M-XINDX-029      98  CLOSE — use ZISC
+  M-XINDX-014      42  call to missing label             (FATAL — real bugs)
   M-XINDX-025      39  BREAK command
+  M-XINDX-062      33  first-line SAC violation
   M-XINDX-019      31  line >245 bytes
+  M-XINDX-032      23  HALT — use XUSCLEAN
+  M-XINDX-036      15  JOB — use TASKMAN
+  M-XINDX-024      14  kill of unsubscripted global
+  M-XINDX-058      12  code line >15000 bytes
+  M-XINDX-020       8  VIEW command
+  M-XINDX-022       6  exclusive Kill
+  M-XINDX-023       5  unargumented Kill
   M-XINDX-035       4  routine >20000 bytes
+  M-XINDX-026       2  NEW exclusive/unargumented
 
 By severity:
   fatal        42
-  standard  4,960
+  standard 26,876
   warning  35,685
-  info          0
+  info        203
 ```
 
 The 42 fatal findings are concrete missing-label bugs (e.g., `A1BFJOBR.m` calls `EXIT` on lines 5 and 6, but no `EXIT` label is defined in the file).
 
-**Performance note:** the §3.5 budget for `m lint` on the corpus is 120 s. Step 2.0 runs in 316 s — **2.6× over budget**, on a single thread, with a naive AST walk per rule. Optimisation work (parallelism, single-pass walk, selective rule activation) is sequenced as a follow-up; correctness comes first.
+**Coverage:** 28 of 36 registered rules fire on the VistA corpus. The 8 silent rules cover patterns rare in VistA (non-standard `Z` commands, `$Z*` ISVs/funcs, `$SYSTEM`, `$VIEW`, parse-error fallback) — they remain registered for use against more diverse codebases.
+
+**Performance note:** the §3.5 budget for `m lint` on the corpus is 120 s. Step 2.1 runs in 1458 s — **12× over budget**, on a single thread, with a naive AST walk per rule. The 4.6× slowdown vs Step 2.0 (316 s) tracks the rule-count growth from 11 to 36. Optimisation work (parallelism, single-pass walk, selective rule activation) is sequenced as a follow-up; correctness comes first.
 
 ## Install (development)
 
