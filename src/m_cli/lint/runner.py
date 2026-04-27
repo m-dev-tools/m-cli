@@ -1,0 +1,65 @@
+"""Orchestrate lint rules over a source file.
+
+`lint_source(path, src, rule_filter)` parses the source, runs each
+selected rule, and returns a sorted list of Diagnostics.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterable
+from pathlib import Path
+
+from m_cli.lint.diagnostic import Diagnostic
+from m_cli.lint.rules import Rule, all_rules, rules_by_tag
+from m_cli.parser import parse
+
+
+def select_rules(rule_filter: str = "xindex") -> list[Rule]:
+    """Pick rules by family or comma-separated id list.
+
+    Accepted forms:
+      - 'all'       — every registered rule
+      - 'xindex'    — all rules tagged 'xindex'
+      - 'sac'       — all rules tagged 'sac'
+      - 'M-XINDX-013,M-XINDX-019' — explicit list of rule IDs
+    """
+    rule_filter = rule_filter.strip()
+    if rule_filter == "all":
+        return all_rules()
+    # If it looks like a tag (no commas, no dashes), treat as tag
+    if "," not in rule_filter and not rule_filter.startswith("M-"):
+        return rules_by_tag(rule_filter)
+    # Explicit comma-separated list of rule IDs
+    requested = {r.strip() for r in rule_filter.split(",") if r.strip()}
+    out = [r for r in all_rules() if r.id in requested]
+    missing = requested - {r.id for r in out}
+    if missing:
+        raise ValueError(f"unknown rule id(s): {sorted(missing)}")
+    return out
+
+
+def lint_source(path: Path, src: bytes, rules: Iterable[Rule]) -> list[Diagnostic]:
+    """Run a set of rules over a source and return sorted diagnostics."""
+    tree = parse(src)
+    diags: list[Diagnostic] = []
+    for rule in rules:
+        try:
+            diags.extend(rule.check(src, tree, path))
+        except Exception as e:
+            # Don't let one buggy rule crash the whole lint pass.
+            diags.append(_rule_crash_diagnostic(rule, path, e))
+    diags.sort(key=lambda d: (d.path.as_posix(), d.line, d.column, d.rule_id))
+    return diags
+
+
+def _rule_crash_diagnostic(rule: Rule, path: Path, exc: Exception) -> Diagnostic:
+    from m_cli.lint.diagnostic import Severity
+
+    return Diagnostic(
+        rule_id="M-INTERNAL-RULE-CRASH",
+        severity=Severity.WARNING,
+        message=f"Rule {rule.id} crashed: {type(exc).__name__}: {exc}",
+        path=path,
+        line=1,
+        column=1,
+    )

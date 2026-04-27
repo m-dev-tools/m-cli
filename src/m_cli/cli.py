@@ -12,6 +12,7 @@ from pathlib import Path
 
 from m_cli import __version__
 from m_cli.fmt import fmt_command
+from m_cli.lint import lint_command
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -19,7 +20,7 @@ def main(argv: list[str] | None = None) -> int:
         prog="m",
         description=(
             "M (MUMPS) source-level toolchain. Subcommands: "
-            "fmt (format), lint (planned), test (planned)."
+            "fmt (format), lint (lint), test (planned)."
         ),
     )
     parser.add_argument(
@@ -68,6 +69,55 @@ def main(argv: list[str] | None = None) -> int:
         help="Suppress per-file progress output",
     )
     fmt_parser.set_defaults(func=fmt_command)
+
+    # `m lint`
+    lint_parser = subparsers.add_parser(
+        "lint",
+        help="Lint M source files",
+        description=(
+            "Run linter rules over M (.m) source files. The default rule "
+            "family is 'xindex' — replicating the VistA Toolkit ^XINDEX "
+            "rule set as the baseline. Use --rules=all for everything, or "
+            "--rules=M-XINDX-013,M-XINDX-019 for a specific subset."
+        ),
+    )
+    lint_parser.add_argument(
+        "paths",
+        nargs="+",
+        type=Path,
+        help="One or more .m files (or directories — searched recursively for *.m)",
+    )
+    lint_parser.add_argument(
+        "--rules",
+        default="xindex",
+        help="Rule family or comma-separated rule IDs (default: xindex)",
+    )
+    lint_parser.add_argument(
+        "--format",
+        choices=("text", "json", "tap"),
+        default="text",
+        help="Output format (default: text)",
+    )
+    lint_parser.add_argument(
+        "--error-on",
+        default="warning",
+        help=(
+            "Severity threshold for non-zero exit code: "
+            "fatal | standard | warning | info (default: warning)"
+        ),
+    )
+    lint_parser.add_argument(
+        "--lint-unparseable",
+        action="store_true",
+        help="Lint files that have parse errors (default: skip them)",
+    )
+    lint_parser.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="Suppress summary output",
+    )
+    lint_parser.set_defaults(func=lint_command)
 
     args = parser.parse_args(argv)
     return args.func(args)

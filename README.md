@@ -13,10 +13,74 @@ Built on:
 | Step | Tool | Status |
 |------|------|--------|
 | 1 | `m fmt` (formatter) | **Step 1.0 (identity round-trip) shipped** — 38,954 / 39,330 (99.04%) VistA routines round-trip byte-for-byte; 26 s on a current laptop |
-| 2 | `m lint --logic` | Planned |
+| 2 | `m lint --rules xindex` | **Step 2.0 (framework + 11 XINDEX baseline rules) shipped** — see Linter section below |
 | 3 | `m test` | Planned (parser-aware port of `ytest`) |
 | 4 | Single-test selection | Folded into `m test` |
 | 5 | `m watch` | Planned |
+
+## Linter — `m lint`
+
+The linter's first rule pack replicates a baseline subset of the VistA Toolkit `^XINDEX` rule set (see [m-tooling-tier1.md §5.2](../m-tools/docs/m-tooling-tier1.md#52-xindex-integration)). Rule IDs map 1:1 to XINDEX error codes (`M-XINDX-NN`).
+
+**Rules shipped in Step 2.0** (11 of XINDEX's 66):
+
+| ID | Severity | Title |
+|----|----------|-------|
+| M-XINDX-013 | Warning  | Blank(s) at end of line |
+| M-XINDX-014 | Fatal    | Call to missing label in this routine |
+| M-XINDX-015 | Warning  | Duplicate label |
+| M-XINDX-017 | Warning  | First line label NOT routine name |
+| M-XINDX-018 | Warning  | Line contains a CONTROL (non-graphic) character |
+| M-XINDX-019 | Standard | Line is longer than 245 bytes |
+| M-XINDX-025 | Standard | BREAK command used |
+| M-XINDX-035 | Standard | Routine exceeds SACC maximum size of 20000 bytes |
+| M-XINDX-042 | Warning  | Null line (no commands or comment) |
+| M-XINDX-044 | Standard | 2nd line of routine violates the SAC |
+| M-XINDX-047 | Standard | Lowercase command(s) used in line |
+
+**Rule selection:**
+
+```bash
+m lint <paths>                           # default: --rules=xindex
+m lint --rules=all <paths>               # every registered rule
+m lint --rules=M-XINDX-014,M-XINDX-015 <paths>  # explicit list
+m lint --format=json <paths>             # machine-readable
+m lint --format=tap <paths>              # CI integration
+m lint --error-on=fatal <paths>          # exit-1 only on fatal
+```
+
+The XINDEX-parity rule pack will grow incrementally toward the full 66-rule baseline. After parity, `m lint` extends with parser-aware checks XINDEX cannot do (deeper control-flow analysis, dead-code detection, naked-reference hazards, etc.).
+
+### VistA-corpus baseline (Step 2.0)
+
+`make lint-vista` runs `m lint --rules=xindex` over the full 39,330-routine VistA corpus.
+
+```
+total routines : 39,330  (38,954 linted, 376 skipped on parse error)
+total findings : 40,687
+elapsed        : ~316 s (~123 routines/s)
+
+By rule:
+  M-XINDX-013  35,214  trailing blanks
+  M-XINDX-044   3,556  2nd-line SAC
+  M-XINDX-047   1,330  lowercase command
+  M-XINDX-017     333  first label != routine name
+  M-XINDX-042     138  null line
+  M-XINDX-014      42  call to missing label  (FATAL — real bugs)
+  M-XINDX-025      39  BREAK command
+  M-XINDX-019      31  line >245 bytes
+  M-XINDX-035       4  routine >20000 bytes
+
+By severity:
+  fatal        42
+  standard  4,960
+  warning  35,685
+  info          0
+```
+
+The 42 fatal findings are concrete missing-label bugs (e.g., `A1BFJOBR.m` calls `EXIT` on lines 5 and 6, but no `EXIT` label is defined in the file).
+
+**Performance note:** the §3.5 budget for `m lint` on the corpus is 120 s. Step 2.0 runs in 316 s — **2.6× over budget**, on a single thread, with a naive AST walk per rule. Optimisation work (parallelism, single-pass walk, selective rule activation) is sequenced as a follow-up; correctness comes first.
 
 ## Install (development)
 

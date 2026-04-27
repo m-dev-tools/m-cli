@@ -35,9 +35,13 @@ mypy:
 cov:
 	$(PYTEST) --cov --cov-report=term-missing
 
-# Run the full VistA round-trip validation gate (39,330 routines)
+# Run the full VistA round-trip validation gate for `m fmt` (39,330 routines)
 vista:
 	$(PYTHON) scripts/vista_round_trip.py /home/rafael/vista-meta/vista/vista-m-host/Packages
+
+# Run the full VistA lint baseline for `m lint --rules=xindex`
+lint-vista:
+	$(PYTHON) scripts/vista_lint.py /home/rafael/vista-meta/vista/vista-m-host/Packages --top 10
 
 check: lint mypy cov
 
