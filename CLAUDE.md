@@ -17,7 +17,7 @@
 | 2 | `m lint --rules=xindex` | **Step 2.1 shipped.** 36 of XINDEX's 66 rules; 28 fire on VistA → 62,806 findings across 24,877 routines (63.9%); 42 fatal call-to-missing-label findings are real bugs |
 | 3 | `m test` | **Shipped.** Parser-aware discovery (`*TST.m` files, `t<UpperCase>(pass,fail)` labels via tree-sitter); ydb runner; text / TAP / JSON output; whole-suite, single-suite, single-label runs. Smoke gate: 11 m-tools suites / 224 assertions pass. |
 | 4 | Single-test selection | **Shipped** as part of Step 3 (`m test FILE.m::tLabel`). |
-| 5 | `m watch` | Planned |
+| 5 | `m watch` | **Shipped.** Polling-based file watcher (default 0.5 s); on `*.m` save → re-run affected suites. Affinity: `foo.m` → `FOOTST.m`; suite-file edits re-run only that suite; non-mappable changes re-run all. `--once` runs the initial pass and exits. |
 
 See [`TODO.md`](TODO.md) for the punch list to pick up from.
 
@@ -57,11 +57,15 @@ src/m_cli/
 │   ├── diagnostic.py       # Diagnostic dataclass + Severity enum
 │   ├── output.py           # text / json / tap formatters
 │   └── _keywords.py        # loads command/ISV/function sets from m-standard
-└── test/
-    ├── cli.py              # `m test` argparse (--list, --filter, --format)
-    ├── discovery.py        # tree-sitter-based suite + label discovery
-    ├── runner.py           # ydb subprocess + TESTRUN output parser
-    └── output.py           # text / tap / json formatters
+├── test/
+│   ├── cli.py              # `m test` argparse (--list, --filter, --format)
+│   ├── discovery.py        # tree-sitter-based suite + label discovery
+│   ├── runner.py           # ydb subprocess + TESTRUN output parser
+│   └── output.py           # text / tap / json formatters
+└── watch/
+    ├── cli.py              # `m watch` argparse (--interval, --once, --filter)
+    ├── affinity.py         # changed-file → suite resolution (FOO.m → FOOTST.m)
+    └── poller.py           # mtime-based change detection (no external deps)
 
 tests/                      # one test file per source module
 scripts/
@@ -88,6 +92,13 @@ scripts/
 - **Output dialects.** `text` (default, human), `tap` (TAP v13 — one point per parsed assertion), `json` (CI-friendly). All three are smoke-tested against m-tools suites.
 - **Env composition.** `m_cli.test.runner._build_env` honours an existing `ydb_routines` if exported; otherwise it derives one from the suite's parent dir + a sibling `routines/` if present. `$YDB` overrides binary location, falling back to `$ydb_dist/ydb`, then plain `ydb` on PATH.
 - **TESTRUN protocol.** Output parser keys off `  PASS  desc` / `  FAIL  desc` / `         expected: …` / `         actual:   …` and the `Results: N tests  P passed  F failed` summary, plus the `All tests passed.` / `<n> test(s) FAILED.` banner. Source of truth: `m-tools/routines/tests/TESTRUN.m`.
+
+## Watch conventions (project-specific)
+
+- **Polling, not inotify.** `m watch` uses periodic `os.stat` (default 0.5 s) — keeps deps minimal at the cost of latency. Pure-Python; no `watchdog` / `entr` / `inotify` dependency.
+- **Affinity rule.** `<X>.m` source change → suite `<X.upper()>TST.m` if it exists; otherwise every suite re-runs (defensive default). Suite-file edits map to themselves only.
+- **Discovery dedup.** When the user passes overlapping paths (e.g. `routines/` and `routines/tests/`), each suite is discovered once. The dedup is via `Path.resolve()` so symlinks count as the same file.
+- **`--once`.** Runs the initial pass and exits — used by tests and as a manual smoke check before starting a long-running watch session.
 
 ## Linter conventions (project-specific)
 

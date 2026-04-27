@@ -112,14 +112,21 @@ def discover(paths: Iterable[Path]) -> list[TestSuite]:
     - For explicit files: trust the user — parse even if the name
       doesn't match (useful for ad-hoc suites).
     """
+    seen_files: set[Path] = set()
     suite_files: list[Path] = []
     for p in paths:
         if p.is_dir():
             for candidate in sorted(p.rglob("*.m")):
                 if is_suite_file(candidate):
-                    suite_files.append(candidate)
+                    resolved = candidate.resolve()
+                    if resolved not in seen_files:
+                        seen_files.add(resolved)
+                        suite_files.append(candidate)
         elif p.is_file():
-            suite_files.append(p)
+            resolved = p.resolve()
+            if resolved not in seen_files:
+                seen_files.add(resolved)
+                suite_files.append(p)
     suites: list[TestSuite] = []
     for sf in suite_files:
         try:

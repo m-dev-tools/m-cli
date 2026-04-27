@@ -12,11 +12,20 @@ Deferred from Step 3:
 - [ ] **Per-label results in whole-suite mode.** Today `m test` parses TESTRUN's `PASS`/`FAIL` lines but cannot map them back to labels because TESTRUN doesn't emit a per-label header. Either (a) modify `TESTRUN.m` to emit headers, or (b) make whole-suite runs internally invoke each label separately when fine-grained reporting is requested. Option (a) is cleaner but lives in m-tools.
 - [ ] **Set up env in `m test` itself.** Right now you must `source scripts/ydb-env.sh` first. Worth a `--ydb-dist` / `--routines-path` flag pair so `m test` can stand alone. Check if `m_cli.test.runner._build_env` is good enough to drop the bash sourcing entirely.
 
-## Next session — Tier 1 Step 5: `m watch`
+## Tier 1 Step 5 (`m watch`) — DONE
 
-- [ ] Inotify-based file watcher; on `*.m` save → re-run affected suites
-- [ ] Debounce + suite-affinity (only re-run suites whose source changed)
-- [ ] Reference: legacy `make watch` uses `entr`; consider whether to wrap or replace
+Shipped: `src/m_cli/watch/` with mtime-polling change detection, source→suite affinity, and CLI integration. Default poll interval is 0.5 s. Source-file changes (`foo.m`) map to `FOOTST.m`; suite-file changes re-run only themselves; non-mappable changes re-run every suite. Discovery dedups overlapping paths. Live-watch smoke against m-tools confirmed.
+
+Deferred from Step 5:
+- [ ] **Inotify upgrade.** Polling burns CPU on idle for large trees. If/when latency or efficiency matters, swap `Poller` for a `watchdog`-based implementation behind the same interface — affinity / CLI don't need to change.
+- [ ] **Debounce window.** Fast saves (editor backups, formatter passes) can fire several events in a row; today each becomes a separate run. A 200–300 ms debounce that batches changes would cut redundant runs without affecting interactive feel.
+- [ ] **Cross-routine call graph for richer affinity.** When `foo.m` changes, also re-run any suite whose source calls `^foo`. Needs a simple call-graph index built once at startup; out of scope for Tier 1.
+
+## After Tier 1 — performance and tooling polish
+
+## Next session — pick from below
+
+Tier 1 is complete. The remaining work is split across linter coverage, performance, and integrations.
 
 ## XINDEX rule expansion (Step 2.x)
 

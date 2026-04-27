@@ -14,6 +14,7 @@ from m_cli import __version__
 from m_cli.fmt import fmt_command
 from m_cli.lint import lint_command
 from m_cli.test import test_command
+from m_cli.watch import watch_command
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -21,7 +22,8 @@ def main(argv: list[str] | None = None) -> int:
         prog="m",
         description=(
             "M (MUMPS) source-level toolchain. Subcommands: "
-            "fmt (format), lint (lint), test (run test suites)."
+            "fmt (format), lint (lint), test (run test suites), "
+            "watch (re-run suites on save)."
         ),
     )
     parser.add_argument(
@@ -164,6 +166,47 @@ def main(argv: list[str] | None = None) -> int:
         help="Suppress summary output",
     )
     test_parser.set_defaults(func=test_command)
+
+    # `m watch`
+    watch_parser = subparsers.add_parser(
+        "watch",
+        help="Re-run M test suites on file change",
+        description=(
+            "Watch `.m` files and re-run affected test suites on save. "
+            "Source `foo.m` maps to suite `FOOTST.m`; suite-file edits "
+            "re-run only that suite. With no path, looks for "
+            "`./routines/tests/`."
+        ),
+    )
+    watch_parser.add_argument(
+        "paths",
+        nargs="*",
+        type=Path,
+        help="Files or directories to watch (default: ./routines/tests/)",
+    )
+    watch_parser.add_argument(
+        "--interval",
+        type=float,
+        default=0.5,
+        help="Polling interval in seconds (default: 0.5)",
+    )
+    watch_parser.add_argument(
+        "--once",
+        action="store_true",
+        help="Run the initial pass and exit (no watch loop)",
+    )
+    watch_parser.add_argument(
+        "--filter",
+        default=None,
+        help="Only watch / run suites whose name contains this substring",
+    )
+    watch_parser.add_argument(
+        "--format",
+        choices=("text", "tap", "json"),
+        default="text",
+        help="Output format (default: text)",
+    )
+    watch_parser.set_defaults(func=watch_command)
 
     args = parser.parse_args(argv)
     return args.func(args)

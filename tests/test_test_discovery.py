@@ -209,3 +209,13 @@ def test_TestCase_dataclass_constructable() -> None:
     c = TestCase(suite="X", label="tFoo", description=None, path=Path("X.m"), line=1)
     assert c.suite == "X"
     assert c.label == "tFoo"
+
+
+def test_discover_dedups_overlapping_paths(tmp_path: Path) -> None:
+    # When the user passes both a parent and its child, each suite must
+    # appear exactly once.
+    nested = tmp_path / "tests"
+    nested.mkdir()
+    (nested / "ATST.m").write_bytes(HELLOTST_SRC.replace(b"HELLOTST", b"ATST"))
+    suites = discover([tmp_path, nested])
+    assert [s.name for s in suites] == ["ATST"]
