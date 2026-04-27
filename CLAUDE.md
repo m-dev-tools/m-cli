@@ -108,6 +108,15 @@ scripts/
 - **Per-rule isolation:** `runner.lint_source` wraps each rule in try/except so one buggy rule can't crash a lint pass — it emits an `M-INTERNAL-RULE-CRASH` diagnostic instead.
 - **VistA is the gate:** every rule should be sanity-checked with `make lint-vista` to catch wild-corpus surprises before commit.
 
+## Pre-commit integration
+
+Downstream M projects opt into `m fmt --check` and `m lint --error-on=fatal` via the [pre-commit framework](https://pre-commit.com):
+
+- Hook declarations live in `.pre-commit-hooks.yaml` (top-level). Three hooks: `m-fmt-check`, `m-fmt` (write), `m-lint`.
+- Schema integrity is gated by `tests/test_pre_commit_hooks.py` — every hook's `entry` must invoke a real `m` subcommand, and the `files` regex must match `.m` paths.
+- See `docs/pre-commit.md` for downstream usage examples (both git-repo and `language: system` styles).
+- **Activation prerequisite:** the git-repo style needs `m-cli` published (and `tree-sitter-m` on PyPI or a git URL). Until then, downstream projects use the `language: system` style with a locally-installed `m`.
+
 ## Performance status — under budget
 
 The lint perf budget (120 s for the full VistA corpus per §3.5) is met with comfortable headroom:

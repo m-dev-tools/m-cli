@@ -1,0 +1,46 @@
+# Hook declarations for the pre-commit framework (https://pre-commit.com).
+#
+# Downstream M projects opt in by adding to their .pre-commit-config.yaml:
+#
+#   repos:
+#     - repo: https://github.com/<owner>/m-cli
+#       rev: v0.1.0
+#       hooks:
+#         - id: m-fmt-check
+#         - id: m-lint
+#
+# All hooks default to running on every staged ``*.m`` file.
+
+- id: m-fmt-check
+  name: m fmt --check (M source formatter)
+  description: >-
+    Verify all staged M (MUMPS) files round-trip cleanly through `m fmt`.
+    Fails the commit if any file is not byte-for-byte identical to its
+    formatted output.
+  entry: m fmt --check
+  language: python
+  files: \.m$
+  types: [file]
+
+- id: m-fmt
+  name: m fmt (write) (M source formatter, in-place)
+  description: >-
+    Rewrite staged M (MUMPS) files in place to their canonical form.
+    Use this hook instead of m-fmt-check if you want pre-commit to
+    auto-fix style violations rather than block the commit.
+  entry: m fmt
+  language: python
+  files: \.m$
+  types: [file]
+
+- id: m-lint
+  name: m lint --error-on=fatal (M source linter)
+  description: >-
+    Run the XINDEX rule pack against staged M (MUMPS) files. Fails the
+    commit on `fatal` findings only — these are real bugs (e.g.
+    call-to-missing-label), not stylistic noise. Tighten with
+    `--error-on=warning` in your downstream config to be stricter.
+  entry: m lint --error-on=fatal
+  language: python
+  files: \.m$
+  types: [file]
