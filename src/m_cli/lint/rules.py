@@ -43,6 +43,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from m_cli.lint._index import NodeIndex
 from m_cli.lint._keywords import standard_commands, standard_functions, standard_isvs
 from m_cli.lint.diagnostic import Diagnostic, Severity
 
@@ -53,7 +54,7 @@ if TYPE_CHECKING:
 # Rule metadata + registry
 # ---------------------------------------------------------------------------
 
-RuleFn = Callable[[bytes, "Tree", Path], Iterator[Diagnostic]]
+RuleFn = Callable[[bytes, "Tree", Path, NodeIndex], Iterator[Diagnostic]]
 
 
 @dataclass(frozen=True)
@@ -106,7 +107,9 @@ def _walk(node) -> Iterator:
 # ---------------------------------------------------------------------------
 
 
-def _check_trailing_blanks(src: bytes, _tree, path: Path) -> Iterator[Diagnostic]:
+def _check_trailing_blanks(
+    src: bytes, _tree, path: Path, _index: NodeIndex
+) -> Iterator[Diagnostic]:
     """M-XINDX-013 — Blank(s) at end of line."""
     for i, raw in enumerate(src.splitlines(), start=1):
         if raw.endswith((b" ", b"\t")):
@@ -134,7 +137,7 @@ register(
 )
 
 
-def _check_control_chars(src: bytes, _tree, path: Path) -> Iterator[Diagnostic]:
+def _check_control_chars(src: bytes, _tree, path: Path, _index: NodeIndex) -> Iterator[Diagnostic]:
     """M-XINDX-018 — Line contains a CONTROL (non-graphic) character."""
     for i, raw in enumerate(src.splitlines(), start=1):
         for col, byte in enumerate(raw, start=1):
@@ -164,7 +167,7 @@ register(
 )
 
 
-def _check_line_length(src: bytes, _tree, path: Path) -> Iterator[Diagnostic]:
+def _check_line_length(src: bytes, _tree, path: Path, _index: NodeIndex) -> Iterator[Diagnostic]:
     """M-XINDX-019 — Line is longer than 245 bytes (SACC limit)."""
     for i, raw in enumerate(src.splitlines(), start=1):
         if len(raw) > 245:
@@ -191,7 +194,7 @@ register(
 )
 
 
-def _check_null_line(src: bytes, tree, path: Path) -> Iterator[Diagnostic]:
+def _check_null_line(src: bytes, _tree, path: Path, _index: NodeIndex) -> Iterator[Diagnostic]:
     """M-XINDX-042 — Null line (no commands or comment).
 
     A line with only whitespace and a newline contributes nothing.
@@ -244,46 +247,43 @@ def _line_text(src: bytes, line_num: int) -> str:
     return ""
 
 
-def _collect_labels(tree, src: bytes) -> dict[str, list[tuple[int, int]]]:
+def _collect_labels(index: NodeIndex, src: bytes) -> dict[str, list[tuple[int, int]]]:
     """Map label name → list of (line, col) where it is defined."""
     labels: dict[str, list[tuple[int, int]]] = {}
-    for node in _walk(tree.root_node):
-        if node.type == "label":
-            name = _node_text(node, src)
-            line, col = _node_line_col(node, src)
-            labels.setdefault(name, []).append((line, col))
+    for node in index.of("label"):
+        name = _node_text(node, src)
+        line, col = _node_line_col(node, src)
+        labels.setdefault(name, []).append((line, col))
     return labels
 
 
-def _check_first_label(src: bytes, tree, path: Path) -> Iterator[Diagnostic]:
+def _check_first_label(src: bytes, _tree, path: Path, index: NodeIndex) -> Iterator[Diagnostic]:
     """M-XINDX-017 — First line label NOT routine name.
 
     The routine's first label must equal the file basename (without `.m`).
     Excludes routines starting with `%` (XINDEX exclusion).
     """
-    for node in _walk(tree.root_node):
-        if node.type == "label":
-            first_label = _node_text(node, src)
-            expected = path.stem
-            if expected.startswith("%"):
-                return
-            if first_label != expected:
-                line, col = _node_line_col(node, src)
-                yield Diagnostic(
-                    rule_id="M-XINDX-017",
-                    severity=Severity.WARNING,
-                    message=(
-                        f"First line label ('{first_label}') does not match "
-                        f"routine name ('{expected}')"
-                    ),
-                    path=path,
-                    line=line,
-                    column=col,
-                    column_end=col + len(first_label),
-                    line_text=_line_text(src, line),
-                    extra={"first_label": first_label, "expected": expected},
-                )
-            return  # only check the first label
+    for node in index.of("label"):
+        first_label = _node_text(node, src)
+        expected = path.stem
+        if expected.startswith("%"):
+            return
+        if first_label != expected:
+            line, col = _node_line_col(node, src)
+            yield Diagnostic(
+                rule_id="M-XINDX-017",
+                severity=Severity.WARNING,
+                message=(
+                    f"First line label ('{first_label}') does not match routine name ('{expected}')"
+                ),
+                path=path,
+                line=line,
+                column=col,
+                column_end=col + len(first_label),
+                line_text=_line_text(src, line),
+                extra={"first_label": first_label, "expected": expected},
+            )
+        return  # only check the first label
 
 
 register(
@@ -297,9 +297,11 @@ register(
 )
 
 
-def _check_duplicate_labels(src: bytes, tree, path: Path) -> Iterator[Diagnostic]:
+def _check_duplicate_labels(
+    src: bytes, _tree, path: Path, index: NodeIndex
+) -> Iterator[Diagnostic]:
     """M-XINDX-015 — Duplicate label."""
-    labels = _collect_labels(tree, src)
+    labels = _collect_labels(index, src)
     for name, occurrences in labels.items():
         if len(occurrences) > 1:
             for line, col in occurrences[1:]:  # skip first definition
@@ -329,7 +331,9 @@ register(
 )
 
 
-def _check_missing_label_call(src: bytes, tree, path: Path) -> Iterator[Diagnostic]:
+def _check_missing_label_call(
+    src: bytes, _tree, path: Path, index: NodeIndex
+) -> Iterator[Diagnostic]:
     """M-XINDX-014 — Call to missing label '|' in this routine.
 
     Looks at:
@@ -345,15 +349,14 @@ def _check_missing_label_call(src: bytes, tree, path: Path) -> Iterator[Diagnost
     check resolves them via the routine database, which we don't have
     at lint time. We only flag in-routine calls.
     """
-    labels = _collect_labels(tree, src)
+    labels = _collect_labels(index, src)
     label_set = set(labels)
     this_routine = path.stem
 
-    for node in _walk(tree.root_node):
-        if node.type == "command":
-            yield from _check_command_label_calls(node, src, label_set, this_routine, path)
-        elif node.type == "extrinsic_function":
-            yield from _check_extrinsic_label_call(node, src, label_set, this_routine, path)
+    for node in index.of("command"):
+        yield from _check_command_label_calls(node, src, label_set, this_routine, path)
+    for node in index.of("extrinsic_function"):
+        yield from _check_extrinsic_label_call(node, src, label_set, this_routine, path)
 
 
 def _check_command_label_calls(
@@ -482,23 +485,22 @@ register(
 )
 
 
-def _check_break_command(src: bytes, tree, path: Path) -> Iterator[Diagnostic]:
+def _check_break_command(src: bytes, _tree, path: Path, index: NodeIndex) -> Iterator[Diagnostic]:
     """M-XINDX-025 — Break command used (BREAK is dev-only)."""
-    for node in _walk(tree.root_node):
-        if node.type == "command_keyword":
-            kw = _node_text(node, src).upper()
-            if kw in ("B", "BREAK"):
-                line, col = _node_line_col(node, src)
-                yield Diagnostic(
-                    rule_id="M-XINDX-025",
-                    severity=Severity.STANDARD,
-                    message="BREAK command used (debug-only; should not appear in production code)",
-                    path=path,
-                    line=line,
-                    column=col,
-                    column_end=col + len(kw),
-                    line_text=_line_text(src, line),
-                )
+    for node in index.of("command_keyword"):
+        kw = _node_text(node, src).upper()
+        if kw in ("B", "BREAK"):
+            line, col = _node_line_col(node, src)
+            yield Diagnostic(
+                rule_id="M-XINDX-025",
+                severity=Severity.STANDARD,
+                message="BREAK command used (debug-only; should not appear in production code)",
+                path=path,
+                line=line,
+                column=col,
+                column_end=col + len(kw),
+                line_text=_line_text(src, line),
+            )
 
 
 register(
@@ -512,7 +514,9 @@ register(
 )
 
 
-def _check_lowercase_command(src: bytes, tree, path: Path) -> Iterator[Diagnostic]:
+def _check_lowercase_command(
+    src: bytes, _tree, path: Path, index: NodeIndex
+) -> Iterator[Diagnostic]:
     """M-XINDX-047 — Lowercase command(s) used in line.
 
     XINDEX flags commands written in lowercase. Modern style (and the
@@ -520,26 +524,25 @@ def _check_lowercase_command(src: bytes, tree, path: Path) -> Iterator[Diagnosti
     lowercase, so this rule is provided for XINDEX-parity but not
     enabled in modern profiles. It is still in the `xindex` tag.
     """
-    for node in _walk(tree.root_node):
-        if node.type == "command_keyword":
-            kw = _node_text(node, src)
-            # If keyword has any lowercase letters, flag it
-            if any(c.islower() for c in kw):
-                line, col = _node_line_col(node, src)
-                yield Diagnostic(
-                    rule_id="M-XINDX-047",
-                    severity=Severity.STANDARD,
-                    message=(
-                        f"Lowercase command used: '{kw}' "
-                        f"(XINDEX style; modern profiles often allow this)"
-                    ),
-                    path=path,
-                    line=line,
-                    column=col,
-                    column_end=col + len(kw),
-                    line_text=_line_text(src, line),
-                    extra={"command": kw},
-                )
+    for node in index.of("command_keyword"):
+        kw = _node_text(node, src)
+        # If keyword has any lowercase letters, flag it
+        if any(c.islower() for c in kw):
+            line, col = _node_line_col(node, src)
+            yield Diagnostic(
+                rule_id="M-XINDX-047",
+                severity=Severity.STANDARD,
+                message=(
+                    f"Lowercase command used: '{kw}' "
+                    f"(XINDEX style; modern profiles often allow this)"
+                ),
+                path=path,
+                line=line,
+                column=col,
+                column_end=col + len(kw),
+                line_text=_line_text(src, line),
+                extra={"command": kw},
+            )
 
 
 register(
@@ -553,7 +556,7 @@ register(
 )
 
 
-def _check_routine_size(src: bytes, _tree, path: Path) -> Iterator[Diagnostic]:
+def _check_routine_size(src: bytes, _tree, path: Path, _index: NodeIndex) -> Iterator[Diagnostic]:
     """M-XINDX-035 — Routine exceeds SACC maximum size of 20000 bytes."""
     if len(src) > 20000:
         yield Diagnostic(
@@ -578,7 +581,9 @@ register(
 )
 
 
-def _check_second_line_sac(src: bytes, _tree, path: Path) -> Iterator[Diagnostic]:
+def _check_second_line_sac(
+    src: bytes, _tree, path: Path, _index: NodeIndex
+) -> Iterator[Diagnostic]:
     """M-XINDX-044 — 2nd line of routine violates the SAC.
 
     SAC requires the second line in the form ` ;;version;package;...;date;build`.
@@ -619,11 +624,9 @@ register(
 # ---------------------------------------------------------------------------
 
 
-def _commands(tree, src: bytes) -> Iterator[tuple]:
+def _commands(index: NodeIndex, src: bytes) -> Iterator[tuple]:
     """Yield (command_node, keyword_text_upper, kw_node) for every command."""
-    for node in _walk(tree.root_node):
-        if node.type != "command":
-            continue
+    for node in index.of("command"):
         kw_node = next((c for c in node.children if c.type == "command_keyword"), None)
         if kw_node is None:
             continue
@@ -670,8 +673,8 @@ def _payload(arg_node):
 
 
 # --- M-XINDX-020: VIEW command used --------------------------------------
-def _check_view_command(src, tree, path):
-    for cmd, kw, kw_node in _commands(tree, src):
+def _check_view_command(src, _tree, path, index):
+    for cmd, kw, kw_node in _commands(index, src):
         if kw in ("V", "VIEW"):
             line, col = _node_line_col(kw_node, src)
             yield Diagnostic(
@@ -698,8 +701,8 @@ register(
 
 
 # --- M-XINDX-022: Exclusive Kill (`KILL (var,...)`) ----------------------
-def _check_exclusive_kill(src, tree, path):
-    for cmd, kw, kw_node in _commands(tree, src):
+def _check_exclusive_kill(src, _tree, path, index):
+    for cmd, kw, kw_node in _commands(index, src):
         if kw not in ("K", "KILL"):
             continue
         for arg in _arguments(cmd):
@@ -731,8 +734,8 @@ register(
 
 
 # --- M-XINDX-023: Unargumented Kill --------------------------------------
-def _check_unargumented_kill(src, tree, path):
-    for cmd, kw, kw_node in _commands(tree, src):
+def _check_unargumented_kill(src, _tree, path, index):
+    for cmd, kw, kw_node in _commands(index, src):
         if kw not in ("K", "KILL"):
             continue
         if _arg_list(cmd) is None:
@@ -761,8 +764,8 @@ register(
 
 
 # --- M-XINDX-024: Kill of unsubscripted global ---------------------------
-def _check_kill_unsubscripted_global(src, tree, path):
-    for cmd, kw, kw_node in _commands(tree, src):
+def _check_kill_unsubscripted_global(src, _tree, path, index):
+    for cmd, kw, kw_node in _commands(index, src):
         if kw not in ("K", "KILL"):
             continue
         for arg in _arguments(cmd):
@@ -799,8 +802,8 @@ register(
 
 
 # --- M-XINDX-026: Exclusive or Unargumented NEW --------------------------
-def _check_new_exclusive_or_unargumented(src, tree, path):
-    for cmd, kw, kw_node in _commands(tree, src):
+def _check_new_exclusive_or_unargumented(src, _tree, path, index):
+    for cmd, kw, kw_node in _commands(index, src):
         if kw not in ("N", "NEW"):
             continue
         al = _arg_list(cmd)
@@ -845,24 +848,23 @@ register(
 
 
 # --- M-XINDX-027: $VIEW function used ------------------------------------
-def _check_dollar_view(src, tree, path):
-    for node in _walk(tree.root_node):
-        if node.type == "intrinsic_function":
-            ids = [c for c in node.children if c.type == "identifier"]
-            if ids:
-                fname = "$" + _node_text(ids[0], src).upper()
-                if fname in ("$V", "$VIEW"):
-                    line, col = _node_line_col(node, src)
-                    yield Diagnostic(
-                        rule_id="M-XINDX-027",
-                        severity=Severity.STANDARD,
-                        message="$VIEW function used (non-portable; vendor-specific)",
-                        path=path,
-                        line=line,
-                        column=col,
-                        column_end=col + len(fname),
-                        line_text=_line_text(src, line),
-                    )
+def _check_dollar_view(src, _tree, path, index):
+    for node in index.of("intrinsic_function"):
+        ids = [c for c in node.children if c.type == "identifier"]
+        if ids:
+            fname = "$" + _node_text(ids[0], src).upper()
+            if fname in ("$V", "$VIEW"):
+                line, col = _node_line_col(node, src)
+                yield Diagnostic(
+                    rule_id="M-XINDX-027",
+                    severity=Severity.STANDARD,
+                    message="$VIEW function used (non-portable; vendor-specific)",
+                    path=path,
+                    line=line,
+                    column=col,
+                    column_end=col + len(fname),
+                    line_text=_line_text(src, line),
+                )
 
 
 register(
@@ -877,9 +879,9 @@ register(
 
 
 # --- M-XINDX-030: LABEL+OFFSET syntax ------------------------------------
-def _check_label_offset(src, tree, path):
+def _check_label_offset(src, _tree, path, index):
     """`do TAG+1` or `goto TAG+5` — depending on offset is fragile."""
-    for cmd, kw, kw_node in _commands(tree, src):
+    for cmd, kw, kw_node in _commands(index, src):
         if kw not in ("D", "DO", "G", "GOTO", "J", "JOB"):
             continue
         for arg in _arguments(cmd):
@@ -923,8 +925,8 @@ register(
 
 
 # --- M-XINDX-032: HALT command should be invoked through G ^XUSCLEAN -----
-def _check_halt_command(src, tree, path):
-    for cmd, kw, kw_node in _commands(tree, src):
+def _check_halt_command(src, _tree, path, index):
+    for cmd, kw, kw_node in _commands(index, src):
         if kw not in ("H", "HALT"):
             continue
         # Distinguish HALT (no args) from HANG (the same H abbreviation
@@ -955,8 +957,8 @@ register(
 
 
 # --- M-XINDX-033: READ command without timeout ---------------------------
-def _check_read_no_timeout(src, tree, path):
-    for cmd, kw, kw_node in _commands(tree, src):
+def _check_read_no_timeout(src, _tree, path, index):
+    for cmd, kw, kw_node in _commands(index, src):
         if kw not in ("R", "READ"):
             continue
         for arg in _arguments(cmd):
@@ -987,8 +989,8 @@ register(
 
 
 # --- M-XINDX-034: OPEN command should be invoked through ^%ZIS ----------
-def _check_open_command(src, tree, path):
-    for cmd, kw, kw_node in _commands(tree, src):
+def _check_open_command(src, _tree, path, index):
+    for cmd, kw, kw_node in _commands(index, src):
         if kw not in ("O", "OPEN"):
             continue
         line, col = _node_line_col(kw_node, src)
@@ -1016,8 +1018,8 @@ register(
 
 
 # --- M-XINDX-029: CLOSE should be invoked through D ^%ZISC ---------------
-def _check_close_command(src, tree, path):
-    for cmd, kw, kw_node in _commands(tree, src):
+def _check_close_command(src, _tree, path, index):
+    for cmd, kw, kw_node in _commands(index, src):
         if kw not in ("C", "CLOSE"):
             continue
         line, col = _node_line_col(kw_node, src)
@@ -1045,8 +1047,8 @@ register(
 
 
 # --- M-XINDX-036: Should use TASKMAN instead of JOB ----------------------
-def _check_job_command(src, tree, path):
-    for cmd, kw, kw_node in _commands(tree, src):
+def _check_job_command(src, _tree, path, index):
+    for cmd, kw, kw_node in _commands(index, src):
         if kw not in ("J", "JOB"):
             continue
         line, col = _node_line_col(kw_node, src)
@@ -1074,8 +1076,8 @@ register(
 
 
 # --- M-XINDX-041: Star or pound READ used --------------------------------
-def _check_star_pound_read(src, tree, path):
-    for cmd, kw, kw_node in _commands(tree, src):
+def _check_star_pound_read(src, _tree, path, index):
+    for cmd, kw, kw_node in _commands(index, src):
         if kw not in ("R", "READ"):
             continue
         for arg in _arguments(cmd):
@@ -1112,9 +1114,9 @@ register(
 
 
 # --- M-XINDX-045: Set to a '%' global ------------------------------------
-def _check_set_percent_global(src, tree, path):
+def _check_set_percent_global(src, _tree, path, index):
     """`SET ^%FOO=...` — % globals are reserved for system use."""
-    for cmd, kw, kw_node in _commands(tree, src):
+    for cmd, kw, kw_node in _commands(index, src):
         if kw not in ("S", "SET"):
             continue
         for arg in _arguments(cmd):
@@ -1161,23 +1163,22 @@ register(
 
 
 # --- M-XINDX-050: Extended reference -------------------------------------
-def _check_extended_reference(src, tree, path):
+def _check_extended_reference(src, _tree, path, index):
     """`^|"UCI"|GLOBAL(args)` — UCI / namespace extended reference."""
-    for node in _walk(tree.root_node):
-        if node.type == "global_variable":
-            text = _node_text(node, src)
-            if "|" in text or "[" in text:
-                line, col = _node_line_col(node, src)
-                yield Diagnostic(
-                    rule_id="M-XINDX-050",
-                    severity=Severity.STANDARD,
-                    message="Extended reference — UCI/namespace-bound calls reduce portability",
-                    path=path,
-                    line=line,
-                    column=col,
-                    column_end=col + len(text),
-                    line_text=_line_text(src, line),
-                )
+    for node in index.of("global_variable"):
+        text = _node_text(node, src)
+        if "|" in text or "[" in text:
+            line, col = _node_line_col(node, src)
+            yield Diagnostic(
+                rule_id="M-XINDX-050",
+                severity=Severity.STANDARD,
+                message="Extended reference — UCI/namespace-bound calls reduce portability",
+                path=path,
+                line=line,
+                column=col,
+                column_end=col + len(text),
+                line_text=_line_text(src, line),
+            )
 
 
 register(
@@ -1192,7 +1193,7 @@ register(
 
 
 # --- M-XINDX-056: Patch number missing from second line ------------------
-def _check_patch_number_missing(src, _tree, path):
+def _check_patch_number_missing(src, _tree, path, _index):
     """SAC second line: ` ;;version;package;**patch1,patch2**;date;build`."""
     lines = src.splitlines()
     if len(lines) < 2:
@@ -1223,7 +1224,7 @@ register(
 
 
 # --- M-XINDX-058: Routine code exceeds SACC max of 15000 -----------------
-def _check_routine_code_size(src, tree, path):
+def _check_routine_code_size(src, _tree, path, _index):
     """Code lines (non-comment, non-blank) summed must not exceed 15000."""
     code_bytes = 0
     for line in src.splitlines():
@@ -1258,8 +1259,8 @@ register(
 
 
 # --- M-XINDX-060: LOCK command missing timeout ---------------------------
-def _check_lock_no_timeout(src, tree, path):
-    for cmd, kw, kw_node in _commands(tree, src):
+def _check_lock_no_timeout(src, _tree, path, index):
+    for cmd, kw, kw_node in _commands(index, src):
         if kw not in ("L", "LOCK"):
             continue
         for arg in _arguments(cmd):
@@ -1290,9 +1291,9 @@ register(
 
 
 # --- M-XINDX-061: Non-incremental LOCK -----------------------------------
-def _check_non_incremental_lock(src, tree, path):
+def _check_non_incremental_lock(src, _tree, path, index):
     """`LOCK ^X` (without `+`) is global and dangerous; should be `LOCK +^X:5`."""
-    for cmd, kw, kw_node in _commands(tree, src):
+    for cmd, kw, kw_node in _commands(index, src):
         if kw not in ("L", "LOCK"):
             continue
         for arg in _arguments(cmd):
@@ -1330,7 +1331,7 @@ register(
 
 
 # --- M-XINDX-062: First line of routine violates SAC ---------------------
-def _check_first_line_sac(src, _tree, path):
+def _check_first_line_sac(src, _tree, path, _index):
     """First line: ` <ROUTINE> ;<initials>/<routine> - <description> ;<date>`."""
     lines = src.splitlines()
     if not lines:
@@ -1362,9 +1363,9 @@ register(
 
 
 # --- M-XINDX-002: Non-standard Z command ---------------------------------
-def _check_non_standard_z_command(src, tree, path):
+def _check_non_standard_z_command(src, _tree, path, index):
     cmds = standard_commands()
-    for cmd, kw, kw_node in _commands(tree, src):
+    for cmd, kw, kw_node in _commands(index, src):
         if not kw.startswith("Z"):
             continue
         if kw in cmds:
@@ -1394,11 +1395,9 @@ register(
 
 
 # --- M-XINDX-028: Non-standard $Z special variable -----------------------
-def _check_non_standard_dollar_z_isv(src, tree, path):
+def _check_non_standard_dollar_z_isv(src, _tree, path, index):
     isvs = {sv.upper() for sv in standard_isvs()}
-    for node in _walk(tree.root_node):
-        if node.type != "intrinsic_special_variable":
-            continue
+    for node in index.of("intrinsic_special_variable"):
         text = _node_text(node, src).upper()
         # Strip args if any: `$ZX(...)` is technically not a variable
         if not text.startswith("$Z"):
@@ -1435,11 +1434,9 @@ register(
 
 
 # --- M-XINDX-031: Non-standard $Z function -------------------------------
-def _check_non_standard_dollar_z_function(src, tree, path):
+def _check_non_standard_dollar_z_function(src, _tree, path, index):
     funcs = {fn.upper() for fn in standard_functions()}
-    for node in _walk(tree.root_node):
-        if node.type != "intrinsic_function":
-            continue
+    for node in index.of("intrinsic_function"):
         # function name is the leading $XXX before the (
         text = _node_text(node, src).upper()
         m = re.match(r"^\$Z[A-Z]*", text)
@@ -1473,23 +1470,22 @@ register(
 
 
 # --- M-XINDX-054: Access to SSVN's or $SYSTEM restricted to Kernel -------
-def _check_ssvn_system_access(src, tree, path):
+def _check_ssvn_system_access(src, _tree, path, index):
     """Use of $SYSTEM or ^$ structured system variables."""
-    for node in _walk(tree.root_node):
-        if node.type == "intrinsic_special_variable":
-            text = _node_text(node, src).upper()
-            if text in ("$SY", "$SYSTEM"):
-                line, col = _node_line_col(node, src)
-                yield Diagnostic(
-                    rule_id="M-XINDX-054",
-                    severity=Severity.STANDARD,
-                    message="$SYSTEM access — restricted to Kernel package",
-                    path=path,
-                    line=line,
-                    column=col,
-                    column_end=col + len(text),
-                    line_text=_line_text(src, line),
-                )
+    for node in index.of("intrinsic_special_variable"):
+        text = _node_text(node, src).upper()
+        if text in ("$SY", "$SYSTEM"):
+            line, col = _node_line_col(node, src)
+            yield Diagnostic(
+                rule_id="M-XINDX-054",
+                severity=Severity.STANDARD,
+                message="$SYSTEM access — restricted to Kernel package",
+                path=path,
+                line=line,
+                column=col,
+                column_end=col + len(text),
+                line_text=_line_text(src, line),
+            )
 
 
 register(
@@ -1504,7 +1500,7 @@ register(
 
 
 # --- M-XINDX-005, M-XINDX-006, M-XINDX-021, M-XINDX-051: parse errors ----
-def _check_parse_errors(src, tree, path):
+def _check_parse_errors(src, tree, path, index):
     """Surface tree-sitter ERROR / MISSING nodes as XINDEX-flavoured fatals.
 
     Tree-sitter ERROR nodes correspond to a number of XINDEX rules
@@ -1518,7 +1514,14 @@ def _check_parse_errors(src, tree, path):
     additional analysis, so we emit M-XINDX-021 (general syntax error)
     for every ERROR / missing node — XINDEX behaves similarly when its
     parser cannot localise the cause.
+
+    Fast-path: when the parse tree has no errors at all, skip walking.
+    `is_missing` can be set on any node type (not just `ERROR`), so when
+    errors *are* present we fall back to a full walk to preserve byte-
+    identical diagnostics with the pre-index implementation.
     """
+    if not tree.root_node.has_error:
+        return
     for node in _walk(tree.root_node):
         if node.type == "ERROR" or node.is_missing:
             line, col = _node_line_col(node, src)

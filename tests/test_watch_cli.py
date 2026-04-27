@@ -21,9 +21,7 @@ HELLOTST_SRC = dedent("""\
             quit
 """).encode("ascii")
 
-ALL_PASS_OUTPUT = (
-    "  PASS  one\n\nResults: 1 tests  1 passed  0 failed\nAll tests passed.\n"
-)
+ALL_PASS_OUTPUT = "  PASS  one\n\nResults: 1 tests  1 passed  0 failed\nAll tests passed.\n"
 
 
 def _write_suite(tmp_path: Path, name: str = "HELLOTST") -> Path:
@@ -32,9 +30,7 @@ def _write_suite(tmp_path: Path, name: str = "HELLOTST") -> Path:
     return p
 
 
-def test_once_runs_initial_pass(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_once_runs_initial_pass(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _write_suite(tmp_path)
     from m_cli.test import runner as runner_mod
 
@@ -70,18 +66,14 @@ def test_once_returns_1_when_initial_run_fails(
     assert rc == 1
 
 
-def test_no_suites_returns_2(
-    tmp_path: Path, capsys: pytest.CaptureFixture
-) -> None:
+def test_no_suites_returns_2(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
     rc = main(["watch", "--once", str(tmp_path)])
     assert rc == 2
     err = capsys.readouterr().err
     assert "no test suites" in err.lower()
 
 
-def test_filter_limits_initial_run(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_filter_limits_initial_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _write_suite(tmp_path, "ATST")
     _write_suite(tmp_path, "BTST")
     from m_cli.test import runner as runner_mod

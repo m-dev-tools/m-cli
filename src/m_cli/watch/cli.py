@@ -60,8 +60,7 @@ def watch_command(args: argparse.Namespace) -> int:
     poller.poll_once()  # prime baseline
 
     print(
-        f"m watch: watching {len(paths)} path(s), {len(suites)} suite(s) — "
-        f"Ctrl+C to exit",
+        f"m watch: watching {len(paths)} path(s), {len(suites)} suite(s) — Ctrl+C to exit",
         file=sys.stderr,
     )
     signal.signal(signal.SIGINT, _quiet_sigint_handler)

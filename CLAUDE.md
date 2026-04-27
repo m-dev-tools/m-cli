@@ -108,9 +108,10 @@ scripts/
 - **Per-rule isolation:** `runner.lint_source` wraps each rule in try/except so one buggy rule can't crash a lint pass — it emits an `M-INTERNAL-RULE-CRASH` diagnostic instead.
 - **VistA is the gate:** every rule should be sanity-checked with `make lint-vista` to catch wild-corpus surprises before commit.
 
-## Performance status (known follow-up)
+## Performance status
 
-`m lint` over the VistA corpus runs in ~1458 s with 36 rules — **12× over the §3.5 budget of 120 s**. Each new rule is currently a separate AST walk. Optimisation work (parallelism via multiprocessing on routines, single-pass rule scheduling, selective rule activation by node type) is sequenced **after** XINDEX rule-set parity. **Correctness first.**
+- **Single-pass dispatcher landed.** `m_cli.lint._index.NodeIndex` walks each parse tree exactly once and groups nodes by `node.type`; rules consume `index.of("X")` instead of running their own `_walk(tree.root_node)`. VistA gate runs in **166 s** (vs ~1458 s before — **8.7× speedup**), 234 routines/s. Findings unchanged (62,806 total, 42 fatal). Still ~1.4× over the §3.5 120 s budget.
+- **Next perf step:** multiprocessing across routines. Each routine is independent, so a `concurrent.futures.ProcessPoolExecutor` on `lint_source` should bring full-corpus time well under budget on any modern multi-core box.
 
 ## Git conventions
 - Main branch: `master` (this repo) — note this differs from `main` elsewhere

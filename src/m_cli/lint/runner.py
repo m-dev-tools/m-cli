@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from pathlib import Path
 
+from m_cli.lint._index import NodeIndex
 from m_cli.lint.diagnostic import Diagnostic
 from m_cli.lint.rules import Rule, all_rules, rules_by_tag
 from m_cli.parser import parse
@@ -39,12 +40,18 @@ def select_rules(rule_filter: str = "xindex") -> list[Rule]:
 
 
 def lint_source(path: Path, src: bytes, rules: Iterable[Rule]) -> list[Diagnostic]:
-    """Run a set of rules over a source and return sorted diagnostics."""
+    """Run a set of rules over a source and return sorted diagnostics.
+
+    The parse tree is walked exactly once per file (via ``NodeIndex``)
+    and shared across every rule — eliminating the previous N-rules ×
+    N-walks redundancy.
+    """
     tree = parse(src)
+    index = NodeIndex(tree)
     diags: list[Diagnostic] = []
     for rule in rules:
         try:
-            diags.extend(rule.check(src, tree, path))
+            diags.extend(rule.check(src, tree, path, index))
         except Exception as e:
             # Don't let one buggy rule crash the whole lint pass.
             diags.append(_rule_crash_diagnostic(rule, path, e))

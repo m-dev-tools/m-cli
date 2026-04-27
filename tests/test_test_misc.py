@@ -80,9 +80,7 @@ def test_derive_ydb_routines_returns_none_for_missing_dir() -> None:
     assert out is None or isinstance(out, str)
 
 
-def test_build_env_override_wins(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_build_env_override_wins(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("ydb_routines", "/will/be/overridden")
     env = _build_env(tmp_path / "X.m", {"ydb_routines": "/overridden"})
     assert env["ydb_routines"] == "/overridden"
@@ -176,9 +174,7 @@ def test_no_paths_and_no_routines_tests_returns_2(
     assert "no paths" in err.lower() or "no test suites" in err.lower()
 
 
-def test_selector_with_missing_file(
-    tmp_path: Path, capsys: pytest.CaptureFixture
-) -> None:
+def test_selector_with_missing_file(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
     rc = main(["test", f"{tmp_path}/MISSING.m::tFoo"])
     assert rc == 2
     err = capsys.readouterr().err
@@ -192,13 +188,9 @@ def test_two_selectors_rejected(tmp_path: Path) -> None:
         main(["test", f"{p}::tA", f"{p}::tB"])
 
 
-def test_selector_with_list_mode(
-    tmp_path: Path, capsys: pytest.CaptureFixture
-) -> None:
+def test_selector_with_list_mode(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
     suite = tmp_path / "ATST.m"
-    suite.write_bytes(
-        b"ATST\n quit\n ;\ntFoo(pass,fail) ;@TEST \"foo\"\n quit\n"
-    )
+    suite.write_bytes(b'ATST\n quit\n ;\ntFoo(pass,fail) ;@TEST "foo"\n quit\n')
     rc = main(["test", "--list", f"{suite}::tFoo"])
     assert rc == 0
     out = capsys.readouterr().out

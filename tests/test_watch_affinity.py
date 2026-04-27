@@ -52,15 +52,11 @@ def test_changed_non_m_file_returns_empty() -> None:
 
 def test_path_with_directory_prefix_resolved_by_basename() -> None:
     suites = [_suite("HELLOTST", "/proj/routines/tests")]
-    affected = resolve_affinity(
-        Path("/proj/routines/hello.m"), suites
-    )
+    affected = resolve_affinity(Path("/proj/routines/hello.m"), suites)
     assert [s.name for s in affected] == ["HELLOTST"]
 
 
 def test_changed_suite_under_directory_returns_just_that_suite() -> None:
     suites = [_suite("HELLOTST", "/proj/routines/tests"), _suite("SAFETST")]
-    affected = resolve_affinity(
-        Path("/proj/routines/tests/HELLOTST.m"), suites
-    )
+    affected = resolve_affinity(Path("/proj/routines/tests/HELLOTST.m"), suites)
     assert [s.name for s in affected] == ["HELLOTST"]

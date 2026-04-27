@@ -40,13 +40,10 @@ The 8 currently-silent registered rules (M-XINDX-002, 015, 018, 021, 027, 028, 0
 
 ## Performance follow-up (Step 2.x)
 
-Lint is **12× over the 120 s budget** at 36 rules. Order of attack:
-- [ ] Parallelize across routines (multiprocessing pool — each routine is independent)
-- [ ] Single-pass AST walk: collect node types once, dispatch to rules indexed by node type (kills the 36× redundant `_walk(tree.root_node)`)
-- [ ] Cache `Language()` and `Parser()` (already done) but consider caching parsed trees for incremental lint
-- [ ] Profile with `make lint-vista` before/after each change — never optimise blind
-
-Do not start before Tier 1 Steps 3 and 5 ship.
+- [x] **Single-pass AST walk via `NodeIndex`.** Walk once per file, bucket by node type, dispatch rules off the bucket. Landed: VistA gate **166 s** (was ~1458 s — 8.7× faster). Microbenchmark: 3.75 ms/file (was 32.94 ms/file).
+- [ ] **Parallelize across routines** with `concurrent.futures.ProcessPoolExecutor`. Each routine's `lint_source` is independent. With 4 workers we should land well under the 120 s budget. Pass `--jobs N` (default `os.cpu_count()`).
+- [ ] Cache parsed trees for incremental lint (only meaningful with a daemon / LSP — defer until LSP work).
+- [ ] Profile with `make lint-vista` before/after each change — never optimise blind.
 
 ## Smaller cleanups / nice-to-haves
 
