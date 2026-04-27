@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 from m_cli.fmt.formatter import ParseError, format_source
+from m_cli.fmt.rules import select_fmt_rules
 
 
 def fmt_command(args: argparse.Namespace) -> int:
@@ -31,13 +32,19 @@ def fmt_command(args: argparse.Namespace) -> int:
         print("m fmt: --stdout requires exactly one file", file=sys.stderr)
         return 2
 
+    try:
+        rules = select_fmt_rules(args.rules)
+    except ValueError as e:
+        print(f"m fmt: {e}", file=sys.stderr)
+        return 2
+
     n_changed = 0
     n_errors = 0
     n_unchanged = 0
     for path in files:
         try:
             src = path.read_bytes()
-            formatted = format_source(src)
+            formatted = format_source(src, rules=rules)
         except ParseError as e:
             print(f"m fmt: {path}: parse error — {e}", file=sys.stderr)
             n_errors += 1

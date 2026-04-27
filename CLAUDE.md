@@ -13,7 +13,7 @@
 
 | Step | Tool | Status |
 |------|------|--------|
-| 1 | `m fmt` | **Shipped.** Identity round-trip; 99.04% (38,954/39,330) byte-for-byte; ~26 s |
+| 1 | `m fmt` | **Shipped + canonical layer.** Identity (default) round-trips 99.04% byte-for-byte. Opt-in `--rules=canonical` adds two transformations: trim-trailing-whitespace, uppercase-command-keywords. VistA canonical gate: 10,429 of 38,954 routines (26.8%) would change; idempotent and AST-preserving across the full corpus. |
 | 2 | `m lint --rules=xindex` | **37 of XINDEX's 66 rules.** Latest: M-XINDX-057 (lower/mixed case local variable, SAC §3.6). VistA: 64,195 findings / 42 fatal. 22.6 s on 16 cores (5.3× under §3.5 budget). |
 | 3 | `m test` | **Shipped.** Parser-aware discovery (`*TST.m` files, `t<UpperCase>(pass,fail)` labels via tree-sitter); ydb runner; text / TAP / JSON output; whole-suite, single-suite, single-label runs. Smoke gate: 11 m-tools suites / 224 assertions pass. |
 | 4 | Single-test selection | **Shipped** as part of Step 3 (`m test FILE.m::tLabel`). |
@@ -32,8 +32,9 @@ make mypy       # mypy src/
 make cov        # pytest --cov
 make check      # lint + mypy + cov (full CI gate)
 make format     # ruff format
-make vista      # full VistA round-trip gate for `m fmt` (39,330 routines)
-make lint-vista # full VistA lint baseline for `m lint --rules=xindex`
+make vista          # full VistA round-trip gate for `m fmt` (identity)
+make vista-canonical # full VistA canonical-layout gate (idempotency + AST shape)
+make lint-vista     # full VistA lint baseline for `m lint --rules=xindex`
 ```
 
 ## Environment

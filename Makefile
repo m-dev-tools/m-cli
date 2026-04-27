@@ -39,6 +39,10 @@ cov:
 vista:
 	$(PYTHON) scripts/vista_round_trip.py /home/rafael/vista-meta/vista/vista-m-host/Packages
 
+# Run the canonical-layout gate: idempotency + AST shape preserved across the corpus
+vista-canonical:
+	$(PYTHON) scripts/vista_canonical.py /home/rafael/vista-meta/vista/vista-m-host/Packages
+
 # Run the full VistA lint baseline for `m lint --rules=xindex`
 lint-vista:
 	$(PYTHON) scripts/vista_lint.py /home/rafael/vista-meta/vista/vista-m-host/Packages --top 10

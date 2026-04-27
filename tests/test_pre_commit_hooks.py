@@ -65,8 +65,7 @@ def test_files_regex_matches_m_files(hooks: list[dict]) -> None:
         pattern = re.compile(hook["files"])
         for p in sample_paths:
             assert pattern.search(p), (
-                f"hook {hook['id']!r} files regex {hook['files']!r} "
-                f"does not match {p!r}"
+                f"hook {hook['id']!r} files regex {hook['files']!r} does not match {p!r}"
             )
         for p in non_m_paths:
             assert not pattern.search(p), (
@@ -86,9 +85,7 @@ def test_entries_invoke_known_m_subcommands(hooks: list[dict]) -> None:
     for hook in hooks:
         argv = shlex.split(hook["entry"])
         assert argv, f"hook {hook['id']!r} has empty entry"
-        assert argv[0] == "m", (
-            f"hook {hook['id']!r} entry must start with 'm', got {argv[0]!r}"
-        )
+        assert argv[0] == "m", f"hook {hook['id']!r} entry must start with 'm', got {argv[0]!r}"
         assert len(argv) >= 2, f"hook {hook['id']!r} entry needs a subcommand"
         assert argv[1] in valid_subcommands, (
             f"hook {hook['id']!r} uses unknown subcommand {argv[1]!r}; "
@@ -108,13 +105,9 @@ def test_lint_hook_uses_fatal_threshold(hooks: list[dict]) -> None:
 
 def test_fmt_check_hook_uses_check_mode(hooks: list[dict]) -> None:
     fmt = next(h for h in hooks if h["id"] == "m-fmt-check")
-    assert "--check" in fmt["entry"], (
-        f"m-fmt-check entry must use --check, got {fmt['entry']!r}"
-    )
+    assert "--check" in fmt["entry"], f"m-fmt-check entry must use --check, got {fmt['entry']!r}"
 
 
 def test_descriptions_are_not_empty(hooks: list[dict]) -> None:
     for hook in hooks:
-        assert hook["description"].strip(), (
-            f"hook {hook['id']!r} has an empty description"
-        )
+        assert hook["description"].strip(), f"hook {hook['id']!r} has an empty description"

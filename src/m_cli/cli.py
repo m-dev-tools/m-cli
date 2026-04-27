@@ -51,6 +51,15 @@ def main(argv: list[str] | None = None) -> int:
         help="One or more .m files (or directories — searched recursively for *.m)",
     )
     fmt_parser.add_argument(
+        "--rules",
+        default="none",
+        help=(
+            "Canonical-layout rules to apply: 'none' (identity, default), "
+            "'canonical' (every safe rule), 'all', or a comma-separated "
+            "list of rule ids (e.g. 'trim-trailing-whitespace')"
+        ),
+    )
+    fmt_parser.add_argument(
         "--check",
         action="store_true",
         help="Don't write; exit 1 if any file is not already formatted",

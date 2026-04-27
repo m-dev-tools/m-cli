@@ -47,7 +47,7 @@ The 8 currently-silent registered rules (M-XINDX-002, 015, 018, 021, 027, 028, 0
 ## Smaller cleanups / nice-to-haves
 
 - [ ] **Publish m-cli + tree-sitter-m.** Pre-commit hooks (repo-pull style) and any future `pip install m-cli` workflow are blocked on this. Steps: (1) decide a host for m-cli (GitHub `rafael5/m-cli`?); (2) publish tree-sitter-m to PyPI (it has a `cibuildwheel` config already); (3) update m-cli's `pyproject.toml` to allow `tree-sitter-m` from PyPI in addition to the local-path override.
-- [ ] `m fmt` — start layering canonical-layout rules on top of identity (per README "Roadmap" section). Each rule needs hand-test + VistA gate.
+- [ ] **`m fmt` canonical-layout — first two rules shipped.** `trim-trailing-whitespace` and `uppercase-command-keywords` opt-in via `--rules=canonical`. Backed by `make vista-canonical` (idempotency + AST shape). Future candidates: comma/colon spacing normalization, abbreviation→canonical (e.g. `S`→`SET`, behind a flag), null-line removal (M-XINDX-042 auto-fix). Each new rule must pass the canonical gate.
 - [ ] LSP wrapper for `m lint` — JSON output is already LSP-shaped; need a thin server stub for VS Code via `tree-sitter-m-vscode`
 - [x] **Pre-commit hook scaffold.** `.pre-commit-hooks.yaml` exposes `m-fmt-check`, `m-fmt`, and `m-lint` hooks. Schema gated by tests. Docs: `docs/pre-commit.md`. Activation of the repo-pull style waits on m-cli + tree-sitter-m being published; the `language: system` style works today.
 - [ ] `--rules=sac` tag — currently only `xindex` and `all` are exercised; `sac`-tagged rules exist (012, 035, 044, 062) but the tag selector hasn't been smoke-tested

@@ -1,53 +1,60 @@
-"""Identity formatter — Step 1.0.
+"""m fmt formatter.
 
-Parses the source via tree-sitter-m, walks the tree, and emits the
-original bytes exactly. The point is to:
+Two layers:
 
-1. Validate the parser+emit pipeline end-to-end.
-2. Ensure round-trip equality on every routine in the VistA corpus
-   *before* we start applying canonical layout rules.
-3. Establish the file/CLI plumbing (read → format → write/diff) so the
-   subsequent rule-based passes plug in without re-architecture.
+1. **Identity pass** — parses the source and re-emits the parse tree's
+   bytes verbatim. The point is that anything `m fmt` outputs must
+   round-trip through the parser cleanly. With no canonical-layout
+   rules applied, the output equals the input byte-for-byte.
 
-A real canonical formatter will replace `format_source()` with a
-node-walking emitter that re-derives whitespace from the AST shape and
-preserves comment text byte-for-byte. For now, returning the parsed
-tree's `text` proves the round-trip cleanly.
+2. **Canonical-layout rules** (optional) — pure ``bytes -> bytes``
+   transformations layered on top of identity. Each rule preserves
+   the parse tree's *shape* (no nodes appear or disappear); they only
+   adjust whitespace and the text of certain nodes (e.g. command
+   keywords). See ``m_cli.fmt.rules``.
+
+Default behavior is identity. Callers opt into canonical layout by
+passing ``rules=canonical_rules()`` (or a subset).
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
 
 from m_cli.parser import parse
 
 
-def format_source(src: bytes) -> bytes:
+def format_source(src: bytes, *, rules: "Iterable | None" = None) -> bytes:
     """Format M source bytes; return the formatted bytes.
 
-    Identity pass: parses and re-emits via the tree's root_node.text.
-    For a clean parse, this returns `src` byte-for-byte.
+    With ``rules=None`` (the default) this is the identity pass:
+    parse → emit. With an explicit rules list, each rule's ``apply``
+    callable is invoked in order on the running buffer.
 
-    If the source contains parse errors, the tree may not round-trip
-    perfectly — those routines should be reported by `--check` rather
-    than rewritten.
+    A clean parse is required before any rule runs — sources with
+    parse errors raise :class:`ParseError`.
     """
+    if not isinstance(src, (bytes, bytearray)):
+        raise TypeError(f"format_source expects bytes, got {type(src).__name__}")
     tree = parse(src)
     if tree.root_node.has_error:
-        # Identity-pass policy: refuse to rewrite a routine that did not
-        # parse cleanly. Caller decides whether to skip or fail.
         raise ParseError(
             f"source did not parse cleanly ({_count_errors(tree.root_node)} error nodes)"
         )
     out = tree.root_node.text
     assert out is not None
-    return bytes(out)
+    out_bytes = bytes(out)
+    if rules:
+        for rule in rules:
+            out_bytes = rule.apply(out_bytes)
+    return out_bytes
 
 
-def format_file(path: Path) -> tuple[bytes, bytes]:
+def format_file(path: Path, *, rules: "Iterable | None" = None) -> tuple[bytes, bytes]:
     """Read and format a `.m` file. Returns (original_bytes, formatted_bytes)."""
     src = path.read_bytes()
-    return src, format_source(src)
+    return src, format_source(src, rules=rules)
 
 
 class ParseError(Exception):
