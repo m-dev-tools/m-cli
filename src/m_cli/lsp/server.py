@@ -47,6 +47,7 @@ from lsprotocol.types import (
     TEXT_DOCUMENT_CODE_ACTION,
     TEXT_DOCUMENT_CODE_LENS,
     TEXT_DOCUMENT_COMPLETION,
+    TEXT_DOCUMENT_DEFINITION,
     TEXT_DOCUMENT_DID_CHANGE,
     TEXT_DOCUMENT_DID_CLOSE,
     TEXT_DOCUMENT_DID_OPEN,
@@ -67,6 +68,7 @@ from lsprotocol.types import (
     CompletionItemKind,
     CompletionList,
     CompletionParams,
+    DefinitionParams,
     DidChangeTextDocumentParams,
     DidCloseTextDocumentParams,
     DidOpenTextDocumentParams,
@@ -82,6 +84,7 @@ from lsprotocol.types import (
     FoldingRangeParams,
     Hover,
     HoverParams,
+    Location,
     MarkupContent,
     MarkupKind,
     Position,
@@ -106,6 +109,7 @@ from m_cli.lsp.convert import to_lsp_diagnostics
 from m_cli.lsp.structure import find_dot_blocks, find_labels
 from m_cli.lsp.symbols import KeywordRecord, all_keywords, lookup_keyword, token_at
 from m_cli.test.discovery import find_test_cases
+from m_cli.workspace import WorkspaceIndex, build_index, reference_at
 
 logger = logging.getLogger(__name__)
 
@@ -753,6 +757,84 @@ def _find_token_occurrences(line: str, token: str) -> list[int]:
 
 
 # ---------------------------------------------------------------------------
+# Go-to-definition (Phase B — workspace symbol index)
+# ---------------------------------------------------------------------------
+
+
+def definition_at(server, uri: str, position: Position) -> Location | None:
+    """Resolve ``LABEL^ROUTINE`` / ``^ROUTINE`` / local label under cursor.
+
+    For a cross-routine reference, the workspace index resolves the
+    target routine + label to a ``(path, line)``. For a label-only
+    reference (``D LBL`` or ``$$LBL``), we fall back to the current
+    document's labels — same-routine calls don't need the workspace
+    index, and we wouldn't know which other routine to search anyway.
+    Returns ``None`` when the cursor isn't on a reference, or the
+    target isn't in the index.
+    """
+    if not uri.endswith(".m"):
+        return None
+    try:
+        doc = server.workspace.get_text_document(uri)
+    except KeyError:
+        return None
+    lines = (doc.source or "").splitlines()
+    if position.line < 0 or position.line >= len(lines):
+        return None
+    ref = reference_at(lines[position.line], position.character)
+    if ref is None:
+        return None
+
+    if ref.routine is None:
+        # Label-only reference — search the current document.
+        return _resolve_local_label(uri, doc.source or "", ref.label)
+
+    index: WorkspaceIndex | None = getattr(server, "m_cli_workspace_index", None)
+    if index is None:
+        return None
+    loc = index.lookup(ref.routine, ref.label)
+    if loc is None:
+        return None
+    return Location(
+        uri=loc.path.as_uri(),
+        range=Range(
+            start=Position(line=loc.line - 1, character=0),
+            end=Position(line=loc.line - 1, character=len(loc.label)),
+        ),
+    )
+
+
+def text_document_definition(server, params: DefinitionParams) -> Location | None:
+    return definition_at(server, params.text_document.uri, params.position)
+
+
+def _resolve_local_label(uri: str, src_text: str, label: str | None) -> Location | None:
+    """Find ``label`` in the current document's source. Used for
+    intra-routine references (``D LBL`` without a ``^ROUTINE``)."""
+    if not label:
+        return None
+    target = label.upper()
+    for row, line in enumerate(src_text.splitlines()):
+        if not line or line[0] in (" ", "\t", ";"):
+            continue
+        # Label is the first identifier on the line, before any space /
+        # paren / comment.
+        end = 0
+        while end < len(line) and (line[end].isalnum() or line[end] in ("%", "$")):
+            end += 1
+        name = line[:end]
+        if name.upper() == target:
+            return Location(
+                uri=uri,
+                range=Range(
+                    start=Position(line=row, character=0),
+                    end=Position(line=row, character=len(name)),
+                ),
+            )
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -782,6 +864,18 @@ def run_stdio(rule_filter: str | None = None) -> int:
     except ValueError as e:
         logger.warning("m-cli LSP: ignoring invalid config (%s)", e)
         setattr(server, "m_cli_config", Config.empty())  # noqa: B010
+
+    # Build the workspace symbol index from the spawn cwd. Powers
+    # textDocument/definition (and, in follow-ups, references and
+    # workspace symbol search). Failures are logged and the index
+    # is left empty — the LSP still works without cross-routine nav.
+    try:
+        index = build_index([Path.cwd()])
+        logger.info("m-cli LSP indexed %d label(s) under %s", len(index), Path.cwd())
+        setattr(server, "m_cli_workspace_index", index)  # noqa: B010
+    except Exception as e:  # pragma: no cover — defensive
+        logger.warning("m-cli LSP: workspace index build failed (%s)", e)
+        setattr(server, "m_cli_workspace_index", WorkspaceIndex())  # noqa: B010
 
     @server.feature(TEXT_DOCUMENT_DID_OPEN)
     def _did_open(params: DidOpenTextDocumentParams) -> None:
@@ -835,6 +929,10 @@ def run_stdio(rule_filter: str | None = None) -> int:
     def _document_highlight(params: DocumentHighlightParams) -> list[DocumentHighlight] | None:
         return text_document_document_highlight(server, params)
 
+    @server.feature(TEXT_DOCUMENT_DEFINITION)
+    def _definition(params: DefinitionParams) -> Location | None:
+        return text_document_definition(server, params)
+
     logger.info("m-cli LSP %s starting on stdio", __version__)
     server.start_io()
     return 0
@@ -859,6 +957,8 @@ __all__ = [
     "text_document_signature_help",
     "document_highlights_at",
     "text_document_document_highlight",
+    "definition_at",
+    "text_document_definition",
     "code_actions_for_uri",
     "text_document_code_action",
     "did_open",

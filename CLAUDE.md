@@ -109,7 +109,7 @@ scripts/
 - **Per-rule isolation:** `runner.lint_source` wraps each rule in try/except so one buggy rule can't crash a lint pass — it emits an `M-INTERNAL-RULE-CRASH` diagnostic instead.
 - **VistA is the gate:** every rule should be sanity-checked with `make lint-vista` to catch wild-corpus surprises before commit.
 
-## LSP server (Stages 1 + 2 + 3 + 4 + 4b)
+## LSP server (Stages 1 + 2 + 3 + 4 + 4b + B)
 
 `m lsp` starts the m-cli Language Server over stdio. Editors invoke it as a subprocess and exchange LSP messages on stdin/stdout. Optional dependency: `pip install 'm-cli[lsp]'` adds `pygls` + `lsprotocol`. The dispatcher reports a friendly install hint if a user runs `m lsp` without the extra.
 
@@ -136,6 +136,14 @@ scripts/
 Token resolution and keyword metadata live in `m_cli.lsp.symbols` (`token_at`, `lookup_keyword`, `all_keywords`). The structured loader is `m_cli.lint._keywords.keyword_records()`, which loads commands.tsv / intrinsic-special-variables.tsv / intrinsic-functions.tsv from m-standard. When a token (e.g. `$HOROLOG`) appears as both ISV and intrinsic function in ANSI, the function wins — that's a real ambiguity in M itself; tests pin unambiguous tokens (`$JOB` for ISV, `$LENGTH` for function).
 
 Document-structure helpers (`m_cli.lsp.structure.find_labels`, `find_dot_blocks`) walk the tree-sitter tree once and return pure Python dataclasses. The CodeLens path reuses `m_cli.test.discovery.find_test_cases` so the LSP and the `m test` runner agree on what a test label is.
+
+**Phase B — workspace symbol index + go-to-definition.**
+
+- `m_cli.workspace.WorkspaceIndex` maps `routine_name (uppercased) → list[LabelLocation]` for every `.m` file in the workspace. Routine name comes from the file stem (uppercased) — same convention ydb uses, and avoids depending on the first-label-equals-routine-name M idiom.
+- `build_index(roots)` walks each root for `*.m` files, parses each, and pulls every top-level `label` node. OS errors and parse errors are silently skipped — the index is best-effort. `add_file` / `remove_file` allow incremental updates from `didChangeWatchedFiles` (wiring deferred to a follow-up; rebuild-on-spawn is enough for now).
+- `m_cli.workspace.reference_at(line, character)` parses the M reference under the cursor: `LABEL^ROUTINE`, `^ROUTINE`, `LABEL`, `$$LABEL^ROUTINE`, `$$LABEL`. Returns a `Reference(label, routine)` (either field optional). Cursor on the label half OR the routine half resolves the same full reference — convenient for users.
+- `textDocument/definition` resolves cross-routine references against the index; label-only references (`D LBL`) fall back to a same-document scan since we can't know which other routine is meant. Capability advertised as `definitionProvider: True`.
+- The index is built once at LSP startup from `Path.cwd()` (the workspace folder VS Code spawns with). Logged at INFO level so users can see how many labels were picked up. Future work: incremental `didChangeWatchedFiles` updates, `textDocument/references`, `workspace/symbol` (Ctrl+T), and cross-routine lint rules (M-XINDX-004 et al.) all reuse this index.
 
 Testable inner helpers: `m_cli.lsp.server.lint_document`, `format_document`, `code_actions_for_uri`, `hover_at`, `completion_at`, `document_symbols_at`, `code_lenses_at`, `folding_ranges_at`, `signature_help_at`, `document_highlights_at`. Tests use a `FakeServer` stub — no pygls runtime needed.
 
