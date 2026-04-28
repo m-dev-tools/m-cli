@@ -121,6 +121,8 @@ scripts/
 
 Testable inner helpers: `m_cli.lsp.server.lint_document(server, uri)`, `format_document(server, uri)`, `code_actions_for_uri(server, uri, diagnostics)`. Tests use a `FakeServer` stub — no pygls runtime needed.
 
+**Editor wiring — VS Code.** `~/projects/tree-sitter-m-vscode` carries a `vscode-languageclient` integration that spawns `m lsp` on activation. Settings: `m-cli.enabled`, `m-cli.path` (defaults to `m` on PATH; set to `~/projects/m-cli/.venv/bin/m` for venv installs), `m-cli.args`, `m-cli.trace.server`. Self-install via `npm run package` + `code --install-extension`; full instructions in that repo's `docs/lsp-setup.md`.
+
 Future Stage 4 (optional polish): workspace configuration (override `--rules` / `--error-on`), hover (rule descriptions), completion (M command keywords from `standard_commands()`).
 
 ## Library API for tooling consumers
