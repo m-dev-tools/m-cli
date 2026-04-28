@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 from m_cli import __version__
+from m_cli.coverage.cli import add_arguments as add_coverage_arguments
 from m_cli.fmt import fmt_command
 from m_cli.lint import lint_command
 from m_cli.lsp import lsp_command
@@ -24,7 +25,8 @@ def main(argv: list[str] | None = None) -> int:
         description=(
             "M (MUMPS) source-level toolchain. Subcommands: "
             "fmt (format), lint (lint), test (run test suites), "
-            "watch (re-run suites on save), lsp (Language Server)."
+            "watch (re-run suites on save), coverage (test coverage), "
+            "lsp (Language Server)."
         ),
     )
     parser.add_argument(
@@ -230,6 +232,22 @@ def main(argv: list[str] | None = None) -> int:
         help="Output format (default: text)",
     )
     watch_parser.set_defaults(func=watch_command)
+
+    # `m coverage`
+    coverage_parser = subparsers.add_parser(
+        "coverage",
+        help="Measure test coverage of an M project",
+        description=(
+            "Run the project's test suites under YottaDB ZBREAK "
+            "instrumentation and report which production labels were "
+            "exercised. Label-level coverage (line-level via source "
+            "instrumentation is a future deliverable). Outputs text "
+            "(default), JSON. Use --uncovered to list only uncovered "
+            "labels; --min-percent N to fail the run when coverage is "
+            "below the threshold."
+        ),
+    )
+    add_coverage_arguments(coverage_parser)
 
     # `m lsp`
     lsp_parser = subparsers.add_parser(

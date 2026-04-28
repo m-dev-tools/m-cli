@@ -11,17 +11,18 @@ Pick up from this list. Top section is "next session" — concrete, ordered. Low
 | # | Capability | Status | Notes |
 |---|---|:---:|---|
 | 6 | CI script | 🟡 Partial | Project Makefile + pre-commit scaffold cover the main use cases. No dedicated `m ci` planned. |
-| 7 | **Coverage** | 🟡 In progress | `m coverage` — Phase C. Label-level via ZBREAK first; line-level via source instrumentation deferred. |
+| 7 | **Coverage** | 🟡 First slice shipped | `m coverage` — Phase C. Label-level via ZBREAK; live smoke 85/123 (69.1%) against m-tools, byte-identical to ycover. Line-level instrumentation deferred. |
 | 8 | Linter (style) | ✅ Done | Bundled with `m lint`; `--rules=sac` for SAC-tagged subset. |
 | 9 | Pre-commit hooks | ✅ Done | `.pre-commit-hooks.yaml` shipped. |
 | 10 | Debugger | ⏸️ Deferred | DAP integration is a separate, large effort. Not on near-term roadmap. |
 
 **Next session — pick from:**
 
-1. **Coverage (Phase C, in progress).** Ship the first slice: label-level coverage via ZBREAK, parser-aware label discovery via the workspace index, output formats text/json/lcov. Then expand to line-level via source instrumentation in a follow-up.
-2. **Phase B follow-ups.** `textDocument/references`, `workspace/symbol`, incremental `didChangeWatchedFiles`. All small handlers over the existing index.
-3. **Phase D (deferred XINDEX rules).** The 30 not-yet-ported rules; far easier *after* Phase B's index is fuller.
-4. **Publish to PyPI.** Unblocks `language: repo` pre-commit and downstream `pip install m-cli`.
+1. **Coverage line-level (Phase C deepening).** `m coverage --lines` via tree-sitter-driven source instrumentation: identify executable lines per routine, emit a counter increment per line, run, parse. Bigger build than the label-level slice but reuses everything in `m_cli.coverage` plus the workspace index.
+2. **Coverage LCOV output.** Add `--format=lcov` for CI integration. Mechanical follow-up; label-level data maps to LCOV's `DA:line,count` records.
+3. **Phase B follow-ups.** `textDocument/references`, `workspace/symbol`, incremental `didChangeWatchedFiles`. All small handlers over the existing index.
+4. **Phase D (deferred XINDEX rules).** The 30 not-yet-ported rules; far easier *after* Phase B's index is fuller.
+5. **Publish to PyPI.** Unblocks `language: repo` pre-commit and downstream `pip install m-cli`.
 
 ---
 
