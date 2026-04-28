@@ -109,7 +109,7 @@ scripts/
 - **Per-rule isolation:** `runner.lint_source` wraps each rule in try/except so one buggy rule can't crash a lint pass — it emits an `M-INTERNAL-RULE-CRASH` diagnostic instead.
 - **VistA is the gate:** every rule should be sanity-checked with `make lint-vista` to catch wild-corpus surprises before commit.
 
-## LSP server (Stages 1 + 2 + 3 + 4)
+## LSP server (Stages 1 + 2 + 3 + 4 + 4b)
 
 `m lsp` starts the m-cli Language Server over stdio. Editors invoke it as a subprocess and exchange LSP messages on stdin/stdout. Optional dependency: `pip install 'm-cli[lsp]'` adds `pygls` + `lsprotocol`. The dispatcher reports a friendly install hint if a user runs `m lsp` without the extra.
 
@@ -125,9 +125,19 @@ scripts/
 - `textDocument/completion` returns the universe of M commands, ISVs, and intrinsic functions as `CompletionItem`s (kind = Keyword / Constant / Function; detail = the syntax format from m-standard). The list is `isIncomplete: false` — the set doesn't grow per-keystroke; the client filters by typed prefix. Capability advertised as `completionProvider`.
 - `m lsp --rules <filter>` overrides the default `xindex` rule filter at startup. Accepts the same forms as `m lint --rules` (`xindex`, `all`, `sac`, `M-XINDX-013,M-XINDX-019`). Wired by stashing the filter on the `LanguageServer` instance and read inside `lint_document`. The full LSP `workspace/configuration` round-trip is intentionally not implemented — the CLI flag covers the same need without async plumbing.
 
+**Stage 4b — document structure, navigation, and per-test code lenses.**
+
+- `textDocument/documentSymbol` emits one `SymbolKind.Function` per label, with the symbol range covering the label's body (until the next label or EOF) and the selection range covering just the name. Formals are appended to the display name (`INNER(a,b)`). Editors show this as the Outline / breadcrumbs.
+- `textDocument/codeLens` emits a `▶ Run test <label>` lens above each `t<UpperCase>(pass,fail)` label discovered by `m_cli.test.discovery.find_test_cases`. The lens carries a `m-cli.runTest` command with arguments `[document_uri, label_name]`. The VS Code extension is expected to register that command and shell out to `m test FILE.m::tLabel`; editors that don't register it still show the title but the click is a no-op (intentional — non-VS Code editors get the visual breadcrumb without breakage).
+- `textDocument/foldingRange` collapses (a) each multi-line label body and (b) each contiguous run of dot-block lines. Ranges carry `kind=Region`. Single-line bodies emit no fold.
+- `textDocument/signatureHelp` activates inside `$FN(...)` parens (trigger chars `(` and `,`). Walks back through balanced parens to find the enclosing `(`, reads the token immediately to its left, and — if it resolves to a `kind="function"` keyword via `lookup_keyword` — returns the syntax format from m-standard as a single `SignatureInformation`. ISV-only tokens (`$JOB`) and user labels (`D MYLABEL(...)`) return None.
+- `textDocument/documentHighlight` highlights every same-file occurrence of the identifier under the cursor, with strict word-boundary matching on `[A-Za-z0-9$%]`. Single-character tokens (`X`, `Y`) return None to avoid noisy matches; longer names are case-sensitive (M is case-sensitive for variables — only command/function keywords are case-insensitive).
+
 Token resolution and keyword metadata live in `m_cli.lsp.symbols` (`token_at`, `lookup_keyword`, `all_keywords`). The structured loader is `m_cli.lint._keywords.keyword_records()`, which loads commands.tsv / intrinsic-special-variables.tsv / intrinsic-functions.tsv from m-standard. When a token (e.g. `$HOROLOG`) appears as both ISV and intrinsic function in ANSI, the function wins — that's a real ambiguity in M itself; tests pin unambiguous tokens (`$JOB` for ISV, `$LENGTH` for function).
 
-Testable inner helpers: `m_cli.lsp.server.lint_document(server, uri)`, `format_document(server, uri)`, `code_actions_for_uri(server, uri, diagnostics)`, `hover_at(server, uri, position)`, `completion_at(server, uri)`. Tests use a `FakeServer` stub — no pygls runtime needed.
+Document-structure helpers (`m_cli.lsp.structure.find_labels`, `find_dot_blocks`) walk the tree-sitter tree once and return pure Python dataclasses. The CodeLens path reuses `m_cli.test.discovery.find_test_cases` so the LSP and the `m test` runner agree on what a test label is.
+
+Testable inner helpers: `m_cli.lsp.server.lint_document`, `format_document`, `code_actions_for_uri`, `hover_at`, `completion_at`, `document_symbols_at`, `code_lenses_at`, `folding_ranges_at`, `signature_help_at`, `document_highlights_at`. Tests use a `FakeServer` stub — no pygls runtime needed.
 
 **Editor wiring — VS Code.** `~/projects/tree-sitter-m-vscode` carries a `vscode-languageclient` integration that spawns `m lsp` on activation. Settings: `m-cli.enabled`, `m-cli.path` (defaults to `m` on PATH; set to `~/projects/m-cli/.venv/bin/m` for venv installs), `m-cli.args` (e.g. `["--rules", "all"]` to broaden diagnostics), `m-cli.trace.server`. Self-install via `npm run package` + `code --install-extension`; full instructions in that repo's `docs/lsp-setup.md`.
 
@@ -151,6 +161,27 @@ Anything in `__all__` is locked: future internal refactors keep these importable
 ## Lint → fmt fixer linkage
 
 Each lint `Rule` carries an optional `fixer_id` pointing to an `m fmt` rule that auto-fixes the diagnostic. Today: `M-XINDX-013 ↔ trim-trailing-whitespace` and `M-XINDX-047 ↔ uppercase-command-keywords`. The link surfaces in `--format=json` output (`"fixer_id": ...` per diagnostic) and via the `m_cli.lint.fixer_for(rule_id)` helper. The LSP wrapper uses this to expose Quick Fix code actions; new pairings are pinned by `tests/test_lint_fixer_linkage.py`.
+
+## Project configuration (`.m-cli.toml` / `[tool.m-cli]`)
+
+`m fmt`, `m lint`, and `m lsp` all read project config on startup. Discovery walks up from the working directory looking for `.m-cli.toml` first, then a `pyproject.toml` containing a `[tool.m-cli]` table. Walking stops at a `.git` boundary so configs in unrelated parent projects don't leak in. The LSP spawns with `cwd = workspace folder` (VS Code default), so the same lookup finds the project's config without needing the `initialize` rootUri.
+
+Schema:
+
+```toml
+[lint]
+rules = "xindex"               # rule filter (same syntax as --rules)
+disable = ["M-XINDX-013"]      # rule ids to skip after selection
+
+[lint.severity]
+"M-XINDX-019" = "warning"      # remap per-rule severity
+                               # values: "fatal" | "standard" | "warning" | "info"
+
+[fmt]
+rules = "canonical"            # canonical, none (identity), or comma-separated rule ids
+```
+
+Resolution order: defaults → config → CLI flag (CLI always wins). Unknown keys are ignored silently to keep forward compatibility cheap. Invalid values (bad severity name, `disable` not a list) raise on load. The implementation lives in `m_cli.config` (`Config` dataclass + `find_config` + `load_config`); lint and fmt CLIs apply disable as a post-`select_rules` filter, severity overrides via `dataclasses.replace` on each `Diagnostic`. `m lsp` stashes the loaded `Config` on the `LanguageServer` instance and `lint_document` reads it on every push.
 
 ## Pre-commit integration
 

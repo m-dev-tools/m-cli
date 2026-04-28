@@ -11,6 +11,7 @@ import difflib
 import sys
 from pathlib import Path
 
+from m_cli.config import Config, load_config
 from m_cli.fmt.formatter import ParseError, format_source
 from m_cli.fmt.rules import select_fmt_rules
 
@@ -33,7 +34,14 @@ def fmt_command(args: argparse.Namespace) -> int:
         return 2
 
     try:
-        rules = select_fmt_rules(args.rules)
+        config = load_config(Path.cwd())
+    except ValueError as e:
+        print(f"m fmt: {e}", file=sys.stderr)
+        return 2
+
+    rule_filter = _resolve_fmt_rules(args, config)
+    try:
+        rules = select_fmt_rules(rule_filter)
     except ValueError as e:
         print(f"m fmt: {e}", file=sys.stderr)
         return 2
@@ -94,6 +102,15 @@ def fmt_command(args: argparse.Namespace) -> int:
     if args.check and n_changed > 0:
         return 1
     return 0
+
+
+def _resolve_fmt_rules(args: argparse.Namespace, config: Config) -> str:
+    """CLI flag wins; otherwise config; otherwise the historical default."""
+    if args.rules is not None:
+        return args.rules
+    if config.fmt_rules is not None:
+        return config.fmt_rules
+    return "none"  # identity (round-trip) — matches the pre-config default
 
 
 def _collect_files(paths: list[Path]) -> list[Path]:

@@ -11,11 +11,13 @@ linear scale-up is the expected pattern.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import os
 import sys
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
+from m_cli.config import Config, load_config
 from m_cli.lint.diagnostic import Diagnostic, Severity
 from m_cli.lint.output import write_output
 from m_cli.lint.runner import lint_source, select_rules
@@ -36,12 +38,21 @@ def lint_command(args: argparse.Namespace) -> int:
         return 2
 
     try:
-        rules = select_rules(args.rules)
+        config = load_config(Path.cwd())
     except ValueError as e:
         print(f"m lint: {e}", file=sys.stderr)
         return 2
+
+    rule_filter = _resolve_lint_rules(args, config)
+    try:
+        rules = select_rules(rule_filter)
+    except ValueError as e:
+        print(f"m lint: {e}", file=sys.stderr)
+        return 2
+    if config.lint_disable:
+        rules = [r for r in rules if r.id not in config.lint_disable]
     if not rules:
-        print(f"m lint: no rules matched --rules={args.rules!r}", file=sys.stderr)
+        print(f"m lint: no rules matched --rules={rule_filter!r}", file=sys.stderr)
         return 2
 
     threshold = _severity_from_string(args.error_on)
@@ -55,19 +66,46 @@ def lint_command(args: argparse.Namespace) -> int:
         return 2
 
     if jobs == 1 or len(files) <= 1:
-        all_diags, n_files, n_parse_errors = _run_serial(files, rules, args.lint_unparseable)
+        all_diags, n_files, n_parse_errors = _run_serial(
+            files, rules, args.lint_unparseable, config
+        )
     else:
         all_diags, n_files, n_parse_errors = _run_parallel(
-            files, args.rules, args.lint_unparseable, jobs
+            files, rule_filter, args.lint_unparseable, jobs, config
         )
+
+    if config.lint_severity_overrides:
+        all_diags = _apply_severity_overrides(all_diags, config.lint_severity_overrides)
 
     write_output(all_diags, fmt=args.format)
 
     if not args.quiet:
-        _print_summary(args, n_files, n_parse_errors, all_diags, len(rules))
+        _print_summary(rule_filter, n_files, n_parse_errors, all_diags, len(rules))
 
     fail = any(_severity_rank(d.severity) >= _severity_rank(threshold) for d in all_diags)
     return 1 if fail else 0
+
+
+def _resolve_lint_rules(args: argparse.Namespace, config: Config) -> str:
+    """CLI flag wins; otherwise config; otherwise the historical default."""
+    if args.rules is not None:
+        return args.rules
+    if config.lint_rules is not None:
+        return config.lint_rules
+    return "xindex"
+
+
+def _apply_severity_overrides(
+    diags: list[Diagnostic], overrides: dict[str, Severity]
+) -> list[Diagnostic]:
+    """Return a new list with per-rule severity remapped per ``overrides``.
+    Diagnostics whose rule id has no override are passed through unchanged."""
+    if not overrides:
+        return diags
+    return [
+        dataclasses.replace(d, severity=overrides[d.rule_id]) if d.rule_id in overrides else d
+        for d in diags
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -76,7 +114,10 @@ def lint_command(args: argparse.Namespace) -> int:
 
 
 def _lint_one_file(
-    path: Path, rule_filter: str, lint_unparseable: bool
+    path: Path,
+    rule_filter: str,
+    lint_unparseable: bool,
+    disable: tuple[str, ...] = (),
 ) -> tuple[list[Diagnostic], bool, str | None]:
     """Read, parse, and lint a single file.
 
@@ -91,13 +132,19 @@ def _lint_one_file(
     if tree.root_node.has_error and not lint_unparseable:
         return [], False, None
     rules = select_rules(rule_filter)
+    if disable:
+        rules = [r for r in rules if r.id not in disable]
     return lint_source(path, src, rules), True, None
 
 
 def _run_serial(
-    files: list[Path], rules: list, lint_unparseable: bool
+    files: list[Path], rules: list, lint_unparseable: bool, _config: Config
 ) -> tuple[list[Diagnostic], int, int]:
-    """Lint every file in the current process (no pool overhead)."""
+    """Lint every file in the current process (no pool overhead).
+
+    ``rules`` is already filtered by ``config.lint_disable`` at the
+    caller; we accept ``_config`` only for symmetry with the parallel path.
+    """
     all_diags: list[Diagnostic] = []
     n_files = 0
     n_parse_errors = 0
@@ -117,9 +164,17 @@ def _run_serial(
 
 
 def _run_parallel(
-    files: list[Path], rule_filter: str, lint_unparseable: bool, jobs: int
+    files: list[Path],
+    rule_filter: str,
+    lint_unparseable: bool,
+    jobs: int,
+    config: Config,
 ) -> tuple[list[Diagnostic], int, int]:
-    """Lint files across ``jobs`` worker processes."""
+    """Lint files across ``jobs`` worker processes.
+
+    Workers re-run ``select_rules`` and apply the disable list themselves —
+    the rule list isn't picklable but the config strings/tuples are.
+    """
     all_diags: list[Diagnostic] = []
     n_files = 0
     n_parse_errors = 0
@@ -127,7 +182,7 @@ def _run_parallel(
     with ProcessPoolExecutor(max_workers=jobs) as pool:
         for diags, parseable, err in pool.map(
             _lint_one_file_packed,
-            [(p, rule_filter, lint_unparseable) for p in files],
+            [(p, rule_filter, lint_unparseable, config.lint_disable) for p in files],
             chunksize=chunksize,
         ):
             if err is not None:
@@ -186,13 +241,15 @@ def _severity_rank(sev: Severity) -> int:
     return _RANK[sev]
 
 
-def _print_summary(args, n_files: int, n_parse_errors: int, diags, n_rules: int) -> None:
+def _print_summary(
+    rule_filter: str, n_files: int, n_parse_errors: int, diags, n_rules: int
+) -> None:
     by_sev = {sev: 0 for sev in Severity}
     for d in diags:
         by_sev[d.severity] += 1
     parts = [
         f"{n_files} file(s) checked",
-        f"{n_rules} rule(s) active (--rules={args.rules})",
+        f"{n_rules} rule(s) active (--rules={rule_filter})",
     ]
     if n_parse_errors:
         parts.append(f"{n_parse_errors} skipped (parse errors)")

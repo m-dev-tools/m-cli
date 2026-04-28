@@ -38,22 +38,31 @@ lighter-weight stub server (see the ``tests/test_lsp_*`` files).
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from functools import lru_cache
 from pathlib import Path
 
 from lsprotocol.types import (
     TEXT_DOCUMENT_CODE_ACTION,
+    TEXT_DOCUMENT_CODE_LENS,
     TEXT_DOCUMENT_COMPLETION,
     TEXT_DOCUMENT_DID_CHANGE,
     TEXT_DOCUMENT_DID_CLOSE,
     TEXT_DOCUMENT_DID_OPEN,
     TEXT_DOCUMENT_DID_SAVE,
+    TEXT_DOCUMENT_DOCUMENT_HIGHLIGHT,
+    TEXT_DOCUMENT_DOCUMENT_SYMBOL,
+    TEXT_DOCUMENT_FOLDING_RANGE,
     TEXT_DOCUMENT_FORMATTING,
     TEXT_DOCUMENT_HOVER,
+    TEXT_DOCUMENT_SIGNATURE_HELP,
     CodeAction,
     CodeActionKind,
     CodeActionParams,
+    CodeLens,
+    CodeLensParams,
+    Command,
     CompletionItem,
     CompletionItemKind,
     CompletionList,
@@ -63,6 +72,14 @@ from lsprotocol.types import (
     DidOpenTextDocumentParams,
     DidSaveTextDocumentParams,
     DocumentFormattingParams,
+    DocumentHighlight,
+    DocumentHighlightKind,
+    DocumentHighlightParams,
+    DocumentSymbol,
+    DocumentSymbolParams,
+    FoldingRange,
+    FoldingRangeKind,
+    FoldingRangeParams,
     Hover,
     HoverParams,
     MarkupContent,
@@ -70,6 +87,11 @@ from lsprotocol.types import (
     Position,
     PublishDiagnosticsParams,
     Range,
+    SignatureHelp,
+    SignatureHelpOptions,
+    SignatureHelpParams,
+    SignatureInformation,
+    SymbolKind,
     TextEdit,
     WorkspaceEdit,
 )
@@ -77,10 +99,13 @@ from lsprotocol.types import Diagnostic as LspDiagnostic
 from pygls.lsp.server import LanguageServer
 
 from m_cli import __version__
+from m_cli.config import Config, load_config
 from m_cli.fmt import FmtRule, ParseError, canonical_rules, format_source, rule_by_id
 from m_cli.lint import lint_source, select_rules
 from m_cli.lsp.convert import to_lsp_diagnostics
+from m_cli.lsp.structure import find_dot_blocks, find_labels
 from m_cli.lsp.symbols import KeywordRecord, all_keywords, lookup_keyword, token_at
+from m_cli.test.discovery import find_test_cases
 
 logger = logging.getLogger(__name__)
 
@@ -99,8 +124,11 @@ def lint_document(server, uri: str, *, rule_filter: str | None = None) -> None:
     spec lets the server publish whatever it wants, and silence is a
     valid response when the file isn't ours to lint.
 
-    The rule filter falls back to ``server.m_cli_rule_filter`` (set
-    by the CLI's ``--rules`` flag), then to ``"xindex"``.
+    Resolution order for the rule filter: explicit ``rule_filter``
+    argument → ``server.m_cli_rule_filter`` (CLI ``--rules`` flag) →
+    config file's ``[lint] rules`` → ``"xindex"``. Config also
+    contributes the ``[lint] disable`` list and ``[lint.severity]``
+    overrides, applied after rule selection / linting.
     """
     if not uri.endswith(".m"):
         return
@@ -111,10 +139,25 @@ def lint_document(server, uri: str, *, rule_filter: str | None = None) -> None:
         return
     src_text = doc.source if doc.source is not None else ""
     src_bytes = src_text.encode("latin-1", errors="replace")
-    effective_filter = rule_filter or getattr(server, "m_cli_rule_filter", None) or "xindex"
+    config: Config = getattr(server, "m_cli_config", None) or Config.empty()
+    effective_filter = (
+        rule_filter
+        or getattr(server, "m_cli_rule_filter", None)
+        or config.lint_rules
+        or "xindex"
+    )
     rules = select_rules(effective_filter)
+    if config.lint_disable:
+        rules = [r for r in rules if r.id not in config.lint_disable]
     path = Path(doc.path) if getattr(doc, "path", None) else Path(uri)
     diags = lint_source(path, src_bytes, rules)
+    if config.lint_severity_overrides:
+        diags = [
+            dataclasses.replace(d, severity=config.lint_severity_overrides[d.rule_id])
+            if d.rule_id in config.lint_severity_overrides
+            else d
+            for d in diags
+        ]
     server.text_document_publish_diagnostics(
         PublishDiagnosticsParams(uri=uri, diagnostics=to_lsp_diagnostics(diags))
     )
@@ -403,6 +446,313 @@ def _completion_items() -> list[CompletionItem]:
 
 
 # ---------------------------------------------------------------------------
+# Document symbols (Stage 4b — outline view)
+# ---------------------------------------------------------------------------
+
+
+def document_symbols_at(server, uri: str) -> list[DocumentSymbol]:
+    """Return one DocumentSymbol per label declared in the document.
+
+    Each symbol's ``range`` covers the label and its body (until the
+    next label or EOF); ``selection_range`` covers just the label
+    name. Editors render this as a flat outline — M doesn't have
+    nested scopes so we don't build a tree.
+    """
+    if not uri.endswith(".m"):
+        return []
+    try:
+        doc = server.workspace.get_text_document(uri)
+    except KeyError:
+        return []
+    src_bytes = (doc.source or "").encode("latin-1", errors="replace")
+    out: list[DocumentSymbol] = []
+    for lbl in find_labels(src_bytes):
+        full_range = Range(
+            start=Position(line=lbl.start_line, character=0),
+            end=Position(line=lbl.end_line, character=0),
+        )
+        sel_range = Range(
+            start=Position(line=lbl.start_line, character=0),
+            end=Position(line=lbl.start_line, character=len(lbl.name)),
+        )
+        out.append(
+            DocumentSymbol(
+                name=lbl.name + lbl.formals,
+                kind=SymbolKind.Function,
+                range=full_range,
+                selection_range=sel_range,
+            )
+        )
+    return out
+
+
+def text_document_document_symbol(server, params: DocumentSymbolParams) -> list[DocumentSymbol]:
+    return document_symbols_at(server, params.text_document.uri)
+
+
+# ---------------------------------------------------------------------------
+# Code lenses (Stage 4b — "▶ Run test" above each test label)
+# ---------------------------------------------------------------------------
+
+
+def code_lenses_at(server, uri: str) -> list[CodeLens]:
+    """Emit a "▶ Run test" lens above each ``t<UpperCase>(pass,fail)``
+    label in a ``*TST.m`` suite file.
+
+    The lens carries a ``m-cli.runTest`` command with arguments
+    ``[document_uri, label_name]``. The VS Code extension is expected
+    to register this command and shell out to ``m test FILE.m::tLabel``.
+    Editors that don't register the command still display the lens
+    title but the click is a no-op — that's intentional.
+    """
+    if not uri.endswith(".m"):
+        return []
+    try:
+        doc = server.workspace.get_text_document(uri)
+    except KeyError:
+        return []
+    path = Path(doc.path) if getattr(doc, "path", None) else Path(uri)
+    src_bytes = (doc.source or "").encode("latin-1", errors="replace")
+    cases = find_test_cases(path, src_bytes)
+    out: list[CodeLens] = []
+    for case in cases:
+        line0 = max(0, case.line - 1)  # find_test_cases returns 1-indexed
+        out.append(
+            CodeLens(
+                range=Range(
+                    start=Position(line=line0, character=0),
+                    end=Position(line=line0, character=len(case.label)),
+                ),
+                command=Command(
+                    title=f"▶ Run test {case.label}",
+                    command="m-cli.runTest",
+                    arguments=[uri, case.label],
+                ),
+            )
+        )
+    return out
+
+
+def text_document_code_lens(server, params: CodeLensParams) -> list[CodeLens]:
+    return code_lenses_at(server, params.text_document.uri)
+
+
+# ---------------------------------------------------------------------------
+# Folding ranges (Stage 4b)
+# ---------------------------------------------------------------------------
+
+
+def folding_ranges_at(server, uri: str) -> list[FoldingRange]:
+    """Fold each label's body and each contiguous dot-block run.
+
+    The label range covers the line *after* the label header through
+    its last body line — folding the header itself would hide the
+    name and defeat the purpose. Single-line labels emit no fold.
+    """
+    if not uri.endswith(".m"):
+        return []
+    try:
+        doc = server.workspace.get_text_document(uri)
+    except KeyError:
+        return []
+    src_bytes = (doc.source or "").encode("latin-1", errors="replace")
+    out: list[FoldingRange] = []
+    for lbl in find_labels(src_bytes):
+        if lbl.end_line > lbl.start_line:
+            out.append(
+                FoldingRange(
+                    start_line=lbl.start_line,
+                    end_line=lbl.end_line,
+                    kind=FoldingRangeKind.Region,
+                )
+            )
+    for blk in find_dot_blocks(src_bytes):
+        if blk.end_line > blk.start_line:
+            out.append(
+                FoldingRange(
+                    start_line=blk.start_line,
+                    end_line=blk.end_line,
+                    kind=FoldingRangeKind.Region,
+                )
+            )
+    return out
+
+
+def text_document_folding_range(server, params: FoldingRangeParams) -> list[FoldingRange]:
+    return folding_ranges_at(server, params.text_document.uri)
+
+
+# ---------------------------------------------------------------------------
+# Signature help (Stage 4b — show $FN signature inside parentheses)
+# ---------------------------------------------------------------------------
+
+
+def signature_help_at(server, uri: str, position: Position) -> SignatureHelp | None:
+    """When the cursor is inside ``$FN(...)``, return the function's
+    syntax format as a single SignatureInformation entry.
+
+    Resolution is purely text-based: scan left from the cursor for the
+    matching unbalanced ``(``, then read the intrinsic-function token
+    immediately before it. We don't track active-parameter index —
+    M's intrinsic parameter lists are short and the format string
+    already shows them.
+    """
+    if not uri.endswith(".m"):
+        return None
+    try:
+        doc = server.workspace.get_text_document(uri)
+    except KeyError:
+        return None
+    lines = (doc.source or "").splitlines()
+    if position.line < 0 or position.line >= len(lines):
+        return None
+    line = lines[position.line]
+    if position.character > len(line):
+        return None
+    open_idx = _find_enclosing_open_paren(line, position.character)
+    if open_idx is None:
+        return None
+    fn_token = _read_token_ending_at(line, open_idx)
+    if not fn_token or not fn_token.startswith("$"):
+        return None
+    record = lookup_keyword(fn_token)
+    if record is None or record.kind != "function":
+        return None
+    fmt = record.format or record.canonical
+    return SignatureHelp(
+        signatures=[
+            SignatureInformation(
+                label=fmt,
+                documentation=MarkupContent(
+                    kind=MarkupKind.Markdown,
+                    value=f"**{record.canonical}** — M intrinsic function",
+                ),
+            )
+        ],
+        active_signature=0,
+        active_parameter=0,
+    )
+
+
+def text_document_signature_help(server, params: SignatureHelpParams) -> SignatureHelp | None:
+    return signature_help_at(server, params.text_document.uri, params.position)
+
+
+def _signature_help_options() -> SignatureHelpOptions:
+    """Trigger ``$FN(`` opens signature help; ``,`` keeps it active."""
+    return SignatureHelpOptions(trigger_characters=["("], retrigger_characters=[","])
+
+
+def _find_enclosing_open_paren(line: str, character: int) -> int | None:
+    """Walk backward from ``character`` and return the column of the
+    nearest unmatched ``(``. Skips matched ``()`` pairs and stops if
+    we leave the line without finding one."""
+    depth = 0
+    i = character - 1
+    while i >= 0:
+        c = line[i]
+        if c == ")":
+            depth += 1
+        elif c == "(":
+            if depth == 0:
+                return i
+            depth -= 1
+        i -= 1
+    return None
+
+
+def _read_token_ending_at(line: str, end: int) -> str | None:
+    """Read the M token that ends at column ``end`` (exclusive).
+    Mirrors ``token_at`` but anchored to a known boundary."""
+    if end <= 0:
+        return None
+
+    def is_word(c: str) -> bool:
+        return c.isalnum() or c == "$" or c == "%"
+
+    start = end
+    while start > 0 and is_word(line[start - 1]):
+        start -= 1
+    token = line[start:end]
+    return token if token else None
+
+
+# ---------------------------------------------------------------------------
+# Document highlight (Stage 4b — same-file occurrences of a name)
+# ---------------------------------------------------------------------------
+
+
+def document_highlights_at(
+    server, uri: str, position: Position
+) -> list[DocumentHighlight] | None:
+    """Highlight every occurrence of the identifier under the cursor
+    inside the current document.
+
+    Match is case-sensitive (M is case-sensitive for *variable* names —
+    only command/function keywords are case-insensitive). Returns
+    ``None`` when no token is under the cursor; an empty list is
+    valid only when the token has zero other occurrences.
+    """
+    if not uri.endswith(".m"):
+        return None
+    try:
+        doc = server.workspace.get_text_document(uri)
+    except KeyError:
+        return None
+    src_text = doc.source or ""
+    lines = src_text.splitlines()
+    if position.line < 0 or position.line >= len(lines):
+        return None
+    token = token_at(lines[position.line], position.character)
+    if token is None or len(token) < 2:
+        # Single-char tokens are too noisy (e.g. ``X`` matches every X).
+        return None
+    out: list[DocumentHighlight] = []
+    for row, line in enumerate(lines):
+        for col in _find_token_occurrences(line, token):
+            out.append(
+                DocumentHighlight(
+                    range=Range(
+                        start=Position(line=row, character=col),
+                        end=Position(line=row, character=col + len(token)),
+                    ),
+                    kind=DocumentHighlightKind.Text,
+                )
+            )
+    return out
+
+
+def text_document_document_highlight(
+    server, params: DocumentHighlightParams
+) -> list[DocumentHighlight] | None:
+    return document_highlights_at(server, params.text_document.uri, params.position)
+
+
+def _find_token_occurrences(line: str, token: str) -> list[int]:
+    """Return all column positions where ``token`` appears as a
+    standalone word in ``line`` (word boundaries on both sides)."""
+    if not token:
+        return []
+
+    def is_word(c: str) -> bool:
+        return c.isalnum() or c == "$" or c == "%"
+
+    out: list[int] = []
+    n = len(token)
+    i = 0
+    while i <= len(line) - n:
+        if line[i : i + n] == token:
+            left_ok = i == 0 or not is_word(line[i - 1])
+            right_ok = i + n == len(line) or not is_word(line[i + n])
+            if left_ok and right_ok:
+                out.append(i)
+                i += n
+                continue
+        i += 1
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -421,6 +771,17 @@ def run_stdio(rule_filter: str | None = None) -> int:
         # CLI-provided filter so lint_document() can read it. Using setattr
         # avoids tripping mypy on the unknown attribute.
         setattr(server, "m_cli_rule_filter", rule_filter)  # noqa: B010
+    # Load .m-cli.toml / pyproject.toml [tool.m-cli] from the spawn cwd.
+    # VS Code spawns `m lsp` with cwd = workspace folder, so this finds
+    # the workspace's project config without needing the initialize URI.
+    try:
+        config = load_config(Path.cwd())
+        if config.source_path is not None:
+            logger.info("m-cli LSP loaded config from %s", config.source_path)
+        setattr(server, "m_cli_config", config)  # noqa: B010
+    except ValueError as e:
+        logger.warning("m-cli LSP: ignoring invalid config (%s)", e)
+        setattr(server, "m_cli_config", Config.empty())  # noqa: B010
 
     @server.feature(TEXT_DOCUMENT_DID_OPEN)
     def _did_open(params: DidOpenTextDocumentParams) -> None:
@@ -454,6 +815,26 @@ def run_stdio(rule_filter: str | None = None) -> int:
     def _completion(params: CompletionParams) -> CompletionList:
         return text_document_completion(server, params)
 
+    @server.feature(TEXT_DOCUMENT_DOCUMENT_SYMBOL)
+    def _document_symbol(params: DocumentSymbolParams) -> list[DocumentSymbol]:
+        return text_document_document_symbol(server, params)
+
+    @server.feature(TEXT_DOCUMENT_CODE_LENS)
+    def _code_lens(params: CodeLensParams) -> list[CodeLens]:
+        return text_document_code_lens(server, params)
+
+    @server.feature(TEXT_DOCUMENT_FOLDING_RANGE)
+    def _folding_range(params: FoldingRangeParams) -> list[FoldingRange]:
+        return text_document_folding_range(server, params)
+
+    @server.feature(TEXT_DOCUMENT_SIGNATURE_HELP, _signature_help_options())
+    def _signature_help(params: SignatureHelpParams) -> SignatureHelp | None:
+        return text_document_signature_help(server, params)
+
+    @server.feature(TEXT_DOCUMENT_DOCUMENT_HIGHLIGHT)
+    def _document_highlight(params: DocumentHighlightParams) -> list[DocumentHighlight] | None:
+        return text_document_document_highlight(server, params)
+
     logger.info("m-cli LSP %s starting on stdio", __version__)
     server.start_io()
     return 0
@@ -468,6 +849,16 @@ __all__ = [
     "text_document_hover",
     "completion_at",
     "text_document_completion",
+    "document_symbols_at",
+    "text_document_document_symbol",
+    "code_lenses_at",
+    "text_document_code_lens",
+    "folding_ranges_at",
+    "text_document_folding_range",
+    "signature_help_at",
+    "text_document_signature_help",
+    "document_highlights_at",
+    "text_document_document_highlight",
     "code_actions_for_uri",
     "text_document_code_action",
     "did_open",

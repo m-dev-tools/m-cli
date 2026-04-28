@@ -175,6 +175,56 @@ def test_lint_document_explicit_rule_filter_wins_over_server_attribute() -> None
     assert "M-XINDX-013" in rule_ids
 
 
+def test_lint_document_honors_config_disable_list() -> None:
+    """Config's ``[lint] disable`` list filters rules out of the lint pass."""
+    from m_cli.config import Config
+
+    srv = FakeServer()
+    srv.m_cli_config = Config(lint_disable=("M-XINDX-013",))
+    uri = "file:///tmp/hello.m"
+    _open_doc(srv, uri, "hello ;c\n quit \n")  # would normally trigger M-XINDX-013
+
+    lint_document(srv, uri)
+
+    rule_ids = {d.code for d in srv.published[0].diagnostics}
+    assert "M-XINDX-013" not in rule_ids
+
+
+def test_lint_document_applies_config_severity_overrides() -> None:
+    """Config's ``[lint.severity]`` table remaps the published severity."""
+    from lsprotocol.types import DiagnosticSeverity
+
+    from m_cli.config import Config
+    from m_cli.lint.diagnostic import Severity
+
+    srv = FakeServer()
+    srv.m_cli_config = Config(lint_severity_overrides={"M-XINDX-013": Severity.FATAL})
+    uri = "file:///tmp/hello.m"
+    _open_doc(srv, uri, "hello ;c\n quit \n")
+
+    lint_document(srv, uri)
+
+    diags = srv.published[0].diagnostics
+    d013 = next(d for d in diags if d.code == "M-XINDX-013")
+    # FATAL maps to LSP DiagnosticSeverity.Error per to_lsp_diagnostic.
+    assert d013.severity == DiagnosticSeverity.Error
+
+
+def test_lint_document_uses_config_lint_rules_when_no_flag() -> None:
+    """Falls back to ``Config.lint_rules`` when neither arg nor server attr set."""
+    from m_cli.config import Config
+
+    srv = FakeServer()
+    srv.m_cli_config = Config(lint_rules="M-XINDX-019")  # only the line-too-long rule
+    uri = "file:///tmp/hello.m"
+    _open_doc(srv, uri, "hello ;c\n quit \n")  # only triggers M-XINDX-013
+
+    lint_document(srv, uri)
+
+    rule_ids = {d.code for d in srv.published[0].diagnostics}
+    assert "M-XINDX-013" not in rule_ids
+
+
 # ---------------------------------------------------------------------------
 # Handler wiring: didOpen, didChange, didSave, didClose
 # ---------------------------------------------------------------------------

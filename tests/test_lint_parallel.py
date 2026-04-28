@@ -55,9 +55,9 @@ def test_jobs_default_is_picked_up_from_cpu_count(
 
     real = cli_mod._run_parallel
 
-    def spy(files, rule_filter, lint_unparseable, jobs):
+    def spy(files, rule_filter, lint_unparseable, jobs, config):
         captured["jobs"] = jobs
-        return real(files, rule_filter, lint_unparseable, jobs)
+        return real(files, rule_filter, lint_unparseable, jobs, config)
 
     monkeypatch.setattr(cli_mod, "_run_parallel", spy)
     main(["lint", "--quiet", str(tmp_path)])

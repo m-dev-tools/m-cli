@@ -53,11 +53,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     fmt_parser.add_argument(
         "--rules",
-        default="none",
+        default=None,
         help=(
             "Canonical-layout rules to apply: 'none' (identity, default), "
             "'canonical' (every safe rule), 'all', or a comma-separated "
-            "list of rule ids (e.g. 'trim-trailing-whitespace')"
+            "list of rule ids (e.g. 'trim-trailing-whitespace'). When "
+            "unset, falls back to [fmt] rules from .m-cli.toml / pyproject.toml."
         ),
     )
     fmt_parser.add_argument(
@@ -102,8 +103,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     lint_parser.add_argument(
         "--rules",
-        default="xindex",
-        help="Rule family or comma-separated rule IDs (default: xindex)",
+        default=None,
+        help=(
+            "Rule family or comma-separated rule IDs (default: xindex, "
+            "or [lint] rules from .m-cli.toml / pyproject.toml)"
+        ),
     )
     lint_parser.add_argument(
         "--format",
