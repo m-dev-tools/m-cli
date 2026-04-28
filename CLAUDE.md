@@ -30,7 +30,7 @@ Per [m-tool-gap-analysis.md §8](../m-tools/docs/m-tool-gap-analysis.md#8-rank-o
 | # | Tier 2 capability | Status | Implementation |
 |---|---|:---:|---|
 | 6 | CI script | 🟡 Partial | Project Makefile + pre-commit scaffold. No dedicated `m ci` planned yet. |
-| 7 | **Coverage** | 🟡 First slice shipped | `m coverage` — Phase C. Label-level via ZBREAK (parser-aware port of m-tools' `ycover`). Live smoke against m-tools: 85/123 labels = 69.1% — byte-identical to ycover's reported figure. Line-level via source instrumentation deferred to a later slice. |
+| 7 | **Coverage** | 🟡 Two slices shipped | `m coverage` — Phase C. Runner uses YDB's built-in `view "TRACE"` (replaces the original ZBREAK technique; one trace pass replaces N ZBREAKs per label). Label-level: 85/123 = 69.1% on m-tools, byte-identical to ycover. Line-level data is currently label-granular: every executable line in a covered label reports hit_count=1; uncovered labels report 0. Output formats: `text` (default), `text --lines` (per-routine label + line columns), `json`, `lcov` (genhtml / Codecov / Coveralls compatible). True per-line counts await decoding YDB's TRACE third-subscript offset semantics. |
 | 8 | Linter (style) | ✅ Done | Style rules ride alongside logic rules in `m lint`; `--rules=sac` for SAC-tagged subset; severity overrides via config. |
 | 9 | Pre-commit hooks | ✅ Done | `.pre-commit-hooks.yaml` exposes `m-fmt-check`, `m-fmt`, `m-lint`. |
 | 10 | Debugger | ⏸️ Deferred | DAP integration is its own engineering project; both engines ship `ZBREAK` at the engine level. Not on near-term roadmap. |

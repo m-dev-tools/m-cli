@@ -19,8 +19,16 @@ def _result() -> CoverageResult:
         LabelCoverage(routine="HELLO", label="SHOUT", path=h, line=5, covered=False),
         LabelCoverage(routine="MATH", label="ADD", path=m, line=3, covered=True),
     ]
+    from m_cli.coverage.runner import LineCoverage
+
+    lines = [
+        LineCoverage(routine="HELLO", label="GREET", path=h, line=4, hit_count=2),
+        LineCoverage(routine="HELLO", label="SHOUT", path=h, line=6, hit_count=0),
+        LineCoverage(routine="MATH", label="ADD", path=m, line=4, hit_count=1),
+    ]
     return CoverageResult(
         labels=labels,
+        lines=lines,
         suites_run=["HELLOTST"],
         returncode=0,
         stdout="",
@@ -63,3 +71,50 @@ def test_json_output_is_parseable_and_complete(capsys: pytest.CaptureFixture) ->
 def test_unknown_format_raises() -> None:
     with pytest.raises(ValueError, match="unknown coverage output format"):
         write_output(_result(), fmt="xml")
+
+
+def test_lcov_output_emits_per_file_records(capsys: pytest.CaptureFixture) -> None:
+    """LCOV format: one SF block per source file with DA records and
+    LF/LH totals. Consumed by genhtml / Codecov / Coveralls."""
+    write_output(_result(), fmt="lcov")
+    out = capsys.readouterr().out
+    assert out.startswith("TN:\n")
+    assert "SF:/p/HELLO.m" in out
+    assert "SF:/p/MATH.m" in out
+    assert "DA:4,2" in out  # GREET line 4 hit twice
+    assert "DA:6,0" in out  # SHOUT line 6 not hit
+    assert "DA:4,1" in out  # MATH line 4 hit once
+    # HELLO file: 2 lines found, 1 hit.
+    assert "LF:2" in out
+    assert "LH:1" in out
+    assert out.count("end_of_record") == 2
+
+
+def test_text_lines_output_shows_per_routine_line_counts(
+    capsys: pytest.CaptureFixture,
+) -> None:
+    write_output(_result(), fmt="text", show_lines=True)
+    out = capsys.readouterr().out
+    # Per-routine line columns appear.
+    assert "Lines" in out
+    # HELLO: 1/2 lines = 50%; MATH: 1/1 = 100%.
+    assert "1/2" in out
+    assert "1/1" in out
+
+
+def test_text_lines_uncovered_lists_per_line(capsys: pytest.CaptureFixture) -> None:
+    write_output(_result(), fmt="text", uncovered_only=True, show_lines=True)
+    out = capsys.readouterr().out
+    assert "Uncovered lines" in out
+    # SHOUT line 6 is the one uncovered executable line in the fixture.
+    assert "/p/HELLO.m:6" in out
+
+
+def test_json_includes_line_data(capsys: pytest.CaptureFixture) -> None:
+    write_output(_result(), fmt="json")
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["total_lines"] == 3
+    assert payload["covered_lines"] == 2
+    line_records = {(ln["routine"], ln["line"]): ln["hit_count"] for ln in payload["lines"]}
+    assert line_records[("HELLO", 4)] == 2
+    assert line_records[("HELLO", 6)] == 0

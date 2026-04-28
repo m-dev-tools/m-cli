@@ -47,7 +47,12 @@ def coverage_command(args: argparse.Namespace) -> int:
             return 2
 
     result = run_coverage(routines, suites, suite_filter=suite_filter)
-    write_output(result, fmt=args.format, uncovered_only=args.uncovered)
+    write_output(
+        result,
+        fmt=args.format,
+        uncovered_only=args.uncovered,
+        show_lines=args.lines,
+    )
 
     if not args.quiet:
         _print_summary(result, args)
@@ -136,9 +141,20 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--format",
-        choices=("text", "json"),
+        choices=("text", "json", "lcov"),
         default="text",
-        help="Output format (default: text)",
+        help=(
+            "Output format (default: text). 'lcov' emits a tracefile "
+            "consumable by genhtml / Codecov / Coveralls."
+        ),
+    )
+    parser.add_argument(
+        "--lines",
+        action="store_true",
+        help=(
+            "Show line-level detail in text output. With --uncovered, "
+            "also lists every uncovered executable line."
+        ),
     )
     parser.add_argument(
         "--uncovered",

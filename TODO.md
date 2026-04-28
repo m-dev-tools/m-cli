@@ -11,17 +11,16 @@ Pick up from this list. Top section is "next session" — concrete, ordered. Low
 | # | Capability | Status | Notes |
 |---|---|:---:|---|
 | 6 | CI script | 🟡 Partial | Project Makefile + pre-commit scaffold cover the main use cases. No dedicated `m ci` planned. |
-| 7 | **Coverage** | 🟡 First slice shipped | `m coverage` — Phase C. Label-level via ZBREAK; live smoke 85/123 (69.1%) against m-tools, byte-identical to ycover. Line-level instrumentation deferred. |
+| 7 | **Coverage** | 🟡 Two slices shipped | `m coverage` — Phase C. Runner refactored to use YDB's `view "TRACE"`; label-level holds at 69.1%. Output formats now include `lcov` (CI integration) and `--lines` text mode. Line-level data is currently label-granular until YDB's TRACE offset semantics are decoded. |
 | 8 | Linter (style) | ✅ Done | Bundled with `m lint`; `--rules=sac` for SAC-tagged subset. |
 | 9 | Pre-commit hooks | ✅ Done | `.pre-commit-hooks.yaml` shipped. |
 | 10 | Debugger | ⏸️ Deferred | DAP integration is a separate, large effort. Not on near-term roadmap. |
 
 **Next session — pick from:**
 
-1. **Coverage line-level (Phase C deepening).** `m coverage --lines` via tree-sitter-driven source instrumentation: identify executable lines per routine, emit a counter increment per line, run, parse. Bigger build than the label-level slice but reuses everything in `m_cli.coverage` plus the workspace index.
-2. **Coverage LCOV output.** Add `--format=lcov` for CI integration. Mechanical follow-up; label-level data maps to LCOV's `DA:line,count` records.
-3. **Phase D (deferred XINDEX rules).** The 30 not-yet-ported rules; far easier now that Phase B's reference index is in place — cross-routine "call to undefined label" / "label never referenced" lints land in a few lines each on top of `WorkspaceIndex.references_to`.
-4. **Publish to PyPI.** Unblocks `language: repo` pre-commit and downstream `pip install m-cli`.
+1. **Coverage true line-level.** Decode YDB's TRACE third-subscript offset → absolute file-line mapping. Once decoded, `m coverage --lines` will report actual per-line hit counts instead of label-granular attribution. Probable approach: cross-reference the trace's offset N within label LBL against the parser's executable-line list for that label; the N-th executable line of the label is the one ydb reported.
+2. **Phase D (deferred XINDEX rules).** The 30 not-yet-ported rules; cross-routine "call to undefined label" / "label never referenced" lints land in a few lines each on top of `WorkspaceIndex.references_to` / `lookup`.
+3. **Publish to PyPI.** Unblocks `language: repo` pre-commit and downstream `pip install m-cli`.
 
 ---
 

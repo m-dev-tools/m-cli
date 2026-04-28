@@ -25,6 +25,7 @@ def _make_args(**overrides) -> argparse.Namespace:
         suites=None,
         format="text",
         uncovered=False,
+        lines=False,
         min_percent=None,
         quiet=True,
     )
@@ -65,7 +66,7 @@ def test_cli_runs_with_full_coverage(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
 ) -> None:
     _seed(tmp_path)
-    _patch_runner(monkeypatch, '^ycov("HELLO","GREET")=1\n', rc=0)
+    _patch_runner(monkeypatch, '^ycov("HELLO","GREET",4)="1:0:0:1:1"\n', rc=0)
 
     rc = coverage_command(_make_args(paths=[tmp_path]))
     assert rc == 0
@@ -87,7 +88,7 @@ def test_cli_min_percent_threshold_fails_when_below(
     (routines / "tests" / "HELLOTST.m").write_bytes(
         b"HELLOTST ;c\n D A^HELLO\n QUIT\n"
     )
-    _patch_runner(monkeypatch, '^ycov("HELLO","A")=1\n', rc=0)
+    _patch_runner(monkeypatch, '^ycov("HELLO","A",4)="1:0:0:1:1"\n', rc=0)
 
     rc = coverage_command(_make_args(paths=[tmp_path], min_percent=80.0))
     assert rc == 1
@@ -97,7 +98,7 @@ def test_cli_min_percent_threshold_passes_when_met(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _seed(tmp_path)
-    _patch_runner(monkeypatch, '^ycov("HELLO","GREET")=1\n', rc=0)
+    _patch_runner(monkeypatch, '^ycov("HELLO","GREET",4)="1:0:0:1:1"\n', rc=0)
 
     rc = coverage_command(_make_args(paths=[tmp_path], min_percent=100.0))
     assert rc == 0
@@ -117,7 +118,7 @@ def test_cli_json_output_is_valid(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
 ) -> None:
     _seed(tmp_path)
-    _patch_runner(monkeypatch, '^ycov("HELLO","GREET")=1\n', rc=0)
+    _patch_runner(monkeypatch, '^ycov("HELLO","GREET",4)="1:0:0:1:1"\n', rc=0)
 
     coverage_command(_make_args(paths=[tmp_path], format="json"))
     payload = json.loads(capsys.readouterr().out)
@@ -131,7 +132,7 @@ def test_cli_propagates_runner_returncode_as_failure(
 ) -> None:
     """ydb non-zero exit → m coverage exit 1 even if some labels covered."""
     _seed(tmp_path)
-    _patch_runner(monkeypatch, '^ycov("HELLO","GREET")=1\n', rc=2)
+    _patch_runner(monkeypatch, '^ycov("HELLO","GREET",4)="1:0:0:1:1"\n', rc=2)
 
     rc = coverage_command(_make_args(paths=[tmp_path]))
     assert rc == 1

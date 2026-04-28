@@ -17,7 +17,14 @@ from m_cli.coverage.cli import coverage_command
 from m_cli.coverage.runner import (
     CoverageResult,
     LabelCoverage,
+    LineCoverage,
     run_coverage,
 )
 
-__all__ = ["coverage_command", "run_coverage", "CoverageResult", "LabelCoverage"]
+__all__ = [
+    "coverage_command",
+    "run_coverage",
+    "CoverageResult",
+    "LabelCoverage",
+    "LineCoverage",
+]
