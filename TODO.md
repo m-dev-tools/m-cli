@@ -11,15 +11,15 @@ Pick up from this list. Top section is "next session" — concrete, ordered. Low
 | # | Capability | Status | Notes |
 |---|---|:---:|---|
 | 6 | CI script | 🟡 Partial | Project Makefile + pre-commit scaffold cover the main use cases. No dedicated `m ci` planned. |
-| 7 | **Coverage** | 🟡 Two slices shipped | `m coverage` — Phase C. Runner refactored to use YDB's `view "TRACE"`; label-level holds at 69.1%. Output formats now include `lcov` (CI integration) and `--lines` text mode. Line-level data is currently label-granular until YDB's TRACE offset semantics are decoded. |
+| 7 | **Coverage** | ✅ Done | `m coverage` — Phase C. Runner uses YDB `view "TRACE"`; offset semantics decoded (offset N from label = absolute line label_line+N). Label-level 69.1% (byte-identical to ycover); line-level 340/637 (53.4%) on m-tools. Outputs: text, text --lines, json, lcov. |
 | 8 | Linter (style) | ✅ Done | Bundled with `m lint`; `--rules=sac` for SAC-tagged subset. |
 | 9 | Pre-commit hooks | ✅ Done | `.pre-commit-hooks.yaml` shipped. |
 | 10 | Debugger | ⏸️ Deferred | DAP integration is a separate, large effort. Not on near-term roadmap. |
 
 **Next session — pick from:**
 
-1. **Coverage true line-level.** Decode YDB's TRACE third-subscript offset → absolute file-line mapping. Once decoded, `m coverage --lines` will report actual per-line hit counts instead of label-granular attribution. Probable approach: cross-reference the trace's offset N within label LBL against the parser's executable-line list for that label; the N-th executable line of the label is the one ydb reported.
-2. **Phase D (deferred XINDEX rules).** The 30 not-yet-ported rules; cross-routine "call to undefined label" / "label never referenced" lints land in a few lines each on top of `WorkspaceIndex.references_to` / `lookup`.
+1. **More Phase D rules.** Three cross-routine rules ship (M-XINDX-007/008/049). The remaining ~27 deferred XINDEX rules need data-flow / scope tracking (uninitialized vars, naked references, dead stores). Each one is now far easier to add — workspace context is wired through `lint_source` and rules with `needs_workspace=True` get the index automatically.
+2. **Tier 3.** Documentation generator, dependency management, complexity metrics, dead-code per file. The `WorkspaceIndex` is the foundation for all of these.
 3. **Publish to PyPI.** Unblocks `language: repo` pre-commit and downstream `pip install m-cli`.
 
 ---

@@ -125,6 +125,19 @@ class WorkspaceIndex:
         key = (routine.upper(), label.upper() if label else None)
         return list(self._refs_by_target.get(key, []))
 
+    def refs_from(self, path: Path) -> list[ReferenceCallSite]:
+        """Every outbound call site recorded for ``path``.
+
+        Used by cross-routine lint rules (M-XINDX-007 et al.) to walk
+        a file's references and verify each target exists. Returns
+        an empty list if ``path`` isn't indexed."""
+        return list(self._refs_by_path.get(path, []))
+
+    def has_routine(self, routine: str) -> bool:
+        """True iff at least one label is indexed for ``routine``
+        (case-insensitive)."""
+        return routine.upper() in self._by_routine
+
     def add_file(self, path: Path, src: bytes) -> None:
         """Index one ``.m`` file, replacing any prior entries for that path.
 
@@ -236,45 +249,133 @@ _CALL_HEADER_RE = re.compile(
 
 
 def _extract_references(src: bytes, path: Path) -> list[ReferenceCallSite]:
-    """Walk the AST for ``entry_reference`` and ``extrinsic_function``
-    nodes and pull (target_routine, target_label) pairs out of each.
+    """Walk the AST and extract every cross-routine call site.
 
-    ``D ^FOO`` and bare ``D LBL`` aren't indexed: tree-sitter-m parses
-    them as ``variable`` (global / local) which is overloaded with
-    actual variable access. Indexing those would produce too many
-    false-positive references — out of scope for this slice.
+    Three forms:
+
+      1. ``entry_reference`` — ``LABEL^ROUTINE`` / ``^ROUTINE`` / ``LABEL``
+         appearing in DO/GOTO arguments. The parser emits this when
+         it sees the ``^`` syntactic clue.
+      2. ``extrinsic_function`` — ``$$LABEL^ROUTINE(args)`` /
+         ``$$LABEL(args)``. Distinguished by the leading ``$$``.
+      3. Bare-label DO/GOTO/JOB — ``D LABEL`` (no ``^``) inside
+         these commands is a label call by M semantics. Tree-sitter-m
+         parses the argument as ``local_variable``; we disambiguate
+         by checking the command keyword. Skipped for X/XECUTE
+         (those evaluate string expressions, not labels) and for
+         arguments starting with ``@`` (indirection).
     """
     tree = parse(src)
     out: list[ReferenceCallSite] = []
+    routine_stem = path.stem
     for node in _walk_nodes(tree.root_node):
-        if node.type not in ("entry_reference", "extrinsic_function"):
+        if node.type in ("entry_reference", "extrinsic_function"):
+            ref = _ref_from_call_node(node, src, routine_stem, path)
+            if ref is not None:
+                out.append(ref)
+        elif node.type == "command":
+            out.extend(_refs_from_bare_label_command(node, src, routine_stem, path))
+    return out
+
+
+def _ref_from_call_node(
+    node, src: bytes, routine_stem: str, path: Path
+) -> "ReferenceCallSite | None":
+    text = src[node.start_byte : node.end_byte].decode("latin-1", errors="replace")
+    offset = 0
+    if node.type == "extrinsic_function" and text.startswith("$$"):
+        text = text[2:]
+        offset = 2
+    m = _CALL_HEADER_RE.match(text)
+    if not m or (m.group("label") is None and m.group("routine") is None):
+        return None
+    label = m.group("label")
+    routine = m.group("routine") or routine_stem
+    start_row = node.start_point[0]
+    start_col = node.start_point[1] + offset
+    end_col = start_col + (m.end() - m.start())
+    return ReferenceCallSite(
+        target_routine=routine.upper(),
+        target_label=label.upper() if label else None,
+        path=path,
+        line=start_row + 1,
+        column=start_col,
+        end_column=end_col,
+    )
+
+
+# Command keywords whose argument is a label name (per M semantics).
+# X/XECUTE evaluates an expression string, not a label, so it's excluded.
+_LABEL_CALL_KEYWORDS = frozenset({"D", "DO", "G", "GOTO", "J", "JOB"})
+
+
+def _refs_from_bare_label_command(
+    cmd_node, src: bytes, routine_stem: str, path: Path
+) -> list[ReferenceCallSite]:
+    """Index ``D LBL`` / ``G LBL`` / ``J LBL`` arguments as intra-routine
+    references to (current_routine, LBL).
+
+    Skips arguments that are already wrapped in ``entry_reference`` or
+    ``extrinsic_function`` (those are handled by the caller). Skips
+    indirect arguments (anything that doesn't bottom out in a clean
+    ``local_variable → identifier``).
+    """
+    keyword_node = next(
+        (c for c in cmd_node.children if c.type == "command_keyword"), None
+    )
+    if keyword_node is None:
+        return []
+    keyword = src[keyword_node.start_byte : keyword_node.end_byte].decode(
+        "latin-1", errors="replace"
+    )
+    if keyword.upper() not in _LABEL_CALL_KEYWORDS:
+        return []
+    arg_list = next((c for c in cmd_node.children if c.type == "argument_list"), None)
+    if arg_list is None:
+        return []
+    out: list[ReferenceCallSite] = []
+    for arg in arg_list.children:
+        if arg.type != "argument":
             continue
-        text = src[node.start_byte : node.end_byte].decode("latin-1", errors="replace")
-        # Strip the ``$$`` prefix from extrinsic_function before matching.
-        offset = 0
-        if node.type == "extrinsic_function" and text.startswith("$$"):
-            text = text[2:]
-            offset = 2
-        m = _CALL_HEADER_RE.match(text)
-        if not m or (m.group("label") is None and m.group("routine") is None):
+        # Find a local_variable child wrapped through one variable layer.
+        # Skip arguments containing entry_reference / extrinsic_function /
+        # indirection — those are handled elsewhere or aren't label calls.
+        local = _find_simple_local_variable(arg)
+        if local is None:
             continue
-        label = m.group("label")
-        routine = m.group("routine") or path.stem
-        # Position: start of the call header (after the optional $$).
-        start_row = node.start_point[0]
-        start_col = node.start_point[1] + offset
-        end_col = start_col + (m.end() - m.start())
+        ident = next(
+            (c for c in local.children if c.type == "identifier"), None
+        )
+        if ident is None:
+            continue
+        label_name = src[ident.start_byte : ident.end_byte].decode(
+            "latin-1", errors="replace"
+        )
         out.append(
             ReferenceCallSite(
-                target_routine=routine.upper(),
-                target_label=label.upper() if label else None,
+                target_routine=routine_stem.upper(),
+                target_label=label_name.upper(),
                 path=path,
-                line=start_row + 1,
-                column=start_col,
-                end_column=end_col,
+                line=arg.start_point[0] + 1,
+                column=arg.start_point[1],
+                end_column=arg.start_point[1] + (arg.end_byte - arg.start_byte),
             )
         )
     return out
+
+
+def _find_simple_local_variable(arg_node):
+    """Return the ``local_variable`` if ``arg_node`` is exactly
+    ``argument → variable → local_variable`` (with no other interesting
+    siblings). Used to filter out indirection / globals / expressions
+    where it'd be wrong to index a label reference."""
+    children = [c for c in arg_node.children if c.is_named]
+    if len(children) != 1 or children[0].type != "variable":
+        return None
+    var_children = [c for c in children[0].children if c.is_named]
+    if len(var_children) != 1 or var_children[0].type != "local_variable":
+        return None
+    return var_children[0]
 
 
 def _walk_nodes(node):

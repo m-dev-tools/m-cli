@@ -51,19 +51,36 @@ def select_rules(rule_filter: str = "xindex") -> list[Rule]:
     return out
 
 
-def lint_source(path: Path, src: bytes, rules: Iterable[Rule]) -> list[Diagnostic]:
+def lint_source(
+    path: Path,
+    src: bytes,
+    rules: Iterable[Rule],
+    *,
+    workspace=None,
+) -> list[Diagnostic]:
     """Run a set of rules over a source and return sorted diagnostics.
 
     The parse tree is walked exactly once per file (via ``NodeIndex``)
     and shared across every rule — eliminating the previous N-rules ×
     N-walks redundancy.
+
+    ``workspace`` is an optional ``m_cli.workspace.WorkspaceIndex``;
+    rules with ``needs_workspace=True`` (cross-routine rules like
+    M-XINDX-007) receive it as a 5th arg. When ``workspace`` is None
+    those rules are silently skipped — they need cross-routine
+    context that single-file lint can't provide.
     """
     tree = parse(src)
     index = NodeIndex(tree)
     diags: list[Diagnostic] = []
     for rule in rules:
         try:
-            diags.extend(rule.check(src, tree, path, index))
+            if rule.needs_workspace:
+                if workspace is None:
+                    continue  # cross-routine rule with no workspace → skip
+                diags.extend(rule.check(src, tree, path, index, workspace))
+            else:
+                diags.extend(rule.check(src, tree, path, index))
         except Exception as e:
             # Don't let one buggy rule crash the whole lint pass.
             diags.append(_rule_crash_diagnostic(rule, path, e))

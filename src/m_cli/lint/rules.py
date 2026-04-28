@@ -88,7 +88,12 @@ if TYPE_CHECKING:
 # Rule metadata + registry
 # ---------------------------------------------------------------------------
 
-RuleFn = Callable[[bytes, "Tree", Path, NodeIndex], Iterator[Diagnostic]]
+# Standard rule signature: (src, tree, path, index) -> diags. Cross-
+# routine rules (Rule.needs_workspace=True) take a 5th arg, a
+# ``WorkspaceIndex``. The runner dispatches on ``needs_workspace``.
+# We use ``Callable[..., ...]`` so both shapes type-check; the runtime
+# dispatch is the source of truth.
+RuleFn = Callable[..., Iterator[Diagnostic]]
 
 
 @dataclass(frozen=True)
@@ -102,6 +107,12 @@ class Rule:
     # LSP wrapper exposes this as a Quick Fix code action; CI tools can
     # surface it as "auto-fixable". `None` when no auto-fix exists.
     fixer_id: str | None = None
+    # When True, ``check`` takes a 5th positional arg: a
+    # ``WorkspaceIndex`` for cross-routine rules (M-XINDX-007 et al.).
+    # The runner passes it through; rules that don't need workspace
+    # context leave this False (the default) and use the standard
+    # 4-arg signature.
+    needs_workspace: bool = False
 
 
 _REGISTRY: dict[str, Rule] = {}
@@ -1637,5 +1648,161 @@ register(
         title="Lower/mixed case in local variable name",
         tags=("xindex", "sac"),
         check=_check_local_variable_case,
+    )
+)
+
+
+# ---------------------------------------------------------------------------
+# Cross-routine rules (Phase D)
+# ---------------------------------------------------------------------------
+#
+# These rules need a ``WorkspaceIndex`` passed as a 5th positional arg.
+# They opt in via ``Rule.needs_workspace=True``; the runner skips them
+# when no workspace context is available.
+
+
+def _check_cross_routine_missing_routine(
+    src: bytes, _tree, path: Path, _index: NodeIndex, workspace
+) -> Iterator[Diagnostic]:
+    """M-XINDX-007 — Call to undefined routine.
+
+    For each outbound reference (LABEL^ROUTINE, ^ROUTINE, $$LABEL^ROUTINE),
+    if ``ROUTINE`` is not indexed anywhere in the workspace, flag it
+    fatal. Only fires for cross-routine refs — intra-routine refs
+    where the call writes ``$$LABEL`` (no ^routine) get the same
+    treatment from the existing single-file M-XINDX-014.
+    """
+    refs = workspace.refs_from(path)
+    for ref in refs:
+        if ref.target_routine.upper() == path.stem.upper():
+            # Intra-routine — covered by single-file rules; skip here.
+            continue
+        if workspace.has_routine(ref.target_routine):
+            continue
+        yield Diagnostic(
+            rule_id="M-XINDX-007",
+            severity=Severity.FATAL,
+            message=f"Call to undefined routine ^{ref.target_routine}",
+            path=path,
+            line=ref.line,
+            column=ref.column + 1,  # Diagnostic columns are 1-indexed
+            column_end=ref.end_column + 1,
+            line_text=_decode_line(src.splitlines()[ref.line - 1])
+            if ref.line - 1 < len(src.splitlines())
+            else "",
+        )
+
+
+register(
+    Rule(
+        id="M-XINDX-007",
+        severity=Severity.FATAL,
+        title="Call to undefined routine",
+        tags=("xindex",),
+        check=_check_cross_routine_missing_routine,
+        needs_workspace=True,
+    )
+)
+
+
+def _check_cross_routine_missing_label(
+    src: bytes, _tree, path: Path, _index: NodeIndex, workspace
+) -> Iterator[Diagnostic]:
+    """M-XINDX-008 — Call to undefined label in another routine.
+
+    For each outbound reference ``LABEL^ROUTINE`` where ROUTINE IS
+    indexed but LABEL doesn't exist within ROUTINE, flag it fatal.
+    Skips ``^ROUTINE``-style refs (no label named) and intra-routine
+    refs (those are M-XINDX-014's job).
+    """
+    refs = workspace.refs_from(path)
+    for ref in refs:
+        if ref.target_label is None:
+            continue  # ^ROUTINE form — no label to validate
+        if ref.target_routine.upper() == path.stem.upper():
+            continue  # intra-routine
+        if not workspace.has_routine(ref.target_routine):
+            continue  # M-XINDX-007 covers this case
+        if workspace.lookup(ref.target_routine, ref.target_label) is not None:
+            continue
+        yield Diagnostic(
+            rule_id="M-XINDX-008",
+            severity=Severity.FATAL,
+            message=(
+                f"Call to undefined label "
+                f"{ref.target_label}^{ref.target_routine}"
+            ),
+            path=path,
+            line=ref.line,
+            column=ref.column + 1,
+            column_end=ref.end_column + 1,
+            line_text=_decode_line(src.splitlines()[ref.line - 1])
+            if ref.line - 1 < len(src.splitlines())
+            else "",
+        )
+
+
+register(
+    Rule(
+        id="M-XINDX-008",
+        severity=Severity.FATAL,
+        title="Call to undefined label in another routine",
+        tags=("xindex",),
+        check=_check_cross_routine_missing_label,
+        needs_workspace=True,
+    )
+)
+
+
+def _check_label_never_referenced(
+    src: bytes, tree, path: Path, _index: NodeIndex, workspace
+) -> Iterator[Diagnostic]:
+    """M-XINDX-049 — Label declared but never referenced anywhere.
+
+    Walks each label in this file. The routine-entry label (whose
+    name equals the routine name) is never flagged — it's the
+    file's load-on-do entry, conventionally callable as ``D ^ROUTINE``
+    even when no other site references it explicitly.
+    """
+    routine_upper = path.stem.upper()
+    for line_node in tree.root_node.children:
+        if line_node.type != "line":
+            continue
+        label_node = next(
+            (c for c in line_node.children if c.type == "label"), None
+        )
+        if label_node is None:
+            continue
+        label_name = src[label_node.start_byte : label_node.end_byte].decode(
+            "latin-1", errors="replace"
+        )
+        if label_name.upper() == routine_upper:
+            continue  # routine entry — exempt
+        # Inbound references that target this exact (routine, label).
+        refs = workspace.references_to(routine_upper, label_name)
+        if refs:
+            continue
+        yield Diagnostic(
+            rule_id="M-XINDX-049",
+            severity=Severity.WARNING,
+            message=f"Label '{label_name}' is declared but never referenced",
+            path=path,
+            line=label_node.start_point[0] + 1,
+            column=label_node.start_point[1] + 1,
+            column_end=label_node.start_point[1] + 1 + len(label_name),
+            line_text=_decode_line(src.splitlines()[label_node.start_point[0]])
+            if label_node.start_point[0] < len(src.splitlines())
+            else "",
+        )
+
+
+register(
+    Rule(
+        id="M-XINDX-049",
+        severity=Severity.WARNING,
+        title="Label declared but never referenced",
+        tags=("xindex",),
+        check=_check_label_never_referenced,
+        needs_workspace=True,
     )
 )

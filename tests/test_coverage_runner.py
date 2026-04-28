@@ -17,7 +17,7 @@ from m_cli.coverage.runner import (
     LineCoverage,
     _build_script,
     _executable_lines_for_file,
-    _parse_covered_labels,
+    _parse_line_hits,
     discover_routines_and_suites,
     run_coverage,
 )
@@ -109,43 +109,47 @@ def test_build_script_no_per_label_zbreak() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_parse_covered_labels_extracts_routine_label_pairs() -> None:
-    """A per-line entry under (routine, label) means the label was
-    executed at least once. We collapse to a (routine_upper, label_upper)
-    set; the YDB-internal third subscript is ignored — it's an offset
-    whose exact semantics aren't documented enough to map to file lines."""
+def test_parse_line_hits_extracts_routine_label_offset_count() -> None:
+    """Per-line entries are keyed by (routine_upper, label_upper,
+    offset_from_label_line). The hit count is the first colon-separated
+    field of the value string."""
     stdout = (
         '^ycov("*RUN")="2068:8274:10342"\n'
         '^ycov("hello","GREET")="1:75:299:374:374"\n'
-        '^ycov("hello","GREET",4)="1:0:0:1:1"\n'
-        '^ycov("hello","GREET",5)="2:0:0:2:2"\n'
-        '^ycov("math","ADD",4)="1:0:0:1:1"\n'
+        '^ycov("hello","GREET",2)="1:0:0:1:1"\n'
+        '^ycov("hello","GREET",3)="2:0:0:2:2"\n'
+        '^ycov("math","ADD",1)="1:0:0:1:1"\n'
         "noise on stderr\n"
     )
-    covered = _parse_covered_labels(stdout)
-    assert covered == {("HELLO", "GREET"), ("MATH", "ADD")}
+    hits = _parse_line_hits(stdout)
+    assert hits == {
+        ("HELLO", "GREET", 2): 1,
+        ("HELLO", "GREET", 3): 2,
+        ("MATH", "ADD", 1): 1,
+    }
 
 
-def test_parse_covered_labels_ignores_summary_records() -> None:
+def test_parse_line_hits_ignores_summary_records() -> None:
     """Label summary (no third subscript) and ``*RUN`` / ``*CHILDREN``
-    aren't per-line entries — they could fire even if no body ran. We
-    only count entries that prove a body line executed."""
+    aren't per-line entries; ignore them."""
     stdout = (
         '^ycov("*RUN")="..."\n'
         '^ycov("*CHILDREN")="..."\n'
         '^ycov("hello","GREET")="1:75:299:374:374"\n'
     )
-    assert _parse_covered_labels(stdout) == set()
+    assert _parse_line_hits(stdout) == {}
 
 
-def test_parse_covered_labels_handles_empty_stdout() -> None:
-    assert _parse_covered_labels("") == set()
+def test_parse_line_hits_handles_empty_stdout() -> None:
+    assert _parse_line_hits("") == {}
 
 
-def test_parse_covered_labels_skips_zero_count_entries() -> None:
-    """A trace entry with hit_count = 0 isn't proof of execution."""
+def test_parse_line_hits_records_zero_counts() -> None:
+    """A trace entry with hit_count=0 is rare but should still be
+    parsed — the caller decides what to do with it."""
     stdout = '^ycov("hello","GREET",4)="0:0:0:0:0"\n'
-    assert _parse_covered_labels(stdout) == set()
+    hits = _parse_line_hits(stdout)
+    assert hits == {("HELLO", "GREET", 4): 0}
 
 
 # ---------------------------------------------------------------------------
@@ -175,6 +179,23 @@ def test_executable_lines_attribute_to_nearest_label(tmp_path: Path) -> None:
     assert by_line == {2: "FOO", 4: "INNER"}
 
 
+def test_executable_lines_carry_label_line_for_offset_decode(tmp_path: Path) -> None:
+    """Each executable line tracks its owning label's declaration
+    line so we can map back from YDB's TRACE offset to the file line."""
+    src = b"FOO ;c\n QUIT\nINNER ;c\n SET X=1\n QUIT\n"
+    p = tmp_path / "FOO.m"
+    p.write_bytes(src)
+    lines = _executable_lines_for_file(p, src)
+    by_line = {line.line: line for line in lines}
+    # FOO body on line 2: FOO declared on line 1 → offset 1.
+    assert by_line[2].label_line == 1
+    assert by_line[2].trace_offset == 1
+    # INNER body on lines 4 and 5: INNER on line 3 → offsets 1, 2.
+    assert by_line[4].label_line == 3
+    assert by_line[4].trace_offset == 1
+    assert by_line[5].trace_offset == 2
+
+
 # ---------------------------------------------------------------------------
 # run_coverage — full pipeline with mocked runner
 # ---------------------------------------------------------------------------
@@ -183,8 +204,9 @@ def test_executable_lines_attribute_to_nearest_label(tmp_path: Path) -> None:
 def test_run_coverage_marks_each_label_covered_or_not(tmp_path: Path) -> None:
     routines, suites = _seed_project(tmp_path)
 
-    # Mocked runner: pretend ydb traced GREET^HELLO and ADD^MATH (any
-    # entry under the (routine, label) pair = covered).
+    # Mocked runner: trace shows GREET's two body lines (offsets 1, 2
+    # from GREET on line 3) and ADD's first body line (offset 1 from
+    # ADD on line 3 of MATH.m). SHOUT and the entry labels are absent.
     canned = (
         '^ycov("HELLO","GREET",1)="1:0:0:1:1"\n'
         '^ycov("HELLO","GREET",2)="1:0:0:1:1"\n'
@@ -210,13 +232,14 @@ def test_run_coverage_marks_each_label_covered_or_not(tmp_path: Path) -> None:
 
 
 def test_run_coverage_populates_line_data(tmp_path: Path) -> None:
-    """Line data is attributed at label granularity in this slice:
-    every executable line of a covered label gets hit_count=1; lines
-    of uncovered labels get 0. Line-level granularity awaits decoding
-    YDB's TRACE third-subscript offset semantics."""
+    """Line data carries true per-line hit counts: trace offsets are
+    decoded against the parser's label declaration lines."""
     routines, suites = _seed_project(tmp_path)
     canned = (
+        # GREET on line 3 → offsets 1 (line 4) and 2 (line 5).
         '^ycov("HELLO","GREET",1)="2:0:0:2:2"\n'
+        '^ycov("HELLO","GREET",2)="3:0:0:3:3"\n'
+        # ADD on line 3 of MATH.m → offset 1 (line 4) only.
         '^ycov("MATH","ADD",1)="1:0:0:1:1"\n'
     )
 
@@ -226,21 +249,22 @@ def test_run_coverage_populates_line_data(tmp_path: Path) -> None:
     result = run_coverage(routines, suites, runner=fake_runner)
 
     by_pos = {(lc.routine, lc.line): lc.hit_count for lc in result.lines}
-    # GREET label was traced → all its executable lines marked hit.
-    # GREET occupies lines 4 and 5 in HELLO.m.
-    assert by_pos[("HELLO", 4)] == 1
-    assert by_pos[("HELLO", 5)] == 1
-    # SHOUT not traced → its lines (7, 8) are 0.
+    # GREET line 4 hit twice, line 5 hit thrice (offset-decoded).
+    assert by_pos[("HELLO", 4)] == 2
+    assert by_pos[("HELLO", 5)] == 3
+    # SHOUT body lines 7, 8 not traced → 0.
     assert by_pos[("HELLO", 7)] == 0
-    # ADD covered → its lines (4, 5 in MATH.m) marked hit.
+    assert by_pos[("HELLO", 8)] == 0
+    # ADD line 4 hit once; line 5 not traced.
     assert by_pos[("MATH", 4)] == 1
+    assert by_pos[("MATH", 5)] == 0
 
 
 def test_run_coverage_computes_label_and_line_percent(tmp_path: Path) -> None:
     """Label-coverage denominator excludes routine-entry labels;
     line-coverage denominator counts every executable line in the file."""
     routines, suites = _seed_project(tmp_path)
-    # Trace shows GREET only (any entry under (HELLO,GREET) ⇒ covered).
+    # Only GREET line 4 is traced (offset 1 from GREET on line 3).
     canned = '^ycov("HELLO","GREET",1)="1:0:0:1:1"\n'
 
     def fake_runner(cmd, stdin_text, env):
@@ -248,16 +272,16 @@ def test_run_coverage_computes_label_and_line_percent(tmp_path: Path) -> None:
 
     result = run_coverage(routines, suites, runner=fake_runner)
 
-    # 3 non-entry labels: GREET, SHOUT, ADD. 1 covered.
+    # 3 non-entry labels: GREET, SHOUT, ADD. 1 covered (GREET — any
+    # of its lines hit ⇒ covered).
     assert result.total == 3
     assert result.covered == 1
-    # Per-routine: HELLO 1/2, MATH 0/1.
     assert result.by_routine == {"HELLO": (1, 2), "MATH": (0, 1)}
-    # Line-level: HELLO has 5 executable lines (HELLO entry body line 2;
-    # GREET 4,5; SHOUT 7,8); MATH has 3 (MATH line 2; ADD 4,5). Total 8.
-    # GREET's 2 lines flagged (label-granular) → 2/8.
+    # Line-level: HELLO has 5 executable lines (entry body line 2;
+    # GREET 4,5; SHOUT 7,8); MATH has 3 (entry line 2; ADD 4,5).
+    # Total 8 executable; only GREET line 4 was hit → 1/8.
     assert result.total_lines == 8
-    assert result.covered_lines == 2
+    assert result.covered_lines == 1
 
 
 def test_run_coverage_passes_script_to_runner_via_stdin(tmp_path: Path) -> None:

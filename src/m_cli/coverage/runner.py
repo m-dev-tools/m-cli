@@ -2,28 +2,30 @@
 
 YottaDB ships built-in tracing via ``view "TRACE":1:"^GBL":""``;
 when enabled, every executed line increments
-``^GBL(routine, label, line_offset)`` where the third subscript's
-exact meaning is YDB-internal (it's an offset into the label, not a
-file-absolute line number). For label-level coverage we only need
-"any entry under (routine, label)" → label was hit, which gives us
-the same semantics the earlier ZBREAK-based implementation had.
+``^GBL(routine, LABEL, offset)`` where ``offset`` is the line offset
+*from the owning label's declaration line*. So a comment on the
+line directly below the label is offset 1, the next line is offset
+2, and so on — and comment-only or label-only lines never produce
+trace entries because they aren't executable.
 
-Line-level coverage with absolute file-line numbers requires
-mapping YDB's offset back via the parser; that's deferred until the
-offset semantics are settled. The line data we *do* return today is
-the parser's executable-line list with hit counts attributed at
-the label level — useful for "which labels never ran" but not yet
-for "which line on disk never ran."
+To map back to file-absolute lines: for each trace entry
+``^ycov(routine, LABEL, N)``, find ``LABEL``'s declaration line
+``L`` from the parser, and the absolute line is ``L + N``. The
+parser-identified executable lines (any tree-sitter ``line`` node
+with a ``command_sequence`` child) are the denominator; trace
+entries with hit_count > 0 are the numerator.
 
 The pipeline:
 
   1. Discover non-suite (production) routines via
      ``discover_routines_and_suites``.
-  2. Build a YottaDB direct-mode script that enables tracing into
-     ``^ycov``, runs every selected suite, disables tracing, and
-     ``ZWRITE``s the global. Subprocess is injectable for tests.
-  3. Parse the ZWRITE dump into a set of (routine, label) pairs
-     whose entries appeared — those are the covered labels.
+  2. Walk each routine to enumerate executable lines, tracking
+     each line's owning label and the label's declaration line so
+     we can compute the offset YDB will report.
+  3. Build a direct-mode script that toggles trace, runs every
+     selected suite, and ``ZWRITE``s ``^ycov``.
+  4. Parse the dump into ``{(routine_upper, label_upper, offset):
+     hit_count}`` and join with the executable list.
 """
 
 from __future__ import annotations
@@ -190,28 +192,33 @@ def run_coverage(
     full_env = _build_env(env_seed, env)
     stdout, rc = runner(cmd, script, full_env)
 
-    covered_labels = _parse_covered_labels(stdout)
+    hit_lines = _parse_line_hits(stdout)
 
-    # LineCoverage attributes hits at the label granularity: every
-    # executable line in a covered label is reported as hit_count=1;
-    # uncovered labels report 0. Once YDB's TRACE offset semantics are
-    # decoded, this can be tightened to actual per-line counts without
-    # an API change.
+    # Compute per-line hit counts by mapping each parser-identified
+    # executable line to its trace key (routine_upper, label_upper,
+    # offset = line - label_line) and looking up the count.
     lines = [
         LineCoverage(
             routine=ex.routine,
             label=ex.label,
             path=ex.path,
             line=ex.line,
-            hit_count=1
-            if (ex.routine.upper(), ex.label.upper()) in covered_labels
-            else 0,
+            hit_count=hit_lines.get(
+                (ex.routine.upper(), ex.label.upper(), ex.trace_offset),
+                0,
+            ),
         )
         for ex in executable
     ]
 
-    # Label coverage: a label is covered iff its (routine, label) pair
-    # appeared in the trace dump.
+    # Label coverage: a label is covered iff any of its executable
+    # lines has hit_count > 0. Derived from the line-level data so
+    # there's a single source of truth.
+    covered_labels: set[tuple[str, str]] = {
+        (ln.routine.upper(), ln.label.upper())
+        for ln in lines
+        if ln.hit_count > 0
+    }
     label_cov = [
         LabelCoverage(
             routine=loc.routine,
@@ -238,12 +245,22 @@ def run_coverage(
 
 @dataclass(frozen=True)
 class _ExecutableLine:
-    """Internal: one line that the parser thinks is executable."""
+    """Internal: one line that the parser thinks is executable.
+
+    ``label_line`` is the declaration line of ``label`` — needed to
+    compute the YDB-internal trace offset (``line - label_line``).
+    """
 
     routine: str  # upper-case canonical
     label: str  # owning label (case-preserved as declared)
+    label_line: int  # 1-indexed line where the owning label is declared
     path: Path
-    line: int  # 1-indexed absolute line
+    line: int  # 1-indexed absolute line of the executable command
+
+    @property
+    def trace_offset(self) -> int:
+        """The third subscript YDB's TRACE will report for this line."""
+        return self.line - self.label_line
 
 
 def _discover_executables(
@@ -293,8 +310,8 @@ def _executable_lines_for_file(path: Path, src: bytes) -> list[_ExecutableLine]:
     """Return one _ExecutableLine per executable line in the file.
 
     Pre-order walk over top-level ``line`` nodes. Each line carries
-    its owning label — the most recent label declaration seen — so
-    label-coverage aggregation works without a second pass.
+    its owning label and the label's declaration line — the latter
+    is needed to compute the YDB-internal trace offset.
     """
     from m_cli.parser import parse
 
@@ -302,15 +319,18 @@ def _executable_lines_for_file(path: Path, src: bytes) -> list[_ExecutableLine]:
     routine = path.stem.upper()
     out: list[_ExecutableLine] = []
     current_label: str | None = None
+    current_label_line: int = 0
     for line_node in tree.root_node.children:
         if line_node.type != "line":
             continue
+        line_no = line_node.start_point[0] + 1
         # Update current_label if this line has a label declaration.
         for child in line_node.children:
             if child.type == "label":
                 current_label = src[child.start_byte : child.end_byte].decode(
                     "latin-1", errors="replace"
                 )
+                current_label_line = line_no
                 break
         if current_label is None:
             # Lines before the first label can't be addressed by ydb anyway.
@@ -321,8 +341,9 @@ def _executable_lines_for_file(path: Path, src: bytes) -> list[_ExecutableLine]:
                 _ExecutableLine(
                     routine=routine,
                     label=current_label,
+                    label_line=current_label_line,
                     path=path,
-                    line=line_node.start_point[0] + 1,
+                    line=line_no,
                 )
             )
     return out
@@ -344,35 +365,33 @@ def _build_script(suites: list[TestSuite]) -> str:
     return "\n".join(lines) + "\n"
 
 
-# Per-line trace entry: ``^ycov("routine","LABEL",N)="hit:..."``.
-# The third subscript ``N`` is a YDB-internal label offset; we
-# don't decode it here — any entry means the label was hit.
-_TRACE_LINE_RE = re.compile(r'^\^ycov\("([^"]+)","([^"]+)",\d+\)="(\d+):')
+# Per-line trace entry: ``^ycov("routine","LABEL",offset)="hit:..."``.
+# The third subscript ``offset`` is the line offset from LABEL's
+# declaration line (so absolute line == label_line + offset). The
+# value's first colon-separated field is the hit count.
+_TRACE_LINE_RE = re.compile(r'^\^ycov\("([^"]+)","([^"]+)",(\d+)\)="(\d+):')
 
 
-def _parse_covered_labels(stdout: str) -> set[tuple[str, str]]:
-    """Parse ``^ycov(...)`` lines into a set of upper-cased
-    ``(routine, label)`` pairs that appeared in the trace.
+def _parse_line_hits(stdout: str) -> dict[tuple[str, str, int], int]:
+    """Parse ``^ycov(routine,LABEL,offset)`` entries into
+    ``{(routine_upper, label_upper, offset): hit_count}``.
 
-    The ZWRITE format puts the value after ``=``. Per-line entries
-    look like ``^ycov("test","TEST",2)="1:0:1:1:1"`` (hit count > 0
-    in the first colon-separated field). Summary records like
-    ``^ycov("*RUN")="..."`` and ``^ycov("test","TEST")="..."`` (the
-    label entry total, no third subscript) are ignored — we only
-    care about the per-line entries since they're proof the label
-    body executed.
+    Summary records like ``^ycov("*RUN")="..."`` and
+    ``^ycov("routine","LABEL")="..."`` (the label entry total, no
+    third subscript) are ignored — we only need the per-line
+    entries.
     """
-    out: set[tuple[str, str]] = set()
+    out: dict[tuple[str, str, int], int] = {}
     for raw in stdout.splitlines():
         m = _TRACE_LINE_RE.match(raw.strip())
         if not m:
             continue
         try:
-            count = int(m.group(3))
+            offset = int(m.group(3))
+            count = int(m.group(4))
         except ValueError:
             continue
-        if count > 0:
-            out.add((m.group(1).upper(), m.group(2).upper()))
+        out[(m.group(1).upper(), m.group(2).upper(), offset)] = count
     return out
 
 

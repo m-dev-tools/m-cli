@@ -18,7 +18,7 @@ All five Tier 1 capabilities from [m-tooling-tier1.md](../m-tools/docs/m-tooling
 | Step | Tool | Status |
 |------|------|--------|
 | 1 | `m fmt` | **Done.** Identity (default) round-trips 99.04% byte-for-byte. Opt-in `--rules=canonical` adds trim-trailing-whitespace + uppercase-command-keywords; idempotent + AST-preserving over 38,954 VistA routines. |
-| 2 | `m lint --rules=xindex` | **Done (breadth-first).** 37 of XINDEX's 66 rules ship; remaining 30 require data-flow / scope tracking and are deferred to Tier 2/3 follow-ups (Phase D), explicitly post-Tier-1 per §3.6. VistA gate 22.6 s on 16 cores, 5.3× under §3.5 budget. |
+| 2 | `m lint --rules=xindex` | **Done (breadth-first) + cross-routine.** 40 of XINDEX's 66 rules ship; the latest three (M-XINDX-007 undefined-routine, M-XINDX-008 undefined-label-in-routine, M-XINDX-049 unused-label) are cross-routine — they consume a `WorkspaceIndex` built once by the CLI when any selected rule has `needs_workspace=True`. Remaining gaps require data-flow / scope tracking. VistA gate 22.6 s on 16 cores, 5.3× under §3.5 budget. |
 | 3 | `m test` | **Done.** Parser-aware discovery; ydb runner; text / TAP / JSON output. Smoke gate: 11 m-tools suites / 224 assertions pass. |
 | 4 | Single-test selection | **Done** as part of Step 3 (`m test FILE.m::tLabel`). |
 | 5 | `m watch` | **Done.** Polling-based file watcher; source→suite affinity. |
@@ -30,7 +30,7 @@ Per [m-tool-gap-analysis.md §8](../m-tools/docs/m-tool-gap-analysis.md#8-rank-o
 | # | Tier 2 capability | Status | Implementation |
 |---|---|:---:|---|
 | 6 | CI script | 🟡 Partial | Project Makefile + pre-commit scaffold. No dedicated `m ci` planned yet. |
-| 7 | **Coverage** | 🟡 Two slices shipped | `m coverage` — Phase C. Runner uses YDB's built-in `view "TRACE"` (replaces the original ZBREAK technique; one trace pass replaces N ZBREAKs per label). Label-level: 85/123 = 69.1% on m-tools, byte-identical to ycover. Line-level data is currently label-granular: every executable line in a covered label reports hit_count=1; uncovered labels report 0. Output formats: `text` (default), `text --lines` (per-routine label + line columns), `json`, `lcov` (genhtml / Codecov / Coveralls compatible). True per-line counts await decoding YDB's TRACE third-subscript offset semantics. |
+| 7 | **Coverage** | ✅ Done | `m coverage` — Phase C. Runner uses YDB's built-in `view "TRACE"` (one trace pass replaces N ZBREAKs per label). Trace third-subscript decoded: offset N from a label maps to absolute line `label_decl_line + N`, so per-line hit counts are now precise. Label-level holds 85/123 = 69.1% on m-tools (byte-identical to ycover); line-level on m-tools is 340/637 (53.4%). Output formats: `text` (default), `text --lines` (per-routine label + line columns), `json`, `lcov` (genhtml / Codecov / Coveralls compatible). |
 | 8 | Linter (style) | ✅ Done | Style rules ride alongside logic rules in `m lint`; `--rules=sac` for SAC-tagged subset; severity overrides via config. |
 | 9 | Pre-commit hooks | ✅ Done | `.pre-commit-hooks.yaml` exposes `m-fmt-check`, `m-fmt`, `m-lint`. |
 | 10 | Debugger | ⏸️ Deferred | DAP integration is its own engineering project; both engines ship `ZBREAK` at the engine level. Not on near-term roadmap. |

@@ -65,13 +65,28 @@ def lint_command(args: argparse.Namespace) -> int:
         print(f"m lint: --jobs must be >= 1 (got {jobs})", file=sys.stderr)
         return 2
 
+    # Build a workspace symbol index when any selected rule needs
+    # cross-routine context (M-XINDX-007 et al.). Build over the same
+    # set of files we're linting — gives the rule a faithful view of
+    # what's defined in this run.
+    workspace = None
+    if any(getattr(r, "needs_workspace", False) for r in rules):
+        from m_cli.workspace import WorkspaceIndex
+
+        workspace = WorkspaceIndex()
+        for f in files:
+            try:
+                workspace.add_file(f, f.read_bytes())
+            except OSError:
+                continue
+
     if jobs == 1 or len(files) <= 1:
         all_diags, n_files, n_parse_errors = _run_serial(
-            files, rules, args.lint_unparseable, config
+            files, rules, args.lint_unparseable, config, workspace
         )
     else:
         all_diags, n_files, n_parse_errors = _run_parallel(
-            files, rule_filter, args.lint_unparseable, jobs, config
+            files, rule_filter, args.lint_unparseable, jobs, config, workspace
         )
 
     if config.lint_severity_overrides:
@@ -118,6 +133,7 @@ def _lint_one_file(
     rule_filter: str,
     lint_unparseable: bool,
     disable: tuple[str, ...] = (),
+    workspace=None,
 ) -> tuple[list[Diagnostic], bool, str | None]:
     """Read, parse, and lint a single file.
 
@@ -134,16 +150,22 @@ def _lint_one_file(
     rules = select_rules(rule_filter)
     if disable:
         rules = [r for r in rules if r.id not in disable]
-    return lint_source(path, src, rules), True, None
+    return lint_source(path, src, rules, workspace=workspace), True, None
 
 
 def _run_serial(
-    files: list[Path], rules: list, lint_unparseable: bool, _config: Config
+    files: list[Path],
+    rules: list,
+    lint_unparseable: bool,
+    _config: Config,
+    workspace=None,
 ) -> tuple[list[Diagnostic], int, int]:
     """Lint every file in the current process (no pool overhead).
 
     ``rules`` is already filtered by ``config.lint_disable`` at the
     caller; we accept ``_config`` only for symmetry with the parallel path.
+    ``workspace`` (when any selected rule needs it) provides cross-
+    routine context.
     """
     all_diags: list[Diagnostic] = []
     n_files = 0
@@ -158,7 +180,7 @@ def _run_serial(
         if tree.root_node.has_error and not lint_unparseable:
             n_parse_errors += 1
             continue
-        all_diags.extend(lint_source(path, src, rules))
+        all_diags.extend(lint_source(path, src, rules, workspace=workspace))
         n_files += 1
     return all_diags, n_files, n_parse_errors
 
@@ -169,11 +191,14 @@ def _run_parallel(
     lint_unparseable: bool,
     jobs: int,
     config: Config,
+    workspace=None,
 ) -> tuple[list[Diagnostic], int, int]:
     """Lint files across ``jobs`` worker processes.
 
     Workers re-run ``select_rules`` and apply the disable list themselves —
     the rule list isn't picklable but the config strings/tuples are.
+    The workspace (when present) IS picklable and gets shipped to each
+    worker via the args tuple.
     """
     all_diags: list[Diagnostic] = []
     n_files = 0
@@ -182,7 +207,10 @@ def _run_parallel(
     with ProcessPoolExecutor(max_workers=jobs) as pool:
         for diags, parseable, err in pool.map(
             _lint_one_file_packed,
-            [(p, rule_filter, lint_unparseable, config.lint_disable) for p in files],
+            [
+                (p, rule_filter, lint_unparseable, config.lint_disable, workspace)
+                for p in files
+            ],
             chunksize=chunksize,
         ):
             if err is not None:
