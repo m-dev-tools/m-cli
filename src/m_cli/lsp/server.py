@@ -163,6 +163,11 @@ def lint_document(server, uri: str, *, rule_filter: str | None = None) -> None:
         rules = [r for r in rules if r.id not in config.lint_disable]
     path = Path(doc.path) if getattr(doc, "path", None) else Path(uri)
     diags = lint_source(path, src_bytes, rules)
+    # Stash the most recent diagnostics for this URI so hover_at can
+    # cross-reference cursor-on-squiggle without re-running the linter.
+    cache: dict[str, list] = getattr(server, "m_cli_last_diagnostics", None) or {}
+    cache[uri] = list(diags)
+    setattr(server, "m_cli_last_diagnostics", cache)  # noqa: B010
     if config.lint_severity_overrides:
         diags = [
             dataclasses.replace(d, severity=config.lint_severity_overrides[d.rule_id])
@@ -365,13 +370,21 @@ def _workspace_edit_for_fmt_rule(
 
 
 def hover_at(server, uri: str, position: Position) -> Hover | None:
-    """Resolve the M token under the cursor and return Markdown hover content.
+    """Resolve the cursor position to hover content.
 
-    Returns ``None`` (no hover) for non-``.m`` URIs, missing documents,
-    out-of-range positions, or tokens that don't match any known
-    command, ISV, or intrinsic function. Local labels and user
-    routines are intentionally not described — m-cli doesn't have a
-    cross-routine symbol index.
+    Resolution order:
+
+      1. **Lint diagnostic at this position.** When the cursor sits
+         inside a published diagnostic's range, return Markdown for
+         the rule (id, title, severity). Most useful — answers "what
+         does this squiggle mean?" inline.
+      2. **M keyword under the cursor.** Falls through to the
+         keyword-table lookup (commands, ISVs, intrinsic functions
+         from m-standard).
+      3. ``None`` if neither.
+
+    Local labels and user routines aren't described — m-cli doesn't
+    have a per-symbol description registry beyond keywords + rules.
     """
     if not uri.endswith(".m"):
         return None
@@ -382,6 +395,11 @@ def hover_at(server, uri: str, position: Position) -> Hover | None:
     lines = (doc.source or "").splitlines()
     if position.line < 0 or position.line >= len(lines):
         return None
+
+    diag_md = _diagnostic_hover_markdown(server, uri, position)
+    if diag_md is not None:
+        return Hover(contents=MarkupContent(kind=MarkupKind.Markdown, value=diag_md))
+
     token = token_at(lines[position.line], position.character)
     if token is None:
         return None
@@ -389,6 +407,49 @@ def hover_at(server, uri: str, position: Position) -> Hover | None:
     if record is None:
         return None
     return Hover(contents=MarkupContent(kind=MarkupKind.Markdown, value=_hover_markdown(record)))
+
+
+def _diagnostic_hover_markdown(server, uri: str, position: Position) -> str | None:
+    """Return Markdown for any lint diagnostic that contains the
+    cursor position, or None if the cursor isn't on a squiggle.
+
+    Looks up the rule from `m_cli.lint.rules._REGISTRY` to fetch
+    title and severity. Multiple overlapping diagnostics (rare but
+    possible) all show; rules sort first by id for stable output.
+    """
+    diags_by_uri = getattr(server, "m_cli_last_diagnostics", None) or {}
+    diags = diags_by_uri.get(uri)
+    if not diags:
+        return None
+    line = position.line + 1  # m-cli Diagnostic uses 1-indexed lines
+    char = position.character
+    matching = []
+    for d in diags:
+        if d.line != line:
+            continue
+        col_start = max(0, d.column - 1)  # m-cli columns are 1-indexed
+        col_end = (d.column_end - 1) if d.column_end is not None else col_start
+        if col_end < col_start:
+            col_end = col_start
+        # Treat the position as inclusive on the start, exclusive on
+        # the end. A zero-width range still matches when char == col_start.
+        if col_start <= char <= max(col_start, col_end):
+            matching.append(d)
+    if not matching:
+        return None
+
+    from m_cli.lint.rules import _REGISTRY
+
+    parts: list[str] = []
+    for d in sorted(matching, key=lambda x: x.rule_id):
+        rule = _REGISTRY.get(d.rule_id)
+        title = rule.title if rule is not None else d.message
+        sev = d.severity.value
+        parts.append(f"**{d.rule_id}** — {title} _(severity: {sev})_")
+        if rule is not None and d.message and d.message != rule.title:
+            parts.append("")
+            parts.append(d.message)
+    return "\n".join(parts)
 
 
 def text_document_hover(server, params: HoverParams) -> Hover | None:

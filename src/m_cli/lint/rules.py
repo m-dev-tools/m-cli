@@ -10,7 +10,8 @@ toggle filters which tag(s) run.
 XINDEX coverage policy
 ======================
 
-37 of XINDEX's 66 rules are registered. The remaining 29 fall into
+42 of XINDEX's 66 rules are registered (37 single-file + 3 cross-routine
+[M-XINDX-007/008/049] + 2 control-flow [M-XINDX-009/051]). The remaining 24 fall into
 four buckets — recorded here so future contributors don't re-litigate
 each one:
 
@@ -82,7 +83,7 @@ from m_cli.lint._keywords import standard_commands, standard_functions, standard
 from m_cli.lint.diagnostic import Diagnostic, Severity
 
 if TYPE_CHECKING:
-    from tree_sitter import Tree
+    pass
 
 # ---------------------------------------------------------------------------
 # Rule metadata + registry
@@ -1804,5 +1805,167 @@ register(
         tags=("xindex",),
         check=_check_label_never_referenced,
         needs_workspace=True,
+    )
+)
+
+
+# ---------------------------------------------------------------------------
+# Control-flow rules (single-file, AST pattern-based)
+# ---------------------------------------------------------------------------
+
+
+_TERMINATING_KEYWORDS = frozenset({"Q", "QUIT", "H", "HALT", "G", "GOTO"})
+
+
+def _check_dead_code_after_quit(
+    src: bytes, _tree, path: Path, index: NodeIndex
+) -> Iterator[Diagnostic]:
+    """M-XINDX-009 — Code after unconditional QUIT / HALT / GOTO.
+
+    Within each label scope, find the first line whose first command
+    is an unconditional terminator (no postconditional, no preceding
+    IF on the same line). Any executable line after that — until the
+    next label — is unreachable.
+
+    Skips dot-block lines (control flow inside dot blocks is more
+    nuanced; we don't model it). Skips lines that are just comments.
+    """
+    line_nodes = index.of("line")
+    # Group lines by their owning label by walking in document order.
+    current_label_terminated_at: int | None = None
+    for line_node in line_nodes:
+        # Reset the "terminated" state at every label boundary.
+        if any(c.type == "label" for c in line_node.children):
+            current_label_terminated_at = None
+            continue
+        # Skip dot-block lines; their flow isn't modelled here.
+        if any(c.type == "dot_block_prefix" for c in line_node.children):
+            continue
+        # Find the first command_sequence on this line.
+        cs = next((c for c in line_node.children if c.type == "command_sequence"), None)
+        if cs is None:
+            continue  # comment-only or empty
+        cmds = [c for c in cs.children if c.type == "command"]
+        if not cmds:
+            continue
+
+        line_no = line_node.start_point[0] + 1
+
+        if current_label_terminated_at is not None:
+            # Already saw a terminator earlier in this label; this line is dead.
+            yield Diagnostic(
+                rule_id="M-XINDX-009",
+                severity=Severity.WARNING,
+                message=(
+                    "Unreachable code: line follows an unconditional "
+                    f"terminator on line {current_label_terminated_at}"
+                ),
+                path=path,
+                line=line_no,
+                column=1,
+                column_end=len(_decode_line(src.splitlines()[line_no - 1]))
+                + 1
+                if line_no - 1 < len(src.splitlines())
+                else 1,
+                line_text=_decode_line(src.splitlines()[line_no - 1])
+                if line_no - 1 < len(src.splitlines())
+                else "",
+            )
+            continue
+
+        first = cmds[0]
+        first_kw_node = next(
+            (c for c in first.children if c.type == "command_keyword"), None
+        )
+        if first_kw_node is None:
+            continue
+        kw = src[first_kw_node.start_byte : first_kw_node.end_byte].decode(
+            "latin-1", errors="replace"
+        ).upper()
+        if kw not in _TERMINATING_KEYWORDS:
+            continue
+        # Skip if the terminator carries a postconditional — then it's
+        # only sometimes terminating and the rule below could be a false
+        # positive.
+        has_postcond = any(
+            c.type in ("postconditional", "argument_postconditional")
+            for c in first.children
+        )
+        if has_postcond:
+            continue
+        # Mark this label as terminated; subsequent lines are dead.
+        current_label_terminated_at = line_no
+
+
+register(
+    Rule(
+        id="M-XINDX-009",
+        severity=Severity.WARNING,
+        title="Unreachable code after unconditional QUIT / HALT / GOTO",
+        tags=("xindex",),
+        check=_check_dead_code_after_quit,
+    )
+)
+
+
+_CONDITIONAL_KEYWORDS = frozenset({"I", "IF", "E", "ELSE"})
+
+
+def _check_empty_conditional(
+    src: bytes, _tree, path: Path, index: NodeIndex
+) -> Iterator[Diagnostic]:
+    """M-XINDX-051 — IF / ELSE with no body on the same line.
+
+    M's IF and ELSE only gate commands that follow on the *same* line
+    (per ANSI). ``IF X>0`` alone on a line — with no commands after
+    the condition — is a logical no-op and almost always a typo
+    (e.g. the user expected indentation-based scoping like Python).
+    """
+    line_nodes = index.of("line")
+    for line_node in line_nodes:
+        cs = next((c for c in line_node.children if c.type == "command_sequence"), None)
+        if cs is None:
+            continue
+        cmds = [c for c in cs.children if c.type == "command"]
+        if len(cmds) != 1:
+            continue
+        cmd = cmds[0]
+        kw_node = next(
+            (c for c in cmd.children if c.type == "command_keyword"), None
+        )
+        if kw_node is None:
+            continue
+        kw = src[kw_node.start_byte : kw_node.end_byte].decode(
+            "latin-1", errors="replace"
+        ).upper()
+        if kw not in _CONDITIONAL_KEYWORDS:
+            continue
+        # Bare IF/ELSE with no body — flag.
+        line_no = line_node.start_point[0] + 1
+        col = kw_node.start_point[1] + 1
+        yield Diagnostic(
+            rule_id="M-XINDX-051",
+            severity=Severity.WARNING,
+            message=(
+                f"{kw} has no body on the same line — M conditionals "
+                "only gate commands that follow on the SAME line"
+            ),
+            path=path,
+            line=line_no,
+            column=col,
+            column_end=col + len(kw),
+            line_text=_decode_line(src.splitlines()[line_no - 1])
+            if line_no - 1 < len(src.splitlines())
+            else "",
+        )
+
+
+register(
+    Rule(
+        id="M-XINDX-051",
+        severity=Severity.WARNING,
+        title="IF / ELSE with no body on the same line",
+        tags=("xindex",),
+        check=_check_empty_conditional,
     )
 )

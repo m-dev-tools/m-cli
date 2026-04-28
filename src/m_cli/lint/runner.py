@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from pathlib import Path
 
+from m_cli.lint._directives import parse_directives
 from m_cli.lint._index import NodeIndex
 from m_cli.lint.diagnostic import Diagnostic
 from m_cli.lint.rules import Rule, all_rules, rules_by_tag
@@ -84,6 +85,18 @@ def lint_source(
         except Exception as e:
             # Don't let one buggy rule crash the whole lint pass.
             diags.append(_rule_crash_diagnostic(rule, path, e))
+
+    # Apply ``; m-lint: disable=...`` inline-suppression directives.
+    # Crash diagnostics are never suppressed — the user always wants
+    # to know when a rule is misbehaving.
+    suppressions = parse_directives(src)
+    if suppressions.file_disable or suppressions.line_disable:
+        diags = [
+            d for d in diags
+            if d.rule_id == "M-INTERNAL-RULE-CRASH"
+            or not suppressions.is_suppressed(d.line, d.rule_id)
+        ]
+
     diags.sort(key=lambda d: (d.path.as_posix(), d.line, d.column, d.rule_id))
     return diags
 

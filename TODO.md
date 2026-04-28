@@ -18,9 +18,10 @@ Pick up from this list. Top section is "next session" — concrete, ordered. Low
 
 **Next session — pick from:**
 
-1. **More Phase D rules.** Three cross-routine rules ship (M-XINDX-007/008/049). The remaining ~27 deferred XINDEX rules need data-flow / scope tracking (uninitialized vars, naked references, dead stores). Each one is now far easier to add — workspace context is wired through `lint_source` and rules with `needs_workspace=True` get the index automatically.
-2. **Tier 3.** Documentation generator, dependency management, complexity metrics, dead-code per file. The `WorkspaceIndex` is the foundation for all of these.
-3. **Publish to PyPI.** Unblocks `language: repo` pre-commit and downstream `pip install m-cli`.
+1. **Inline disable comments + LSP rule-hover + 2 more rules — DONE.** `; m-lint: disable=RULE` (same-line / disable-next-line / disable-file / `*` wildcard); LSP hover on a diagnostic squiggle shows rule id + title + severity; M-XINDX-009 (dead-code-after-QUIT) and M-XINDX-051 (empty IF/ELSE) added.
+2. **More data-flow rules.** Remaining ~24 deferred XINDEX rules — uninitialized variable read, naked references, kill of read-only var, etc. Each is now far easier to add: workspace context is wired through `lint_source`; inline-disable lets users tame noisy rules without a config file.
+3. **Tier 3.** Documentation generator, dependency management, complexity metrics. The `WorkspaceIndex` is the foundation for several of these.
+4. **Publish to PyPI.** Unblocks `language: repo` pre-commit and downstream `pip install m-cli`.
 
 ---
 

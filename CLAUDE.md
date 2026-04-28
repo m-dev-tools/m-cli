@@ -18,7 +18,7 @@ All five Tier 1 capabilities from [m-tooling-tier1.md](../m-tools/docs/m-tooling
 | Step | Tool | Status |
 |------|------|--------|
 | 1 | `m fmt` | **Done.** Identity (default) round-trips 99.04% byte-for-byte. Opt-in `--rules=canonical` adds trim-trailing-whitespace + uppercase-command-keywords; idempotent + AST-preserving over 38,954 VistA routines. |
-| 2 | `m lint --rules=xindex` | **Done (breadth-first) + cross-routine.** 40 of XINDEX's 66 rules ship; the latest three (M-XINDX-007 undefined-routine, M-XINDX-008 undefined-label-in-routine, M-XINDX-049 unused-label) are cross-routine — they consume a `WorkspaceIndex` built once by the CLI when any selected rule has `needs_workspace=True`. Remaining gaps require data-flow / scope tracking. VistA gate 22.6 s on 16 cores, 5.3× under §3.5 budget. |
+| 2 | `m lint --rules=xindex` | **Done (breadth-first) + cross-routine + control-flow.** 42 of XINDEX's 66 rules ship: 37 single-file, 3 cross-routine (M-XINDX-007/008/049: undefined routine / undefined label / unused label), 2 control-flow (M-XINDX-009 dead-code-after-QUIT, M-XINDX-051 empty IF/ELSE). Cross-routine rules consume a `WorkspaceIndex` built once by the CLI when any selected rule has `needs_workspace=True`. Inline `; m-lint: disable=...` directives suppress findings on a per-line / per-file basis (mirrors ruff/eslint convention). VistA gate 22.6 s on 16 cores. |
 | 3 | `m test` | **Done.** Parser-aware discovery; ydb runner; text / TAP / JSON output. Smoke gate: 11 m-tools suites / 224 assertions pass. |
 | 4 | Single-test selection | **Done** as part of Step 3 (`m test FILE.m::tLabel`). |
 | 5 | `m watch` | **Done.** Polling-based file watcher; source→suite affinity. |
