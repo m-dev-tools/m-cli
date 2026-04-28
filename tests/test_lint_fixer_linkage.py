@@ -91,9 +91,7 @@ def test_canonical_fmt_rules_cover_every_lint_fixer() -> None:
     canonical_ids = {r.id for r in canonical_rules()}
     referenced = {r.fixer_id for r in all_lint_rules() if r.fixer_id}
     missing = referenced - canonical_ids
-    assert not missing, (
-        f"Lint rules reference fmt rules that aren't in canonical: {missing}"
-    )
+    assert not missing, f"Lint rules reference fmt rules that aren't in canonical: {missing}"
 
 
 # ---------------------------------------------------------------------------

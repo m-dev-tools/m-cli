@@ -13,6 +13,7 @@ from pathlib import Path
 from m_cli import __version__
 from m_cli.fmt import fmt_command
 from m_cli.lint import lint_command
+from m_cli.lsp import lsp_command
 from m_cli.test import test_command
 from m_cli.watch import watch_command
 
@@ -23,7 +24,7 @@ def main(argv: list[str] | None = None) -> int:
         description=(
             "M (MUMPS) source-level toolchain. Subcommands: "
             "fmt (format), lint (lint), test (run test suites), "
-            "watch (re-run suites on save)."
+            "watch (re-run suites on save), lsp (Language Server)."
         ),
     )
     parser.add_argument(
@@ -225,6 +226,26 @@ def main(argv: list[str] | None = None) -> int:
         help="Output format (default: text)",
     )
     watch_parser.set_defaults(func=watch_command)
+
+    # `m lsp`
+    lsp_parser = subparsers.add_parser(
+        "lsp",
+        help="Run the m-cli Language Server (over stdio)",
+        description=(
+            "Start the m-cli Language Server. Editors invoke this as "
+            "a subprocess and exchange LSP messages over stdin/stdout. "
+            "Stage 1 supports diagnostics push from `m lint`; future "
+            "stages add formatting and code actions. Requires the "
+            "optional `[lsp]` extra (`pip install 'm-cli[lsp]'`)."
+        ),
+    )
+    lsp_parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable DEBUG-level logging on stderr",
+    )
+    lsp_parser.set_defaults(func=lsp_command)
 
     args = parser.parse_args(argv)
     return args.func(args)

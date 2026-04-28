@@ -109,6 +109,16 @@ scripts/
 - **Per-rule isolation:** `runner.lint_source` wraps each rule in try/except so one buggy rule can't crash a lint pass — it emits an `M-INTERNAL-RULE-CRASH` diagnostic instead.
 - **VistA is the gate:** every rule should be sanity-checked with `make lint-vista` to catch wild-corpus surprises before commit.
 
+## LSP server (Stage 1: diagnostics push)
+
+`m lsp` starts the m-cli Language Server over stdio. Editors invoke it as a subprocess and exchange LSP messages on stdin/stdout. Stage 1 wires `m_cli.lint` to `textDocument/publishDiagnostics`:
+
+- Handlers: `textDocument/didOpen`, `didChange`, `didSave`, `didClose`. Open/change/save re-lint the document and push diagnostics; close clears them.
+- Each LSP `Diagnostic` carries `code = rule_id`, `source = "m-cli"`, severity mapped from the four-level XINDEX scheme, and `data = {"fixer_id": ...}` when the rule is auto-fixable (Stage 3 will turn this into Quick Fix code actions).
+- Optional dependency: `pip install 'm-cli[lsp]'` adds `pygls` + `lsprotocol`. The dispatcher reports a friendly install hint if a user runs `m lsp` without the extra.
+- Testable inner helper: `m_cli.lsp.server.lint_document(server, uri)`. Tests use a `FakeServer` stub instead of spinning up pygls.
+- Future stages: `textDocument/formatting` (driven by `m_cli.fmt`), `textDocument/codeAction` (driven by `Rule.fixer_id`), workspace configuration, completion, hover.
+
 ## Library API for tooling consumers
 
 The LSP wrapper, IDE plugins, pre-commit integrations, and other out-of-tree tooling import a stable surface from the top-level package:
