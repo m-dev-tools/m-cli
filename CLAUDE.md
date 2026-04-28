@@ -37,10 +37,10 @@ Per [m-tool-gap-analysis.md §8](../m-tools/docs/m-tool-gap-analysis.md#8-rank-o
 
 ### Cross-cutting (post-Tier-1, layered on the same foundation)
 
-- **`m lsp` Stages 1+2+3+4+4b+B** — diagnostics, formatting, code actions, hover, completion, document symbols, code lenses, folding, signature help, document highlight, go-to-definition. Editor design decision per [m-tooling-tier1.md §5.4](../m-tools/docs/m-tooling-tier1.md#54-editor-integration-cadence).
+- **`m lsp` Stages 1+2+3+4+4b+B** — diagnostics, formatting, code actions, hover, completion, document symbols, code lenses, folding, signature help, document highlight, go-to-definition, **find-references, workspace symbol search, incremental index updates** (didChangeWatchedFiles + didSave). Editor design decision per [m-tooling-tier1.md §5.4](../m-tools/docs/m-tooling-tier1.md#54-editor-integration-cadence).
 - **VS Code wiring** — sibling repo `tree-sitter-m-vscode` spawns `m lsp` and registers the `m-cli.runTest` command for code-lens click-to-run.
 - **Phase A — project config** (`.m-cli.toml` / `[tool.m-cli]`): drives lint / fmt / lsp.
-- **Phase B (first slice) — workspace symbol index**: backs go-to-definition; references / workspaceSymbol / cross-routine lint rules are deliberate follow-ups on the same foundation.
+- **Phase B — workspace symbol index** (full slice): the `WorkspaceIndex` indexes both labels (declarations) and inbound `entry_reference` / `extrinsic_function` call sites. Backs `textDocument/definition`, `textDocument/references`, `workspace/symbol`. Stays fresh via `didChangeWatchedFiles` (file-system events) + `didSave` (in-editor saves). Cross-routine lint rules (M-XINDX-004 et al.) are the next consumer of the same index.
 
 See [`TODO.md`](TODO.md) for the punch list to pick up from, and [docs/guide.md](docs/guide.md) for the comprehensive guide.
 

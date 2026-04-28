@@ -132,7 +132,7 @@ The table below mirrors the categories in [§7 of m-tool-gap-analysis.md](../../
 | LSP server (diagnostics, formatting, code actions, hover, completion, document symbols, code lenses, folding, signature help, document highlight, go-to-definition) | ✅ Done | [`m lsp`](#65-m-lsp) — Stages 1+2+3+4+4b+B |
 | VS Code extension wiring | ✅ Done | [`tree-sitter-m-vscode`](https://github.com/rafael5/tree-sitter-m-vscode) sibling repo; spawns `m lsp` on activation |
 | Project configuration (`.m-cli.toml` / `[tool.m-cli]`) | ✅ Done | [`m_cli.config`](#7-project-configuration) |
-| Workspace symbol index | ✅ Done (first slice) | [`m_cli.workspace`](#5-architecture) — backs go-to-definition; references / workspace symbol search are deliberate follow-ups |
+| Workspace symbol index | ✅ Done | [`m_cli.workspace`](#5-architecture) — backs go-to-definition, find-references, workspace symbol search; refreshes via `didChangeWatchedFiles` and `didSave` |
 
 ---
 
@@ -301,6 +301,9 @@ The server is invoked by editors (VS Code, Vim/Neovim with LSP, Emacs eglot/lsp-
 | `textDocument/signatureHelp` | 4b | Inside `$FN(...)`, return the m-standard syntax format. Trigger chars `(` and `,`. |
 | `textDocument/documentHighlight` | 4b | Same-file occurrences of the identifier under cursor. |
 | `textDocument/definition` | B | Resolve `LABEL^ROUTINE`, `^ROUTINE`, label-only references via the workspace symbol index. |
+| `textDocument/references` | B | Find every call site that targets `LABEL^ROUTINE` (works from a reference or from the declaration). Honours `includeDeclaration`. |
+| `workspace/symbol` | B | Fuzzy symbol search across the workspace (Ctrl+T in VS Code). Case-insensitive substring match against label or routine name; capped at 1000 results. |
+| `workspace/didChangeWatchedFiles` | B | Incremental index updates when files are created / changed / deleted on disk. The workspace symbol index also refreshes per-file on `didSave` for in-editor edits. |
 
 ---
 

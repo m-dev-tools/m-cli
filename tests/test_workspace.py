@@ -201,3 +201,100 @@ def test_reference_at_whitespace_returns_none() -> None:
 def test_reference_at_out_of_range_returns_none() -> None:
     assert reference_at("LBL", -1) is None
     assert reference_at("LBL", 99) is None
+
+
+# ---------------------------------------------------------------------------
+# WorkspaceIndex.references_to — call-site indexing
+# ---------------------------------------------------------------------------
+
+
+def test_references_to_finds_label_caret_routine_calls(tmp_path: Path) -> None:
+    """``D INNER^OTHER`` is indexed as a reference to (OTHER, INNER)."""
+    other = tmp_path / "OTHER.m"
+    other.write_bytes(b"OTHER ;c\n QUIT\nINNER ;c\n QUIT\n")
+    caller = tmp_path / "CALLER.m"
+    caller.write_bytes(b"CALLER ;c\n D INNER^OTHER\n QUIT\n")
+
+    idx = WorkspaceIndex()
+    idx.add_file(other, other.read_bytes())
+    idx.add_file(caller, caller.read_bytes())
+
+    refs = idx.references_to("OTHER", "INNER")
+    assert len(refs) == 1
+    assert refs[0].path == caller
+    assert refs[0].line == 2
+
+
+def test_references_to_finds_extrinsic_function_calls(tmp_path: Path) -> None:
+    """``$$INNER^OTHER(x)`` is indexed as a reference."""
+    caller = tmp_path / "CALLER.m"
+    caller.write_bytes(b"CALLER ;c\n W $$INNER^OTHER(1)\n QUIT\n")
+
+    idx = WorkspaceIndex()
+    idx.add_file(caller, caller.read_bytes())
+
+    refs = idx.references_to("OTHER", "INNER")
+    assert len(refs) == 1
+
+
+def test_references_to_intra_routine_extrinsic_uses_filename_stem(tmp_path: Path) -> None:
+    """``$$INNER(x)`` (no ^routine) inside FOO.m targets (FOO, INNER).
+
+    The bare ``D INNER`` form (no ``$$``, no ``^``) is intentionally
+    NOT indexed — tree-sitter-m parses it as a ``variable`` node which
+    is overloaded with actual variable access, so indexing it would
+    produce false-positive references. The extrinsic form has the
+    ``$$`` prefix the parser uses to disambiguate."""
+    foo = tmp_path / "FOO.m"
+    foo.write_bytes(b"FOO ;c\n W $$INNER(1)\n QUIT\nINNER(x) ;c\n QUIT x+1\n")
+
+    idx = WorkspaceIndex()
+    idx.add_file(foo, foo.read_bytes())
+
+    refs = idx.references_to("FOO", "INNER")
+    assert any(r.line == 2 for r in refs)
+
+
+def test_references_to_is_case_insensitive(tmp_path: Path) -> None:
+    caller = tmp_path / "C.m"
+    caller.write_bytes(b"C ;c\n D inner^other\n QUIT\n")
+
+    idx = WorkspaceIndex()
+    idx.add_file(caller, caller.read_bytes())
+
+    assert len(idx.references_to("OTHER", "INNER")) == 1
+    assert len(idx.references_to("other", "inner")) == 1
+
+
+def test_references_to_remove_file_drops_call_sites(tmp_path: Path) -> None:
+    caller = tmp_path / "C.m"
+    caller.write_bytes(b"C ;c\n D INNER^OTHER\n QUIT\n")
+
+    idx = WorkspaceIndex()
+    idx.add_file(caller, caller.read_bytes())
+    assert len(idx.references_to("OTHER", "INNER")) == 1
+
+    idx.remove_file(caller)
+    assert idx.references_to("OTHER", "INNER") == []
+
+
+def test_references_to_returns_empty_for_unknown_target(tmp_path: Path) -> None:
+    idx = WorkspaceIndex()
+    assert idx.references_to("NEVER", "EXISTED") == []
+
+
+def test_references_to_carries_column_range(tmp_path: Path) -> None:
+    """Column / end_column point at the call header (LABEL^ROUTINE) so
+    the LSP can render a proper Range for the editor highlight."""
+    caller = tmp_path / "C.m"
+    src = b" D INNER^OTHER\n"
+    caller.write_bytes(src)
+
+    idx = WorkspaceIndex()
+    idx.add_file(caller, src)
+
+    refs = idx.references_to("OTHER", "INNER")
+    assert len(refs) == 1
+    # The ` D ` prefix is 3 chars; INNER^OTHER is 11 chars long.
+    assert refs[0].column == 3
+    assert refs[0].end_column == 3 + len("INNER^OTHER")

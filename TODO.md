@@ -20,9 +20,8 @@ Pick up from this list. Top section is "next session" — concrete, ordered. Low
 
 1. **Coverage line-level (Phase C deepening).** `m coverage --lines` via tree-sitter-driven source instrumentation: identify executable lines per routine, emit a counter increment per line, run, parse. Bigger build than the label-level slice but reuses everything in `m_cli.coverage` plus the workspace index.
 2. **Coverage LCOV output.** Add `--format=lcov` for CI integration. Mechanical follow-up; label-level data maps to LCOV's `DA:line,count` records.
-3. **Phase B follow-ups.** `textDocument/references`, `workspace/symbol`, incremental `didChangeWatchedFiles`. All small handlers over the existing index.
-4. **Phase D (deferred XINDEX rules).** The 30 not-yet-ported rules; far easier *after* Phase B's index is fuller.
-5. **Publish to PyPI.** Unblocks `language: repo` pre-commit and downstream `pip install m-cli`.
+3. **Phase D (deferred XINDEX rules).** The 30 not-yet-ported rules; far easier now that Phase B's reference index is in place — cross-routine "call to undefined label" / "label never referenced" lints land in a few lines each on top of `WorkspaceIndex.references_to`.
+4. **Publish to PyPI.** Unblocks `language: repo` pre-commit and downstream `pip install m-cli`.
 
 ---
 

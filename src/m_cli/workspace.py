@@ -39,17 +39,48 @@ class LabelLocation:
     line: int  # 1-indexed for human / LSP consumption
 
 
-class WorkspaceIndex:
-    """In-memory index of routines and their labels.
+@dataclass(frozen=True)
+class ReferenceCallSite:
+    """A call site that references some target (routine, label).
 
-    Lookups are case-insensitive on the routine and label name. The
-    index is intentionally minimal — name + path + line. Callers that
-    need source ranges should re-parse the resolved file.
+    ``target_label`` is None for references like ``^ROUTINE`` /
+    ``$$^ROUTINE`` that target the routine entry without naming a
+    label. ``column`` and ``end_column`` are 0-indexed character
+    positions on the caller's line — convenient for LSP ``Range``.
+    """
+
+    target_routine: str  # uppercased
+    target_label: str | None  # uppercased, None when only ^ROUTINE was written
+    path: Path
+    line: int  # 1-indexed
+    column: int  # 0-indexed start of the reference text
+    end_column: int  # 0-indexed end (exclusive)
+
+
+class WorkspaceIndex:
+    """In-memory index of routines, their labels, and inbound call sites.
+
+    Three lookups, all case-insensitive on routine and label:
+
+      - ``lookup(routine, label)`` — resolve a ``LABEL^ROUTINE`` reference
+        to its declaration (powers go-to-definition).
+      - ``references_to(routine, label)`` — every call site that targets
+        ``LABEL^ROUTINE`` (powers find-references).
+      - ``all_locations()`` — sorted list of every label (powers
+        workspace symbol search).
+
+    The index is intentionally minimal — name + path + line + column.
+    Callers that need source ranges or richer node info should re-parse
+    the resolved file.
     """
 
     def __init__(self) -> None:
         self._by_routine: dict[str, list[LabelLocation]] = {}
         self._by_path: dict[Path, list[LabelLocation]] = {}
+        # Reference indices, one keyed by target, one keyed by source path
+        # (so remove_file can wipe a file's contributions in O(refs-of-file)).
+        self._refs_by_target: dict[tuple[str, str | None], list[ReferenceCallSite]] = {}
+        self._refs_by_path: dict[Path, list[ReferenceCallSite]] = {}
 
     def __len__(self) -> int:
         return sum(len(v) for v in self._by_routine.values())
@@ -82,36 +113,62 @@ class WorkspaceIndex:
                 return loc
         return None
 
+    def references_to(self, routine: str, label: str | None) -> list[ReferenceCallSite]:
+        """Every indexed call site whose target matches (routine, label).
+
+        Matching is case-insensitive; ``label=None`` matches only the
+        ``^ROUTINE``-style references (where the caller didn't name a
+        specific label). To find every reference into a routine
+        regardless of label, call ``references_to(routine, label=name)``
+        for each label and union the results.
+        """
+        key = (routine.upper(), label.upper() if label else None)
+        return list(self._refs_by_target.get(key, []))
+
     def add_file(self, path: Path, src: bytes) -> None:
         """Index one ``.m`` file, replacing any prior entries for that path.
 
-        The routine name comes from the file stem (upper-cased) — that
-        matches ydb's resolution and avoids depending on the
-        first-label-equals-routine-name convention, which not every
-        codebase follows.
+        Indexes both labels (declarations) and inbound references
+        (call sites). Routine name comes from the file stem
+        (upper-cased) — that matches ydb's resolution and avoids
+        depending on the first-label-equals-routine-name convention,
+        which not every codebase follows.
         """
         self.remove_file(path)
         labels = _extract_labels(src)
-        if not labels:
-            return
-        routine = path.stem.upper()
-        locs = [
-            LabelLocation(routine=routine, label=name, path=path, line=line)
-            for name, line in labels
-        ]
-        self._by_routine.setdefault(routine, []).extend(locs)
-        self._by_path[path] = locs
+        if labels:
+            routine = path.stem.upper()
+            locs = [
+                LabelLocation(routine=routine, label=name, path=path, line=line)
+                for name, line in labels
+            ]
+            self._by_routine.setdefault(routine, []).extend(locs)
+            self._by_path[path] = locs
+        refs = _extract_references(src, path)
+        if refs:
+            self._refs_by_path[path] = refs
+            for ref in refs:
+                self._refs_by_target.setdefault(
+                    (ref.target_routine, ref.target_label), []
+                ).append(ref)
 
     def remove_file(self, path: Path) -> None:
-        """Drop every label location associated with ``path``."""
-        prior = self._by_path.pop(path, None)
-        if not prior:
-            return
-        for loc in prior:
-            entries = self._by_routine.get(loc.routine, [])
-            entries[:] = [e for e in entries if e.path != path]
-            if not entries:
-                self._by_routine.pop(loc.routine, None)
+        """Drop every label location and reference associated with ``path``."""
+        prior_labels = self._by_path.pop(path, None)
+        if prior_labels:
+            for loc in prior_labels:
+                label_entries = self._by_routine.get(loc.routine, [])
+                label_entries[:] = [e for e in label_entries if e.path != path]
+                if not label_entries:
+                    self._by_routine.pop(loc.routine, None)
+        prior_refs = self._refs_by_path.pop(path, None)
+        if prior_refs:
+            for ref in prior_refs:
+                key = (ref.target_routine, ref.target_label)
+                ref_entries = self._refs_by_target.get(key, [])
+                ref_entries[:] = [r for r in ref_entries if r.path != path]
+                if not ref_entries:
+                    self._refs_by_target.pop(key, None)
 
 
 def build_index(roots: Iterable[Path]) -> WorkspaceIndex:
@@ -166,6 +223,65 @@ def _extract_labels(src: bytes) -> list[tuple[str, int]]:
                 out.append((name, child.start_point[0] + 1))
                 break
     return out
+
+
+# Match the call header at the start of a reference text:
+#   LABEL^ROUTINE  → groups (LABEL, ROUTINE)
+#   LABEL          → (LABEL, None)
+#   ^ROUTINE       → (None, ROUTINE)
+# Used after stripping ``$$`` from extrinsic_function nodes.
+_CALL_HEADER_RE = re.compile(
+    r"^(?P<label>[%A-Za-z][A-Za-z0-9]*)?(?:\^(?P<routine>[%A-Za-z][A-Za-z0-9]*))?"
+)
+
+
+def _extract_references(src: bytes, path: Path) -> list[ReferenceCallSite]:
+    """Walk the AST for ``entry_reference`` and ``extrinsic_function``
+    nodes and pull (target_routine, target_label) pairs out of each.
+
+    ``D ^FOO`` and bare ``D LBL`` aren't indexed: tree-sitter-m parses
+    them as ``variable`` (global / local) which is overloaded with
+    actual variable access. Indexing those would produce too many
+    false-positive references — out of scope for this slice.
+    """
+    tree = parse(src)
+    out: list[ReferenceCallSite] = []
+    for node in _walk_nodes(tree.root_node):
+        if node.type not in ("entry_reference", "extrinsic_function"):
+            continue
+        text = src[node.start_byte : node.end_byte].decode("latin-1", errors="replace")
+        # Strip the ``$$`` prefix from extrinsic_function before matching.
+        offset = 0
+        if node.type == "extrinsic_function" and text.startswith("$$"):
+            text = text[2:]
+            offset = 2
+        m = _CALL_HEADER_RE.match(text)
+        if not m or (m.group("label") is None and m.group("routine") is None):
+            continue
+        label = m.group("label")
+        routine = m.group("routine") or path.stem
+        # Position: start of the call header (after the optional $$).
+        start_row = node.start_point[0]
+        start_col = node.start_point[1] + offset
+        end_col = start_col + (m.end() - m.start())
+        out.append(
+            ReferenceCallSite(
+                target_routine=routine.upper(),
+                target_label=label.upper() if label else None,
+                path=path,
+                line=start_row + 1,
+                column=start_col,
+                end_column=end_col,
+            )
+        )
+    return out
+
+
+def _walk_nodes(node):
+    """Pre-order walk over every descendant of ``node``."""
+    yield node
+    for child in node.children:
+        yield from _walk_nodes(child)
 
 
 # ---------------------------------------------------------------------------

@@ -57,7 +57,10 @@ from lsprotocol.types import (
     TEXT_DOCUMENT_FOLDING_RANGE,
     TEXT_DOCUMENT_FORMATTING,
     TEXT_DOCUMENT_HOVER,
+    TEXT_DOCUMENT_REFERENCES,
     TEXT_DOCUMENT_SIGNATURE_HELP,
+    WORKSPACE_DID_CHANGE_WATCHED_FILES,
+    WORKSPACE_SYMBOL,
     CodeAction,
     CodeActionKind,
     CodeActionParams,
@@ -70,6 +73,7 @@ from lsprotocol.types import (
     CompletionParams,
     DefinitionParams,
     DidChangeTextDocumentParams,
+    DidChangeWatchedFilesParams,
     DidCloseTextDocumentParams,
     DidOpenTextDocumentParams,
     DidSaveTextDocumentParams,
@@ -79,6 +83,7 @@ from lsprotocol.types import (
     DocumentHighlightParams,
     DocumentSymbol,
     DocumentSymbolParams,
+    FileChangeType,
     FoldingRange,
     FoldingRangeKind,
     FoldingRangeParams,
@@ -90,6 +95,7 @@ from lsprotocol.types import (
     Position,
     PublishDiagnosticsParams,
     Range,
+    ReferenceParams,
     SignatureHelp,
     SignatureHelpOptions,
     SignatureHelpParams,
@@ -97,6 +103,8 @@ from lsprotocol.types import (
     SymbolKind,
     TextEdit,
     WorkspaceEdit,
+    WorkspaceSymbol,
+    WorkspaceSymbolParams,
 )
 from lsprotocol.types import Diagnostic as LspDiagnostic
 from pygls.lsp.server import LanguageServer
@@ -187,6 +195,12 @@ def did_change(server, params: DidChangeTextDocumentParams) -> None:
 
 def did_save(server, params: DidSaveTextDocumentParams) -> None:
     lint_document(server, params.text_document.uri)
+    # Refresh the workspace index for this file so cross-routine
+    # navigation (definition / references / workspace symbol) stays
+    # consistent with the saved-on-disk content. didChangeWatchedFiles
+    # also fires for file-system events; this handler covers in-editor
+    # saves where the FS notification may not arrive.
+    update_index_for_uri(server, params.text_document.uri)
 
 
 def did_close(server, params: DidCloseTextDocumentParams) -> None:
@@ -835,6 +849,224 @@ def _resolve_local_label(uri: str, src_text: str, label: str | None) -> Location
 
 
 # ---------------------------------------------------------------------------
+# Find references (Phase B follow-up)
+# ---------------------------------------------------------------------------
+
+
+def references_at(
+    server, uri: str, position: Position, *, include_declaration: bool = True
+) -> list[Location] | None:
+    """Return every call site that targets the symbol under the cursor.
+
+    The cursor may sit on a reference (``D LABEL^OTHER``) or on a
+    label declaration (``LABEL`` at column 0). In either case the
+    target is resolved as ``(routine, label)`` and the workspace
+    index returns inbound call sites. When ``include_declaration``
+    is True (the LSP default), the declaration's location is included
+    in the result list.
+    """
+    if not uri.endswith(".m"):
+        return None
+    try:
+        doc = server.workspace.get_text_document(uri)
+    except KeyError:
+        return None
+    lines = (doc.source or "").splitlines()
+    if position.line < 0 or position.line >= len(lines):
+        return None
+
+    target = _resolve_reference_target(uri, lines, position)
+    if target is None:
+        return None
+    routine, label = target
+
+    index = getattr(server, "m_cli_workspace_index", None)
+    if index is None:
+        return []
+
+    refs = index.references_to(routine, label)
+    out: list[Location] = []
+    for ref in refs:
+        out.append(
+            Location(
+                uri=ref.path.as_uri(),
+                range=Range(
+                    start=Position(line=ref.line - 1, character=ref.column),
+                    end=Position(line=ref.line - 1, character=ref.end_column),
+                ),
+            )
+        )
+    if include_declaration and label:
+        decl = index.lookup(routine, label)
+        if decl is not None:
+            out.append(
+                Location(
+                    uri=decl.path.as_uri(),
+                    range=Range(
+                        start=Position(line=decl.line - 1, character=0),
+                        end=Position(line=decl.line - 1, character=len(decl.label)),
+                    ),
+                )
+            )
+    return out
+
+
+def text_document_references(server, params: ReferenceParams) -> list[Location] | None:
+    include = bool(getattr(params.context, "include_declaration", True))
+    return references_at(
+        server,
+        params.text_document.uri,
+        params.position,
+        include_declaration=include,
+    )
+
+
+def _resolve_reference_target(
+    uri: str, lines: list[str], position: Position
+) -> tuple[str, str | None] | None:
+    """Determine the (routine, label) pair the cursor refers to.
+
+    First tries ``reference_at`` — handles in-line ``LABEL^ROUTINE`` /
+    ``$$LABEL`` cursors. Failing that, checks whether the cursor is
+    on a label declaration (column 0 word on a label line) and uses
+    the file's stem as the routine.
+    """
+    line = lines[position.line]
+    ref = reference_at(line, position.character)
+    if ref is not None:
+        if ref.routine is not None:
+            return ref.routine, ref.label
+        # No explicit ^routine — assume current file's routine.
+        return _routine_from_uri(uri), ref.label
+
+    # Maybe the cursor is on a label declaration at column 0.
+    if line and line[0] not in (" ", "\t", ";"):
+        end = 0
+        while end < len(line) and (line[end].isalnum() or line[end] in ("%", "$")):
+            end += 1
+        if 0 < end and position.character <= end:
+            return _routine_from_uri(uri), line[:end]
+    return None
+
+
+def _routine_from_uri(uri: str) -> str:
+    return Path(uri).stem
+
+
+# ---------------------------------------------------------------------------
+# Workspace symbol search (Phase B follow-up)
+# ---------------------------------------------------------------------------
+
+
+_WORKSPACE_SYMBOL_LIMIT = 1000
+
+
+def workspace_symbols_for(server, query: str) -> list[WorkspaceSymbol]:
+    """Return label declarations matching ``query`` (case-insensitive
+    substring match against label OR routine name).
+
+    Empty query returns every label up to the limit. Limit caps the
+    response so a Ctrl+T into a 39,000-routine VistA workspace
+    doesn't ship 200 MB of JSON over stdio.
+    """
+    index = getattr(server, "m_cli_workspace_index", None)
+    if index is None:
+        return []
+    q = (query or "").upper()
+    out: list[WorkspaceSymbol] = []
+    for loc in index.all_locations():
+        if q and q not in loc.label.upper() and q not in loc.routine.upper():
+            continue
+        out.append(
+            WorkspaceSymbol(
+                name=f"{loc.label}^{loc.routine}",
+                kind=SymbolKind.Function,
+                location=Location(
+                    uri=loc.path.as_uri(),
+                    range=Range(
+                        start=Position(line=loc.line - 1, character=0),
+                        end=Position(line=loc.line - 1, character=len(loc.label)),
+                    ),
+                ),
+            )
+        )
+        if len(out) >= _WORKSPACE_SYMBOL_LIMIT:
+            break
+    return out
+
+
+def workspace_symbol_handler(server, params: WorkspaceSymbolParams) -> list[WorkspaceSymbol]:
+    return workspace_symbols_for(server, params.query)
+
+
+# ---------------------------------------------------------------------------
+# Incremental index updates (Phase B follow-up)
+# ---------------------------------------------------------------------------
+
+
+def did_change_watched_files(server, params: DidChangeWatchedFilesParams) -> None:
+    """Apply file-system change notifications to the workspace index.
+
+    Created / changed → re-add the file (which replaces prior entries).
+    Deleted → drop the file's entries. Non-``.m`` files are ignored.
+    Read errors are logged at debug level — a transient stat race
+    shouldn't pollute the log.
+    """
+    index = getattr(server, "m_cli_workspace_index", None)
+    if index is None:
+        return
+    for change in params.changes:
+        if not change.uri.endswith(".m"):
+            continue
+        path = _path_from_uri(change.uri)
+        if path is None:
+            continue
+        if change.type == FileChangeType.Deleted:
+            index.remove_file(path)
+            continue
+        try:
+            src = path.read_bytes()
+        except OSError as e:
+            logger.debug("workspace index: skipping %s: %s", path, e)
+            index.remove_file(path)
+            continue
+        index.add_file(path, src)
+
+
+def update_index_for_uri(server, uri: str) -> None:
+    """Re-index a single URI from the in-memory workspace document.
+
+    Called from didSave so in-editor edits keep references / symbols
+    fresh without waiting for a file-system notification (which not
+    every client emits on save).
+    """
+    if not uri.endswith(".m"):
+        return
+    index = getattr(server, "m_cli_workspace_index", None)
+    if index is None:
+        return
+    try:
+        doc = server.workspace.get_text_document(uri)
+    except KeyError:
+        return
+    path = _path_from_uri(uri)
+    if path is None:
+        return
+    src = (doc.source or "").encode("latin-1", errors="replace")
+    index.add_file(path, src)
+
+
+def _path_from_uri(uri: str) -> Path | None:
+    """Convert a ``file://`` URI to a Path. Returns None for non-file URIs."""
+    if not uri.startswith("file://"):
+        return None
+    from urllib.parse import unquote, urlparse
+
+    parsed = urlparse(uri)
+    return Path(unquote(parsed.path))
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -933,6 +1165,18 @@ def run_stdio(rule_filter: str | None = None) -> int:
     def _definition(params: DefinitionParams) -> Location | None:
         return text_document_definition(server, params)
 
+    @server.feature(TEXT_DOCUMENT_REFERENCES)
+    def _references(params: ReferenceParams) -> list[Location] | None:
+        return text_document_references(server, params)
+
+    @server.feature(WORKSPACE_SYMBOL)
+    def _workspace_symbol(params: WorkspaceSymbolParams) -> list[WorkspaceSymbol]:
+        return workspace_symbol_handler(server, params)
+
+    @server.feature(WORKSPACE_DID_CHANGE_WATCHED_FILES)
+    def _did_change_watched(params: DidChangeWatchedFilesParams) -> None:
+        did_change_watched_files(server, params)
+
     logger.info("m-cli LSP %s starting on stdio", __version__)
     server.start_io()
     return 0
@@ -959,6 +1203,12 @@ __all__ = [
     "text_document_document_highlight",
     "definition_at",
     "text_document_definition",
+    "references_at",
+    "text_document_references",
+    "workspace_symbols_for",
+    "workspace_symbol_handler",
+    "did_change_watched_files",
+    "update_index_for_uri",
     "code_actions_for_uri",
     "text_document_code_action",
     "did_open",
