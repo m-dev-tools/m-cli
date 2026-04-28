@@ -22,15 +22,21 @@ from lsprotocol.types import (
     TEXT_DOCUMENT_DID_CLOSE,
     TEXT_DOCUMENT_DID_OPEN,
     TEXT_DOCUMENT_DID_SAVE,
+    TEXT_DOCUMENT_FORMATTING,
     DidChangeTextDocumentParams,
     DidCloseTextDocumentParams,
     DidOpenTextDocumentParams,
     DidSaveTextDocumentParams,
+    DocumentFormattingParams,
+    Position,
     PublishDiagnosticsParams,
+    Range,
+    TextEdit,
 )
 from pygls.lsp.server import LanguageServer
 
 from m_cli import __version__
+from m_cli.fmt import ParseError, canonical_rules, format_source
 from m_cli.lint import lint_source, select_rules
 from m_cli.lsp.convert import to_lsp_diagnostics
 
@@ -95,6 +101,67 @@ def did_close(server, params: DidCloseTextDocumentParams) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Formatting (Stage 2)
+# ---------------------------------------------------------------------------
+
+
+def format_document(server, uri: str) -> list[TextEdit]:
+    """Run the canonical-layout formatter on the workspace document at ``uri``.
+
+    Returns a list of ``TextEdit`` objects. The list is empty when:
+
+      - ``uri`` does not refer to an ``.m`` file
+      - the workspace has no document for ``uri``
+      - the source has parse errors (we refuse to reformat broken code)
+      - the source is already canonical (a no-op format would just churn
+        the editor's undo history)
+
+    The non-empty case returns a single ``TextEdit`` that replaces the
+    full document with the formatted bytes. Editors apply the edit
+    atomically.
+    """
+    if not uri.endswith(".m"):
+        return []
+    try:
+        doc = server.workspace.get_text_document(uri)
+    except KeyError:
+        return []
+    src_text = doc.source if doc.source is not None else ""
+    src_bytes = src_text.encode("latin-1", errors="replace")
+    try:
+        formatted = format_source(src_bytes, rules=canonical_rules())
+    except ParseError:
+        return []
+    if formatted == src_bytes:
+        return []
+    new_text = formatted.decode("latin-1", errors="replace")
+    return [
+        TextEdit(
+            range=Range(
+                start=Position(line=0, character=0),
+                end=_end_position(src_text),
+            ),
+            new_text=new_text,
+        )
+    ]
+
+
+def text_document_formatting(server, params: DocumentFormattingParams) -> list[TextEdit]:
+    return format_document(server, params.text_document.uri)
+
+
+def _end_position(src_text: str) -> Position:
+    """Return the LSP Position one past the last character of ``src_text``."""
+    if not src_text:
+        return Position(line=0, character=0)
+    if src_text.endswith("\n"):
+        return Position(line=src_text.count("\n"), character=0)
+    last_nl = src_text.rfind("\n")
+    last_line_len = len(src_text) - (last_nl + 1)
+    return Position(line=src_text.count("\n"), character=last_line_len)
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -125,6 +192,10 @@ def run_stdio() -> int:
     def _did_close(params: DidCloseTextDocumentParams) -> None:
         did_close(server, params)
 
+    @server.feature(TEXT_DOCUMENT_FORMATTING)
+    def _formatting(params: DocumentFormattingParams) -> list[TextEdit]:
+        return text_document_formatting(server, params)
+
     logger.info("m-cli LSP %s starting on stdio", __version__)
     server.start_io()
     return 0
@@ -133,6 +204,8 @@ def run_stdio() -> int:
 __all__ = [
     "lint_document",
     "clear_diagnostics",
+    "format_document",
+    "text_document_formatting",
     "did_open",
     "did_change",
     "did_save",
