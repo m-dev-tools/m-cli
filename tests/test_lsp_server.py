@@ -146,6 +146,35 @@ def test_lint_document_carries_fixer_id_in_data() -> None:
     assert d013.data == {"fixer_id": "trim-trailing-whitespace"}
 
 
+def test_lint_document_honors_server_attached_rule_filter() -> None:
+    """Stage 4 — the CLI's `--rules` flag stashes a filter on the server.
+    A filter that selects no rules should yield zero diagnostics for a
+    file that would otherwise trigger M-XINDX-013."""
+    srv = FakeServer()
+    srv.m_cli_rule_filter = "M-XINDX-019"  # only the line-too-long rule
+    uri = "file:///tmp/hello.m"
+    _open_doc(srv, uri, "hello ;c\n quit \n")  # trailing space → M-XINDX-013
+
+    lint_document(srv, uri)
+
+    diags = srv.published[0].diagnostics
+    rule_ids = {d.code for d in diags}
+    assert "M-XINDX-013" not in rule_ids
+
+
+def test_lint_document_explicit_rule_filter_wins_over_server_attribute() -> None:
+    """An explicit ``rule_filter=`` arg overrides the server's stashed value."""
+    srv = FakeServer()
+    srv.m_cli_rule_filter = "M-XINDX-019"
+    uri = "file:///tmp/hello.m"
+    _open_doc(srv, uri, "hello ;c\n quit \n")
+
+    lint_document(srv, uri, rule_filter="xindex")
+
+    rule_ids = {d.code for d in srv.published[0].diagnostics}
+    assert "M-XINDX-013" in rule_ids
+
+
 # ---------------------------------------------------------------------------
 # Handler wiring: didOpen, didChange, didSave, didClose
 # ---------------------------------------------------------------------------

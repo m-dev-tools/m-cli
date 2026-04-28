@@ -109,7 +109,7 @@ scripts/
 - **Per-rule isolation:** `runner.lint_source` wraps each rule in try/except so one buggy rule can't crash a lint pass — it emits an `M-INTERNAL-RULE-CRASH` diagnostic instead.
 - **VistA is the gate:** every rule should be sanity-checked with `make lint-vista` to catch wild-corpus surprises before commit.
 
-## LSP server (Stages 1 + 2 + 3)
+## LSP server (Stages 1 + 2 + 3 + 4)
 
 `m lsp` starts the m-cli Language Server over stdio. Editors invoke it as a subprocess and exchange LSP messages on stdin/stdout. Optional dependency: `pip install 'm-cli[lsp]'` adds `pygls` + `lsprotocol`. The dispatcher reports a friendly install hint if a user runs `m lsp` without the extra.
 
@@ -119,11 +119,17 @@ scripts/
 
 **Stage 3 — code actions.** `textDocument/codeAction` reads the in-context diagnostics, groups them by `fixer_id`, and returns one Quick Fix per distinct fixer. Each action's `WorkspaceEdit` runs that single fmt rule file-wide — so two diagnostics of the same kind collapse into one click. Actions are skipped when the fixer would be a no-op or the source has parse errors. Capability advertised as `codeActionProvider: True`.
 
-Testable inner helpers: `m_cli.lsp.server.lint_document(server, uri)`, `format_document(server, uri)`, `code_actions_for_uri(server, uri, diagnostics)`. Tests use a `FakeServer` stub — no pygls runtime needed.
+**Stage 4 — hover + completion + rule-filter override.**
 
-**Editor wiring — VS Code.** `~/projects/tree-sitter-m-vscode` carries a `vscode-languageclient` integration that spawns `m lsp` on activation. Settings: `m-cli.enabled`, `m-cli.path` (defaults to `m` on PATH; set to `~/projects/m-cli/.venv/bin/m` for venv installs), `m-cli.args`, `m-cli.trace.server`. Self-install via `npm run package` + `code --install-extension`; full instructions in that repo's `docs/lsp-setup.md`.
+- `textDocument/hover` resolves the M token under the cursor (commands, ISVs, intrinsic functions — case-insensitive, abbreviation or canonical) against m-standard's TSVs and returns Markdown with canonical name, abbreviation, syntax format, and standard status. Local labels and user routines return None — m-cli has no cross-routine symbol index. Capability advertised as `hoverProvider: True`.
+- `textDocument/completion` returns the universe of M commands, ISVs, and intrinsic functions as `CompletionItem`s (kind = Keyword / Constant / Function; detail = the syntax format from m-standard). The list is `isIncomplete: false` — the set doesn't grow per-keystroke; the client filters by typed prefix. Capability advertised as `completionProvider`.
+- `m lsp --rules <filter>` overrides the default `xindex` rule filter at startup. Accepts the same forms as `m lint --rules` (`xindex`, `all`, `sac`, `M-XINDX-013,M-XINDX-019`). Wired by stashing the filter on the `LanguageServer` instance and read inside `lint_document`. The full LSP `workspace/configuration` round-trip is intentionally not implemented — the CLI flag covers the same need without async plumbing.
 
-Future Stage 4 (optional polish): workspace configuration (override `--rules` / `--error-on`), hover (rule descriptions), completion (M command keywords from `standard_commands()`).
+Token resolution and keyword metadata live in `m_cli.lsp.symbols` (`token_at`, `lookup_keyword`, `all_keywords`). The structured loader is `m_cli.lint._keywords.keyword_records()`, which loads commands.tsv / intrinsic-special-variables.tsv / intrinsic-functions.tsv from m-standard. When a token (e.g. `$HOROLOG`) appears as both ISV and intrinsic function in ANSI, the function wins — that's a real ambiguity in M itself; tests pin unambiguous tokens (`$JOB` for ISV, `$LENGTH` for function).
+
+Testable inner helpers: `m_cli.lsp.server.lint_document(server, uri)`, `format_document(server, uri)`, `code_actions_for_uri(server, uri, diagnostics)`, `hover_at(server, uri, position)`, `completion_at(server, uri)`. Tests use a `FakeServer` stub — no pygls runtime needed.
+
+**Editor wiring — VS Code.** `~/projects/tree-sitter-m-vscode` carries a `vscode-languageclient` integration that spawns `m lsp` on activation. Settings: `m-cli.enabled`, `m-cli.path` (defaults to `m` on PATH; set to `~/projects/m-cli/.venv/bin/m` for venv installs), `m-cli.args` (e.g. `["--rules", "all"]` to broaden diagnostics), `m-cli.trace.server`. Self-install via `npm run package` + `code --install-extension`; full instructions in that repo's `docs/lsp-setup.md`.
 
 ## Library API for tooling consumers
 

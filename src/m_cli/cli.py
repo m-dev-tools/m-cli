@@ -232,11 +232,13 @@ def main(argv: list[str] | None = None) -> int:
         "lsp",
         help="Run the m-cli Language Server (over stdio)",
         description=(
-            "Start the m-cli Language Server. Editors invoke this as "
-            "a subprocess and exchange LSP messages over stdin/stdout. "
-            "Stage 1 supports diagnostics push from `m lint`; future "
-            "stages add formatting and code actions. Requires the "
-            "optional `[lsp]` extra (`pip install 'm-cli[lsp]'`)."
+            "Start the m-cli Language Server. Editors invoke this as a "
+            "subprocess and exchange LSP messages over stdin/stdout. "
+            "Features: diagnostics (lint on save/change), formatting "
+            "(canonical layout), code actions (Quick Fix per fixable "
+            "diagnostic), hover (M command/ISV/intrinsic descriptions), "
+            "and completion (M keyword set). Requires the optional "
+            "`[lsp]` extra (`pip install 'm-cli[lsp]'`)."
         ),
     )
     lsp_parser.add_argument(
@@ -244,6 +246,21 @@ def main(argv: list[str] | None = None) -> int:
         "--verbose",
         action="store_true",
         help="Enable DEBUG-level logging on stderr",
+    )
+    lsp_parser.add_argument(
+        "--rules",
+        default=None,
+        help=(
+            "Rule filter for diagnostics — passed to `m_cli.lint.select_rules`. "
+            "Examples: `xindex` (default), `all`, `sac`, `M-XINDX-013,M-XINDX-019`."
+        ),
+    )
+    # vscode-languageclient appends `--stdio` when TransportKind.stdio is set;
+    # accept and ignore it since stdio is the only transport we support.
+    lsp_parser.add_argument(
+        "--stdio",
+        action="store_true",
+        help=argparse.SUPPRESS,
     )
     lsp_parser.set_defaults(func=lsp_command)
 

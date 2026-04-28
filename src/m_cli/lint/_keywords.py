@@ -8,6 +8,7 @@ to lru_cache.
 from __future__ import annotations
 
 import csv
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
@@ -85,6 +86,74 @@ def standard_isvs() -> set[str]:
         root / "integrated" / "intrinsic-special-variables.tsv", "abbreviation"
     )
     return canonical | abbrev | _FALLBACK_ISVS
+
+
+@dataclass(frozen=True)
+class KeywordRecord:
+    """Structured row for a single command, ISV, or intrinsic function.
+
+    Used by the LSP wrapper for hover/completion. The lint rules use
+    the simpler ``standard_*`` set views above.
+    """
+
+    kind: str  # "command" | "isv" | "function"
+    canonical: str
+    abbreviation: str  # may be empty
+    format: str  # syntax format from m-standard, e.g. "S[ET] postcond ..."
+    standard_status: str  # "ansi" | "ydb" | "iris" | "ydb-and-iris" | etc.
+
+
+def _load_records(file: Path, kind: str) -> list[KeywordRecord]:
+    if not file.exists():
+        return []
+    out: list[KeywordRecord] = []
+    with file.open(encoding="utf-8") as f:
+        reader = csv.DictReader(f, delimiter="\t")
+        for row in reader:
+            canonical = row.get("canonical_name", "").strip()
+            if not canonical:
+                continue
+            out.append(
+                KeywordRecord(
+                    kind=kind,
+                    canonical=canonical,
+                    abbreviation=row.get("abbreviation", "").strip(),
+                    format=row.get("format", "").strip(),
+                    standard_status=row.get("standard_status", "").strip(),
+                )
+            )
+    return out
+
+
+@lru_cache(maxsize=1)
+def keyword_records() -> list[KeywordRecord]:
+    """All commands, ISVs, and intrinsic functions as structured rows.
+
+    Falls back to a synthetic record per name from the simple sets
+    when m-standard isn't available — abbreviation/format/status are
+    empty in that case.
+    """
+    root = _find_m_standard()
+    if root is None:
+        synth: list[KeywordRecord] = []
+        for kind, names in (
+            ("command", _FALLBACK_COMMANDS),
+            ("isv", _FALLBACK_ISVS),
+            ("function", _FALLBACK_FUNCTIONS),
+        ):
+            for name in sorted(names):
+                synth.append(
+                    KeywordRecord(
+                        kind=kind, canonical=name, abbreviation="", format="", standard_status=""
+                    )
+                )
+        return synth
+    integrated = root / "integrated"
+    return [
+        *_load_records(integrated / "commands.tsv", "command"),
+        *_load_records(integrated / "intrinsic-special-variables.tsv", "isv"),
+        *_load_records(integrated / "intrinsic-functions.tsv", "function"),
+    ]
 
 
 @lru_cache(maxsize=1)

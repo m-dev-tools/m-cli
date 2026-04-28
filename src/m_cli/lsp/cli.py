@@ -28,7 +28,7 @@ def lsp_command(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
-    return run_stdio()
+    return run_stdio(rule_filter=getattr(args, "rules", None))
 
 
 def _configure_logging(verbose: bool) -> None:

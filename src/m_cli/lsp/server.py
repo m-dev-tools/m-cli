@@ -1,4 +1,4 @@
-"""m-cli Language Server — Stages 1 + 2 + 3.
+"""m-cli Language Server — Stages 1 + 2 + 3 + 4.
 
 Wires the existing ``m_cli.lint`` and ``m_cli.fmt`` libraries to LSP:
 
@@ -18,34 +18,55 @@ Wires the existing ``m_cli.lint`` and ``m_cli.fmt`` libraries to LSP:
     one Quick Fix per distinct fixer. Each action's ``WorkspaceEdit``
     runs that one fmt rule file-wide.
 
+  - **Stage 4: hover + completion.** ``textDocument/hover`` resolves
+    the M token under the cursor against m-standard's command/ISV/
+    function tables and returns Markdown with the canonical name,
+    abbreviation, and syntax format. ``textDocument/completion``
+    returns the same set as completion items so editors can suggest
+    keywords as the user types.
+
+The rule filter for diagnostics defaults to ``"xindex"``; pass
+``--rules <filter>`` to ``m lsp`` to override (e.g. ``--rules all``).
+
 Public handler entry points (``did_*``, ``text_document_*``,
-``lint_document``, ``format_document``, ``code_actions_for_uri``)
-take a ``LanguageServer``-shaped object and the relevant LSP params.
-They are registered with the real pygls server in :func:`run_stdio`;
-tests drive them with a lighter-weight stub server (see the
-``tests/test_lsp_*`` files).
+``lint_document``, ``format_document``, ``code_actions_for_uri``,
+``hover_at``, ``completion_at``) take a ``LanguageServer``-shaped
+object and the relevant LSP params. They are registered with the
+real pygls server in :func:`run_stdio`; tests drive them with a
+lighter-weight stub server (see the ``tests/test_lsp_*`` files).
 """
 
 from __future__ import annotations
 
 import logging
+from functools import lru_cache
 from pathlib import Path
 
 from lsprotocol.types import (
     TEXT_DOCUMENT_CODE_ACTION,
+    TEXT_DOCUMENT_COMPLETION,
     TEXT_DOCUMENT_DID_CHANGE,
     TEXT_DOCUMENT_DID_CLOSE,
     TEXT_DOCUMENT_DID_OPEN,
     TEXT_DOCUMENT_DID_SAVE,
     TEXT_DOCUMENT_FORMATTING,
+    TEXT_DOCUMENT_HOVER,
     CodeAction,
     CodeActionKind,
     CodeActionParams,
+    CompletionItem,
+    CompletionItemKind,
+    CompletionList,
+    CompletionParams,
     DidChangeTextDocumentParams,
     DidCloseTextDocumentParams,
     DidOpenTextDocumentParams,
     DidSaveTextDocumentParams,
     DocumentFormattingParams,
+    Hover,
+    HoverParams,
+    MarkupContent,
+    MarkupKind,
     Position,
     PublishDiagnosticsParams,
     Range,
@@ -59,6 +80,7 @@ from m_cli import __version__
 from m_cli.fmt import FmtRule, ParseError, canonical_rules, format_source, rule_by_id
 from m_cli.lint import lint_source, select_rules
 from m_cli.lsp.convert import to_lsp_diagnostics
+from m_cli.lsp.symbols import KeywordRecord, all_keywords, lookup_keyword, token_at
 
 logger = logging.getLogger(__name__)
 
@@ -70,12 +92,15 @@ LSP_SERVER_NAME = "m-cli-lsp"
 # ---------------------------------------------------------------------------
 
 
-def lint_document(server, uri: str, *, rule_filter: str = "xindex") -> None:
+def lint_document(server, uri: str, *, rule_filter: str | None = None) -> None:
     """Lint the workspace document at ``uri`` and push diagnostics.
 
     Skips non-``.m`` URIs and missing documents quietly — the LSP
     spec lets the server publish whatever it wants, and silence is a
     valid response when the file isn't ours to lint.
+
+    The rule filter falls back to ``server.m_cli_rule_filter`` (set
+    by the CLI's ``--rules`` flag), then to ``"xindex"``.
     """
     if not uri.endswith(".m"):
         return
@@ -86,7 +111,8 @@ def lint_document(server, uri: str, *, rule_filter: str = "xindex") -> None:
         return
     src_text = doc.source if doc.source is not None else ""
     src_bytes = src_text.encode("latin-1", errors="replace")
-    rules = select_rules(rule_filter)
+    effective_filter = rule_filter or getattr(server, "m_cli_rule_filter", None) or "xindex"
+    rules = select_rules(effective_filter)
     path = Path(doc.path) if getattr(doc, "path", None) else Path(uri)
     diags = lint_source(path, src_bytes, rules)
     server.text_document_publish_diagnostics(
@@ -273,11 +299,115 @@ def _workspace_edit_for_fmt_rule(
 
 
 # ---------------------------------------------------------------------------
+# Hover (Stage 4)
+# ---------------------------------------------------------------------------
+
+
+def hover_at(server, uri: str, position: Position) -> Hover | None:
+    """Resolve the M token under the cursor and return Markdown hover content.
+
+    Returns ``None`` (no hover) for non-``.m`` URIs, missing documents,
+    out-of-range positions, or tokens that don't match any known
+    command, ISV, or intrinsic function. Local labels and user
+    routines are intentionally not described — m-cli doesn't have a
+    cross-routine symbol index.
+    """
+    if not uri.endswith(".m"):
+        return None
+    try:
+        doc = server.workspace.get_text_document(uri)
+    except KeyError:
+        return None
+    lines = (doc.source or "").splitlines()
+    if position.line < 0 or position.line >= len(lines):
+        return None
+    token = token_at(lines[position.line], position.character)
+    if token is None:
+        return None
+    record = lookup_keyword(token)
+    if record is None:
+        return None
+    return Hover(contents=MarkupContent(kind=MarkupKind.Markdown, value=_hover_markdown(record)))
+
+
+def text_document_hover(server, params: HoverParams) -> Hover | None:
+    return hover_at(server, params.text_document.uri, params.position)
+
+
+_KIND_LABELS: dict[str, str] = {
+    "command": "M command",
+    "isv": "M intrinsic special variable",
+    "function": "M intrinsic function",
+}
+
+
+def _hover_markdown(record: KeywordRecord) -> str:
+    """Render a KeywordRecord as a small Markdown block."""
+    head = f"**{record.canonical}**"
+    if record.abbreviation and record.abbreviation != record.canonical:
+        head = f"**{record.canonical}** (`{record.abbreviation}`)"
+    parts = [f"{head} — {_KIND_LABELS.get(record.kind, record.kind)}"]
+    if record.format:
+        parts.append("")
+        parts.append(f"```\n{record.format}\n```")
+    if record.standard_status:
+        parts.append("")
+        parts.append(f"_Standard: {record.standard_status}_")
+    return "\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Completion (Stage 4)
+# ---------------------------------------------------------------------------
+
+
+def completion_at(server, uri: str) -> CompletionList:
+    """Return the full set of M commands, ISVs, and intrinsic functions.
+
+    The client filters by the user's typed prefix; the server returns
+    the unfiltered universe with stable ``label`` / ``kind`` / ``detail``
+    fields. ``isIncomplete`` is False — the set doesn't grow per-keystroke.
+
+    Returns an empty list for non-``.m`` URIs so the editor doesn't
+    offer M keywords inside other languages it might route through us.
+    """
+    if not uri.endswith(".m"):
+        return CompletionList(is_incomplete=False, items=[])
+    return CompletionList(is_incomplete=False, items=_completion_items())
+
+
+def text_document_completion(server, params: CompletionParams) -> CompletionList:
+    return completion_at(server, params.text_document.uri)
+
+
+_COMPLETION_KIND: dict[str, CompletionItemKind] = {
+    "command": CompletionItemKind.Keyword,
+    "isv": CompletionItemKind.Constant,
+    "function": CompletionItemKind.Function,
+}
+
+
+@lru_cache(maxsize=1)
+def _completion_items() -> list[CompletionItem]:
+    items: list[CompletionItem] = []
+    for record in all_keywords():
+        detail = record.format or _KIND_LABELS.get(record.kind, record.kind)
+        items.append(
+            CompletionItem(
+                label=record.canonical,
+                kind=_COMPLETION_KIND.get(record.kind, CompletionItemKind.Text),
+                detail=detail,
+            )
+        )
+    return items
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
 
-def run_stdio() -> int:
+def run_stdio(rule_filter: str | None = None) -> int:
     """Build the pygls server, register handlers, and serve over stdio.
 
     Pygls' ``@server.feature(...)`` decorator invokes handlers with just
@@ -286,6 +416,11 @@ def run_stdio() -> int:
     explicit-server signature.
     """
     server = LanguageServer(LSP_SERVER_NAME, __version__)
+    if rule_filter:
+        # LanguageServer is dynamically attribute-extensible; we stash the
+        # CLI-provided filter so lint_document() can read it. Using setattr
+        # avoids tripping mypy on the unknown attribute.
+        setattr(server, "m_cli_rule_filter", rule_filter)  # noqa: B010
 
     @server.feature(TEXT_DOCUMENT_DID_OPEN)
     def _did_open(params: DidOpenTextDocumentParams) -> None:
@@ -311,6 +446,14 @@ def run_stdio() -> int:
     def _code_action(params: CodeActionParams) -> list[CodeAction]:
         return text_document_code_action(server, params)
 
+    @server.feature(TEXT_DOCUMENT_HOVER)
+    def _hover(params: HoverParams) -> Hover | None:
+        return text_document_hover(server, params)
+
+    @server.feature(TEXT_DOCUMENT_COMPLETION)
+    def _completion(params: CompletionParams) -> CompletionList:
+        return text_document_completion(server, params)
+
     logger.info("m-cli LSP %s starting on stdio", __version__)
     server.start_io()
     return 0
@@ -321,6 +464,10 @@ __all__ = [
     "clear_diagnostics",
     "format_document",
     "text_document_formatting",
+    "hover_at",
+    "text_document_hover",
+    "completion_at",
+    "text_document_completion",
     "code_actions_for_uri",
     "text_document_code_action",
     "did_open",
