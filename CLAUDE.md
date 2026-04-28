@@ -109,7 +109,7 @@ scripts/
 - **Per-rule isolation:** `runner.lint_source` wraps each rule in try/except so one buggy rule can't crash a lint pass — it emits an `M-INTERNAL-RULE-CRASH` diagnostic instead.
 - **VistA is the gate:** every rule should be sanity-checked with `make lint-vista` to catch wild-corpus surprises before commit.
 
-## LSP server (Stages 1+2)
+## LSP server (Stages 1 + 2 + 3)
 
 `m lsp` starts the m-cli Language Server over stdio. Editors invoke it as a subprocess and exchange LSP messages on stdin/stdout. Optional dependency: `pip install 'm-cli[lsp]'` adds `pygls` + `lsprotocol`. The dispatcher reports a friendly install hint if a user runs `m lsp` without the extra.
 
@@ -117,9 +117,11 @@ scripts/
 
 **Stage 2 — formatting.** `textDocument/formatting` runs `format_source(src, rules=canonical_rules())` and returns a single `TextEdit` covering the full document. Empty list when the source is already canonical (avoids churning the editor's undo history) or has parse errors (we refuse to reformat broken code). Capability advertised as `documentFormattingProvider: True`.
 
-Testable inner helpers: `m_cli.lsp.server.lint_document(server, uri)` and `format_document(server, uri)`. Tests use a `FakeServer` stub — no pygls runtime needed.
+**Stage 3 — code actions.** `textDocument/codeAction` reads the in-context diagnostics, groups them by `fixer_id`, and returns one Quick Fix per distinct fixer. Each action's `WorkspaceEdit` runs that single fmt rule file-wide — so two diagnostics of the same kind collapse into one click. Actions are skipped when the fixer would be a no-op or the source has parse errors. Capability advertised as `codeActionProvider: True`.
 
-Future stages: `textDocument/codeAction` (driven by `Rule.fixer_id`), workspace configuration, completion, hover.
+Testable inner helpers: `m_cli.lsp.server.lint_document(server, uri)`, `format_document(server, uri)`, `code_actions_for_uri(server, uri, diagnostics)`. Tests use a `FakeServer` stub — no pygls runtime needed.
+
+Future Stage 4 (optional polish): workspace configuration (override `--rules` / `--error-on`), hover (rule descriptions), completion (M command keywords from `standard_commands()`).
 
 ## Library API for tooling consumers
 

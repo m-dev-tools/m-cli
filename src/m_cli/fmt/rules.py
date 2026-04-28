@@ -50,6 +50,16 @@ def all_rules() -> list[FmtRule]:
     return list(_REGISTRY.values())
 
 
+def rule_by_id(rule_id: str) -> FmtRule | None:
+    """Return the registered rule with this id, or ``None`` if unknown.
+
+    Public helper for tooling consumers (LSP code-action handlers, CI
+    integrations) that need to resolve a ``fixer_id`` string back to the
+    actual ``FmtRule`` callable.
+    """
+    return _REGISTRY.get(rule_id)
+
+
 def canonical_rules() -> list[FmtRule]:
     """All rules considered safe for the default canonical layout.
 

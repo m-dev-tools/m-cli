@@ -1,15 +1,29 @@
-"""m-cli Language Server — Stage 1 (diagnostics push).
+"""m-cli Language Server — Stages 1 + 2 + 3.
 
-Wires the existing ``m_cli.lint`` library to the LSP
-``textDocument/publishDiagnostics`` notification. On every open,
-change, and save of a ``.m`` file the source is re-linted and the
-resulting diagnostics are pushed to the editor.
+Wires the existing ``m_cli.lint`` and ``m_cli.fmt`` libraries to LSP:
 
-The handler entry points (`did_open`, `did_change`, `did_save`,
-`did_close`) take a ``LanguageServer``-shaped object and the
-corresponding ``lsprotocol`` params. They are registered with the
-real pygls server in :func:`run_stdio`; tests drive them with a
-lighter-weight stub server (see ``tests/test_lsp_server.py``).
+  - **Stage 1: diagnostics push.** ``didOpen`` / ``didChange`` /
+    ``didSave`` re-lint the document; ``didClose`` clears its
+    diagnostics. Each LSP ``Diagnostic`` carries the rule id as
+    ``code``, ``source = "m-cli"``, mapped severity, and
+    ``data = {"fixer_id": ...}`` when the rule is auto-fixable.
+
+  - **Stage 2: formatting.** ``textDocument/formatting`` runs
+    ``format_source(src, rules=canonical_rules())`` and returns a
+    full-document ``TextEdit`` (or empty list when already canonical
+    or parse-error).
+
+  - **Stage 3: code actions.** ``textDocument/codeAction`` reads the
+    in-context diagnostics, groups them by ``fixer_id``, and offers
+    one Quick Fix per distinct fixer. Each action's ``WorkspaceEdit``
+    runs that one fmt rule file-wide.
+
+Public handler entry points (``did_*``, ``text_document_*``,
+``lint_document``, ``format_document``, ``code_actions_for_uri``)
+take a ``LanguageServer``-shaped object and the relevant LSP params.
+They are registered with the real pygls server in :func:`run_stdio`;
+tests drive them with a lighter-weight stub server (see the
+``tests/test_lsp_*`` files).
 """
 
 from __future__ import annotations
@@ -18,11 +32,15 @@ import logging
 from pathlib import Path
 
 from lsprotocol.types import (
+    TEXT_DOCUMENT_CODE_ACTION,
     TEXT_DOCUMENT_DID_CHANGE,
     TEXT_DOCUMENT_DID_CLOSE,
     TEXT_DOCUMENT_DID_OPEN,
     TEXT_DOCUMENT_DID_SAVE,
     TEXT_DOCUMENT_FORMATTING,
+    CodeAction,
+    CodeActionKind,
+    CodeActionParams,
     DidChangeTextDocumentParams,
     DidCloseTextDocumentParams,
     DidOpenTextDocumentParams,
@@ -32,11 +50,13 @@ from lsprotocol.types import (
     PublishDiagnosticsParams,
     Range,
     TextEdit,
+    WorkspaceEdit,
 )
+from lsprotocol.types import Diagnostic as LspDiagnostic
 from pygls.lsp.server import LanguageServer
 
 from m_cli import __version__
-from m_cli.fmt import ParseError, canonical_rules, format_source
+from m_cli.fmt import FmtRule, ParseError, canonical_rules, format_source, rule_by_id
 from m_cli.lint import lint_source, select_rules
 from m_cli.lsp.convert import to_lsp_diagnostics
 
@@ -162,6 +182,97 @@ def _end_position(src_text: str) -> Position:
 
 
 # ---------------------------------------------------------------------------
+# Code actions (Stage 3)
+# ---------------------------------------------------------------------------
+
+
+def code_actions_for_uri(server, uri: str, diagnostics: list[LspDiagnostic]) -> list[CodeAction]:
+    """Build Quick Fix code actions for diagnostics whose data carries a fixer_id.
+
+    Diagnostics sharing the same fixer collapse into one action: the
+    fmt rule runs file-wide, so a single edit cleans every occurrence
+    in one pass. Diagnostics without a fixer (or pointing to an
+    unknown fmt rule) are skipped silently.
+
+    Returns an empty list when the URI is not a ``.m`` file, the
+    workspace has no document for it, the source has parse errors,
+    or no diagnostic in scope has a known fixer.
+    """
+    if not uri.endswith(".m"):
+        return []
+    try:
+        doc = server.workspace.get_text_document(uri)
+    except KeyError:
+        return []
+
+    src_text = doc.source if doc.source is not None else ""
+    src_bytes = src_text.encode("latin-1", errors="replace")
+
+    # Group diagnostics by fixer_id, preserving registration order via
+    # iteration over diagnostics.
+    by_fixer: dict[str, list[LspDiagnostic]] = {}
+    for diag in diagnostics:
+        if not diag.data:
+            continue
+        fixer_id = diag.data.get("fixer_id") if isinstance(diag.data, dict) else None
+        if not fixer_id:
+            continue
+        by_fixer.setdefault(fixer_id, []).append(diag)
+
+    actions: list[CodeAction] = []
+    for fixer_id, related in by_fixer.items():
+        rule = rule_by_id(fixer_id)
+        if rule is None:
+            continue
+        edit = _workspace_edit_for_fmt_rule(uri, src_text, src_bytes, rule)
+        if edit is None:
+            continue
+        actions.append(
+            CodeAction(
+                title=f"Apply: {rule.title}",
+                kind=CodeActionKind.QuickFix,
+                diagnostics=related,
+                edit=edit,
+                is_preferred=True,
+            )
+        )
+    return actions
+
+
+def text_document_code_action(server, params: CodeActionParams) -> list[CodeAction]:
+    return code_actions_for_uri(server, params.text_document.uri, list(params.context.diagnostics))
+
+
+def _workspace_edit_for_fmt_rule(
+    uri: str, src_text: str, src_bytes: bytes, rule: FmtRule
+) -> WorkspaceEdit | None:
+    """Run a single fmt rule on the source and wrap the result as a
+    file-wide WorkspaceEdit. Returns ``None`` when the rule wouldn't
+    change the source (no point offering a no-op action) or the
+    source doesn't parse (refuse to fix broken code)."""
+    try:
+        formatted = format_source(src_bytes, rules=[rule])
+    except ParseError:
+        return None
+    if formatted == src_bytes:
+        return None
+    new_text = formatted.decode("latin-1", errors="replace")
+    return WorkspaceEdit(
+        changes={
+            uri: [
+                TextEdit(
+                    range=Range(
+                        start=Position(line=0, character=0),
+                        end=_end_position(src_text),
+                    ),
+                    new_text=new_text,
+                )
+            ]
+        }
+    )
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -196,6 +307,10 @@ def run_stdio() -> int:
     def _formatting(params: DocumentFormattingParams) -> list[TextEdit]:
         return text_document_formatting(server, params)
 
+    @server.feature(TEXT_DOCUMENT_CODE_ACTION)
+    def _code_action(params: CodeActionParams) -> list[CodeAction]:
+        return text_document_code_action(server, params)
+
     logger.info("m-cli LSP %s starting on stdio", __version__)
     server.start_io()
     return 0
@@ -206,6 +321,8 @@ __all__ = [
     "clear_diagnostics",
     "format_document",
     "text_document_formatting",
+    "code_actions_for_uri",
+    "text_document_code_action",
     "did_open",
     "did_change",
     "did_save",

@@ -37,9 +37,7 @@ class FakeServer:
 
 
 def _open(srv: FakeServer, uri: str, src: str) -> None:
-    srv.workspace.put_text_document(
-        TextDocumentItem(uri=uri, language_id="m", version=1, text=src)
-    )
+    srv.workspace.put_text_document(TextDocumentItem(uri=uri, language_id="m", version=1, text=src))
 
 
 # ---------------------------------------------------------------------------
