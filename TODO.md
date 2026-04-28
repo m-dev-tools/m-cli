@@ -2,6 +2,29 @@
 
 Pick up from this list. Top section is "next session" — concrete, ordered. Lower sections are deferred / parking lot.
 
+## STATUS — Tier 1 DONE; Tier 2 IN PROGRESS
+
+**Tier 1 — DONE (2026-04-27).** All five inner-loop capabilities ship: `m fmt`, `m lint --rules=xindex` (37/66 XINDEX rules — breadth-first per [m-tooling-tier1.md §3.6](../m-tools/docs/m-tooling-tier1.md#36-out-of-scope-intentional)), `m test`, single-test selection, `m watch`. All four §3.5 validation gates pass.
+
+**Tier 2 — formally started.** Per [m-tool-gap-analysis.md §8](../m-tools/docs/m-tool-gap-analysis.md#8-rank-ordered-developer-impact-where-to-invest-first):
+
+| # | Capability | Status | Notes |
+|---|---|:---:|---|
+| 6 | CI script | 🟡 Partial | Project Makefile + pre-commit scaffold cover the main use cases. No dedicated `m ci` planned. |
+| 7 | **Coverage** | 🟡 In progress | `m coverage` — Phase C. Label-level via ZBREAK first; line-level via source instrumentation deferred. |
+| 8 | Linter (style) | ✅ Done | Bundled with `m lint`; `--rules=sac` for SAC-tagged subset. |
+| 9 | Pre-commit hooks | ✅ Done | `.pre-commit-hooks.yaml` shipped. |
+| 10 | Debugger | ⏸️ Deferred | DAP integration is a separate, large effort. Not on near-term roadmap. |
+
+**Next session — pick from:**
+
+1. **Coverage (Phase C, in progress).** Ship the first slice: label-level coverage via ZBREAK, parser-aware label discovery via the workspace index, output formats text/json/lcov. Then expand to line-level via source instrumentation in a follow-up.
+2. **Phase B follow-ups.** `textDocument/references`, `workspace/symbol`, incremental `didChangeWatchedFiles`. All small handlers over the existing index.
+3. **Phase D (deferred XINDEX rules).** The 30 not-yet-ported rules; far easier *after* Phase B's index is fuller.
+4. **Publish to PyPI.** Unblocks `language: repo` pre-commit and downstream `pip install m-cli`.
+
+---
+
 ## Tier 1 Step 3 (`m test`) — DONE
 
 Shipped: `src/m_cli/test/` with discovery, runner, output formatters (text/tap/json), and CLI integration. Smoke-tested against `m-tools/routines/tests/` — 11 suites, 224/224 assertions pass against real ydb. Single-test selection (`SUITE::tLabel`) folds Step 4 into the same release.

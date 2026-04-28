@@ -9,17 +9,40 @@
 - [`m-standard`](https://github.com/rafael5/m-standard) — language reference; commands/ISVs/functions are loaded from its TSVs via `src/m_cli/lint/_keywords.py`
 - VistA at `~/vista-meta/vista/vista-m-host/Packages` (39,330 .m files) — the validation gate via `make vista` and `make lint-vista`
 
-## Current state (2026-04-27)
+## Current state (2026-04-28)
+
+### Tier 1 — DONE
+
+All five Tier 1 capabilities from [m-tooling-tier1.md](../m-tools/docs/m-tooling-tier1.md) ship; all four §3.5 validation gates pass (VistA round-trip, single-engine smoke, CI dogfooding, performance under budget). See [docs/guide.md §3.2](docs/guide.md#32-coverage-matrix) for the full coverage matrix.
 
 | Step | Tool | Status |
 |------|------|--------|
-| 1 | `m fmt` | **Shipped + canonical layer.** Identity (default) round-trips 99.04% byte-for-byte. Opt-in `--rules=canonical` adds two transformations: trim-trailing-whitespace, uppercase-command-keywords. VistA canonical gate: 10,429 of 38,954 routines (26.8%) would change; idempotent and AST-preserving across the full corpus. |
-| 2 | `m lint --rules=xindex` | **37 of XINDEX's 66 rules.** Latest: M-XINDX-057 (lower/mixed case local variable, SAC §3.6). VistA: 64,195 findings / 42 fatal. 22.6 s on 16 cores (5.3× under §3.5 budget). |
-| 3 | `m test` | **Shipped.** Parser-aware discovery (`*TST.m` files, `t<UpperCase>(pass,fail)` labels via tree-sitter); ydb runner; text / TAP / JSON output; whole-suite, single-suite, single-label runs. Smoke gate: 11 m-tools suites / 224 assertions pass. |
-| 4 | Single-test selection | **Shipped** as part of Step 3 (`m test FILE.m::tLabel`). |
-| 5 | `m watch` | **Shipped.** Polling-based file watcher (default 0.5 s); on `*.m` save → re-run affected suites. Affinity: `foo.m` → `FOOTST.m`; suite-file edits re-run only that suite; non-mappable changes re-run all. `--once` runs the initial pass and exits. |
+| 1 | `m fmt` | **Done.** Identity (default) round-trips 99.04% byte-for-byte. Opt-in `--rules=canonical` adds trim-trailing-whitespace + uppercase-command-keywords; idempotent + AST-preserving over 38,954 VistA routines. |
+| 2 | `m lint --rules=xindex` | **Done (breadth-first).** 37 of XINDEX's 66 rules ship; remaining 30 require data-flow / scope tracking and are deferred to Tier 2/3 follow-ups (Phase D), explicitly post-Tier-1 per §3.6. VistA gate 22.6 s on 16 cores, 5.3× under §3.5 budget. |
+| 3 | `m test` | **Done.** Parser-aware discovery; ydb runner; text / TAP / JSON output. Smoke gate: 11 m-tools suites / 224 assertions pass. |
+| 4 | Single-test selection | **Done** as part of Step 3 (`m test FILE.m::tLabel`). |
+| 5 | `m watch` | **Done.** Polling-based file watcher; source→suite affinity. |
 
-See [`TODO.md`](TODO.md) for the punch list to pick up from.
+### Tier 2 — IN PROGRESS
+
+Per [m-tool-gap-analysis.md §8](../m-tools/docs/m-tool-gap-analysis.md#8-rank-ordered-developer-impact-where-to-invest-first), Tier 2 = quality gates and team scaling. Five categories (rank 6–10):
+
+| # | Tier 2 capability | Status | Implementation |
+|---|---|:---:|---|
+| 6 | CI script | 🟡 Partial | Project Makefile + pre-commit scaffold. No dedicated `m ci` planned yet. |
+| 7 | **Coverage** | 🟡 In progress | `m coverage` — Phase C. Label-level via ZBREAK (port of m-tools' `ycover`); line-level via source instrumentation deferred to a later slice. |
+| 8 | Linter (style) | ✅ Done | Style rules ride alongside logic rules in `m lint`; `--rules=sac` for SAC-tagged subset; severity overrides via config. |
+| 9 | Pre-commit hooks | ✅ Done | `.pre-commit-hooks.yaml` exposes `m-fmt-check`, `m-fmt`, `m-lint`. |
+| 10 | Debugger | ⏸️ Deferred | DAP integration is its own engineering project; both engines ship `ZBREAK` at the engine level. Not on near-term roadmap. |
+
+### Cross-cutting (post-Tier-1, layered on the same foundation)
+
+- **`m lsp` Stages 1+2+3+4+4b+B** — diagnostics, formatting, code actions, hover, completion, document symbols, code lenses, folding, signature help, document highlight, go-to-definition. Editor design decision per [m-tooling-tier1.md §5.4](../m-tools/docs/m-tooling-tier1.md#54-editor-integration-cadence).
+- **VS Code wiring** — sibling repo `tree-sitter-m-vscode` spawns `m lsp` and registers the `m-cli.runTest` command for code-lens click-to-run.
+- **Phase A — project config** (`.m-cli.toml` / `[tool.m-cli]`): drives lint / fmt / lsp.
+- **Phase B (first slice) — workspace symbol index**: backs go-to-definition; references / workspaceSymbol / cross-routine lint rules are deliberate follow-ups on the same foundation.
+
+See [`TODO.md`](TODO.md) for the punch list to pick up from, and [docs/guide.md](docs/guide.md) for the comprehensive guide.
 
 ## Dev workflow
 ```bash
