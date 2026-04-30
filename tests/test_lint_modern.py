@@ -1111,3 +1111,117 @@ class TestZFunctionCanonical:
     def test_silent_on_canonical_name(self):
         src = b'hello ;c\n W $ZDATE($H,1),!\n Q\n'
         assert _lint(src, "M-MOD-035", ctx=_ctx()) == []
+
+
+# ---------------------------------------------------------------------------
+# M-MOD-024 — Read of local before any SET on every prior path
+# ---------------------------------------------------------------------------
+#
+# Phase 7 first user-visible rule: reads the per-label CFG and
+# definite-assignment analyzer (m_cli.lint.flow) and flags a use
+# of a local variable that is NOT in the "definitely defined"
+# set when the use occurs.
+
+
+class TestReadOfUndefined:
+    def test_fires_on_read_of_never_set_local(self):
+        """``W X`` with X never SET — uninitialized read."""
+        src = b"LBL\n W X\n Q\n"
+        diags = _lint(src, "M-MOD-024", ctx=_ctx())
+        assert len(diags) == 1
+        assert diags[0].rule_id == "M-MOD-024"
+        assert "X" in diags[0].message
+        assert diags[0].line == 2
+
+    def test_silent_after_set(self):
+        """``S X=1 W X`` — X is definitely defined when read."""
+        src = b"LBL\n S X=1\n W X\n Q\n"
+        assert _lint(src, "M-MOD-024", ctx=_ctx()) == []
+
+    def test_silent_on_formal_parameter(self):
+        """Formals are definitely defined at label entry."""
+        src = b"LBL(A,B)\n W A,B\n Q\n"
+        assert _lint(src, "M-MOD-024", ctx=_ctx()) == []
+
+    def test_fires_after_conditional_set(self):
+        """``S:cond X=1`` does not definitely define X — subsequent
+        read is unsafe."""
+        src = b"LBL(C)\n S:C=1 X=2\n W X\n Q\n"
+        diags = _lint(src, "M-MOD-024", ctx=_ctx())
+        assert any(d.rule_id == "M-MOD-024" and "X" in d.message for d in diags)
+
+    def test_fires_after_kill(self):
+        """``S X=1 K X W X`` — X was killed; reading is unsafe."""
+        src = b"LBL\n S X=1\n K X\n W X\n Q\n"
+        diags = _lint(src, "M-MOD-024", ctx=_ctx())
+        assert any(d.rule_id == "M-MOD-024" and "X" in d.message for d in diags)
+
+    def test_fires_on_read_in_postconditional(self):
+        """``Q:Y=1`` reads Y in the condition; Y was never set."""
+        src = b"LBL\n Q:Y=1\n Q\n"
+        diags = _lint(src, "M-MOD-024", ctx=_ctx())
+        assert any(d.rule_id == "M-MOD-024" and "Y" in d.message for d in diags)
+
+    def test_silent_on_global_read(self):
+        """``W ^X`` reads a global; M-MOD-024 only tracks locals."""
+        src = b"LBL\n W ^X\n Q\n"
+        assert _lint(src, "M-MOD-024", ctx=_ctx()) == []
+
+    def test_dedups_repeated_use_of_same_undefined_local(self):
+        """A var read several times with no intervening SET produces
+        ONE diagnostic per (label, var) — not one per use site —
+        to keep signal high on long-running undefined-read patterns."""
+        src = b"LBL\n W X\n W X\n W X\n Q\n"
+        diags = [d for d in _lint(src, "M-MOD-024", ctx=_ctx()) if d.rule_id == "M-MOD-024"]
+        assert len(diags) == 1
+        assert "X" in diags[0].message
+
+    def test_separate_labels_track_independently(self):
+        """``X`` undefined in LBL1 but DEFINED-and-USED in LBL2 —
+        only LBL1's read fires."""
+        src = b"LBL1\n W X\n Q\nLBL2\n S X=1 W X\n Q\n"
+        diags = [d for d in _lint(src, "M-MOD-024", ctx=_ctx()) if d.rule_id == "M-MOD-024"]
+        assert len(diags) == 1
+        assert diags[0].line == 2
+
+    def test_silent_on_set_x_reads_x_after_initialization(self):
+        """The ``S X=X+1`` increment pattern: X is read AND defined.
+        After a prior ``S X=0``, the read is safe."""
+        src = b"LBL\n S X=0\n S X=X+1\n Q\n"
+        assert _lint(src, "M-MOD-024", ctx=_ctx()) == []
+
+    def test_fires_on_set_x_reads_x_without_prior_initialization(self):
+        """Same ``S X=X+1`` pattern, but X was never previously set —
+        the RHS read of X is uninitialized."""
+        src = b"LBL\n S X=X+1\n Q\n"
+        diags = [d for d in _lint(src, "M-MOD-024", ctx=_ctx()) if d.rule_id == "M-MOD-024"]
+        assert len(diags) == 1
+        assert "X" in diags[0].message
+
+    def test_silent_on_byref_passing_pattern(self):
+        """The m-tools test-framework idiom:
+
+            new pass,fail
+            do start^TESTRUN(.pass,.fail)
+            do report^TESTRUN(pass,fail)
+
+        ``new`` un-defines pass/fail; the by-ref ``do start^TESTRUN``
+        call defines them (callee initializes); subsequent by-value
+        read in ``do report^TESTRUN(pass,fail)`` is safe."""
+        src = (
+            b"SUITE\n"
+            b" new pass,fail\n"
+            b" do start^TESTRUN(.pass,.fail)\n"
+            b" do report^TESTRUN(pass,fail)\n"
+            b" quit\n"
+        )
+        diags = [d for d in _lint(src, "M-MOD-024", ctx=_ctx()) if d.rule_id == "M-MOD-024"]
+        assert diags == []
+
+    def test_silent_on_cross_argument_def_then_use(self):
+        """``S A=1, B=A`` — multi-argument SET with a use of A in arg 2.
+        M evaluates left-to-right, so A is defined when arg 2 reads it.
+        The rule must walk arguments per-arg with running defs."""
+        src = b"LBL\n S A=1, B=A\n Q\n"
+        diags = [d for d in _lint(src, "M-MOD-024", ctx=_ctx()) if d.rule_id == "M-MOD-024"]
+        assert diags == []

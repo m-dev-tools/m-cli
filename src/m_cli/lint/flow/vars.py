@@ -6,6 +6,16 @@ assignment (Phase 7 step 2B) and liveness analysis. Globals (``^X``)
 are deliberately *not* tracked — the rules consuming this analysis
 target local scope only.
 
+Two granularity levels:
+
+  * :func:`effects` — aggregate over the whole command. Handy for
+    reaching-defs, which models a command as a single transfer step.
+  * :func:`effects_of_argument` — per-argument effects. Lets a rule
+    walk arguments left-to-right and track running defs (M evaluates
+    multi-arg ``SET A=1,B=A`` left to right, so B's RHS sees A
+    defined). Also where DO/JOB by-reference handling lives —
+    ``D LBL(.X)`` defines X (the callee initializes it).
+
 The semantics are encoded by ``tests/test_lint_flow_vars.py``; that
 file is the spec.
 """
@@ -26,7 +36,7 @@ _KILL_KW = frozenset({"K", "KILL"})
 _NEW_KW = frozenset({"N", "NEW"})
 _FOR_KW = frozenset({"F", "FOR"})
 # Commands whose first argument variable is a *call target*, not a
-# variable being read or defined.
+# variable being read or defined. By-reference args (``.X``) define X.
 _CALL_KW = frozenset({"D", "DO", "J", "JOB", "G", "GOTO"})
 
 
@@ -42,7 +52,7 @@ class VarUse:
 
 @dataclass
 class Effects:
-    """Variable effects of a single command.
+    """Variable effects of a command (or a single argument).
 
     ``defs`` and ``kills`` are sets of variable names; ``kills_all``
     captures the argumentless KILL / NEW semantics (kills every local
@@ -55,13 +65,22 @@ class Effects:
     kills_all: bool = False
     uses: list[VarUse] = field(default_factory=list)
 
+    def merge(self, other: Effects) -> None:
+        """Aggregate ``other`` into ``self`` (used for command-level
+        rollup over per-argument results)."""
+        self.defs |= other.defs
+        self.kills |= other.kills
+        self.kills_all = self.kills_all or other.kills_all
+        self.uses.extend(other.uses)
+
 
 # ---------------------------------------------------------------------------
-# AST helpers
+# AST helpers (public — used by rules that walk the AST directly)
 # ---------------------------------------------------------------------------
 
 
-def _command_keyword(cmd: _Node, src: bytes) -> str:
+def command_keyword(cmd: _Node, src: bytes) -> str:
+    """Uppercased command keyword, or ``""`` when missing."""
     for c in cmd.children:
         if c.type == "command_keyword":
             return src[c.start_byte : c.end_byte].decode(
@@ -70,22 +89,29 @@ def _command_keyword(cmd: _Node, src: bytes) -> str:
     return ""
 
 
-def _argument_nodes(cmd: _Node) -> list[_Node]:
+def argument_nodes(cmd: _Node) -> list[_Node]:
+    """Direct ``argument`` children of the command's argument list."""
     for c in cmd.children:
         if c.type == "argument_list":
             return [a for a in c.children if a.type == "argument"]
     return []
 
 
-def _postcond_node(cmd: _Node) -> _Node | None:
+def postcond_node(cmd: _Node) -> _Node | None:
     for c in cmd.children:
         if c.type == "postconditional":
             return c
     return None
 
 
-def _identifier_text(local_var: _Node, src: bytes) -> str:
-    for c in local_var.children:
+def _identifier_text(node: _Node, src: bytes) -> str:
+    """For a ``local_variable`` returns the leading identifier; for
+    a bare ``identifier`` returns its text."""
+    if node.type == "identifier":
+        return src[node.start_byte : node.end_byte].decode(
+            "latin-1", errors="replace"
+        )
+    for c in node.children:
         if c.type == "identifier":
             return src[c.start_byte : c.end_byte].decode(
                 "latin-1", errors="replace"
@@ -98,16 +124,13 @@ def _has_subscripts(local_var: _Node) -> bool:
 
 
 def _walk_local_vars(node: _Node) -> Iterator[_Node]:
-    """Yield every ``local_variable`` node in the subtree, in source
-    order. Skips the contents of ``global_variable`` (we don't track
-    globals) and descends through every other node type — including
-    ``function_call``, ``extrinsic_function``, ``subscripts`` — so
-    that uses inside function arguments and inside subscript
-    expressions are picked up.
-
-    When the yielded node is itself a ``local_variable``, only its
-    ``subscripts`` child is recursed into (the ``identifier`` child
-    holds the variable's name, not a separate use).
+    """Yield every ``local_variable`` node in ``node``'s subtree, in
+    source order. Skips the contents of ``global_variable``. Walks
+    into ``function_call``, ``extrinsic_function``, ``subscripts`` so
+    uses inside intrinsic args and inside subscript expressions are
+    captured. When yielding a ``local_variable``, recurses only into
+    its ``subscripts`` child (its ``identifier`` is the variable's
+    name, not a separate use).
     """
     if node.type == "global_variable":
         return
@@ -131,87 +154,222 @@ def _make_use(local_var: _Node, src: bytes) -> VarUse:
 
 
 # ---------------------------------------------------------------------------
-# Public API
+# Per-argument effects
 # ---------------------------------------------------------------------------
 
 
-def effects(cmd: _Node, src: bytes) -> Effects:
-    """Compute the variable effects of a single ``command`` AST node."""
+def _walk_set_like_arg(arg: _Node, src: bytes, out: Effects) -> None:
+    """Walk a SET / MERGE / READ / FOR argument.
+
+    The first ``local_variable`` encountered in source order is the
+    LHS / target → recorded as a DEF. Subsequent ``local_variable``
+    nodes are USES. ``by_reference`` nodes (which can appear inside
+    extrinsic-function calls like ``$$F(.X)`` on the RHS) are DEFs —
+    the callee may initialize the variable in the caller's frame.
+    """
+    target_assigned = [False]
+
+    def visit(node: _Node) -> None:
+        if node.type == "global_variable":
+            return
+        if node.type == "by_reference":
+            name = _identifier_text(node, src)
+            if name:
+                out.defs.add(name)
+            return
+        if node.type == "local_variable":
+            if not target_assigned[0]:
+                target_assigned[0] = True
+                out.defs.add(_identifier_text(node, src))
+                for c in node.children:
+                    if c.type == "subscripts":
+                        visit(c)
+                return
+            out.uses.append(_make_use(node, src))
+            for c in node.children:
+                if c.type == "subscripts":
+                    visit(c)
+            return
+        for c in node.children:
+            visit(c)
+
+    visit(arg)
+
+
+def _walk_generic_arg(arg: _Node, src: bytes, out: Effects) -> None:
+    """Walk a generic-command argument (W, Q, etc.).
+
+    Every ``local_variable`` is a USE. ``by_reference`` (rare outside
+    DO/JOB but possible if a non-call command has been mis-parsed)
+    contributes a DEF for safety.
+    """
+
+    def visit(node: _Node) -> None:
+        if node.type == "global_variable":
+            return
+        if node.type == "by_reference":
+            name = _identifier_text(node, src)
+            if name:
+                out.defs.add(name)
+            return
+        if node.type == "local_variable":
+            out.uses.append(_make_use(node, src))
+            for c in node.children:
+                if c.type == "subscripts":
+                    visit(c)
+            return
+        for c in node.children:
+            visit(c)
+
+    visit(arg)
+
+
+def _call_arg_subscripts(arg: _Node) -> _Node | None:
+    """Find the ``subscripts`` node holding the actual call parameters.
+
+    The call target is wrapped either as ``variable > local_variable``
+    (for plain ``D LBL(X)``) or as ``entry_reference`` (for
+    ``D LBL^ROUTINE(X)`` with the ``^`` separator). In either case
+    the parameter list is the ``subscripts`` child. Returns ``None``
+    when the call has no parameter list (``D LBL`` / ``D ^ROUTINE``).
+    """
+    for c in arg.children:
+        if c.type == "variable":
+            for cc in c.children:
+                if cc.type == "local_variable":
+                    for ccc in cc.children:
+                        if ccc.type == "subscripts":
+                            return ccc
+            return None
+        if c.type == "entry_reference":
+            for cc in c.children:
+                if cc.type == "subscripts":
+                    return cc
+            return None
+    return None
+
+
+def _walk_call_arg(arg: _Node, src: bytes, out: Effects) -> None:
+    """Walk a DO/JOB/GOTO argument subtree.
+
+    The call target itself contributes nothing to the var analysis —
+    it's a label name, not a variable. Within the parameter list:
+
+      * A ``by_reference`` node (``.X``) → recorded as a DEF (the
+        callee may initialize X in the caller's frame).
+      * Any other ``local_variable`` → recorded as a USE.
+    """
+    subs = _call_arg_subscripts(arg)
+    if subs is None:
+        return
+
+    def visit(node: _Node) -> None:
+        if node.type == "global_variable":
+            return
+        if node.type == "by_reference":
+            name = _identifier_text(node, src)
+            if name:
+                out.defs.add(name)
+            return
+        if node.type == "local_variable":
+            out.uses.append(_make_use(node, src))
+            for c in node.children:
+                if c.type == "subscripts":
+                    visit(c)
+            return
+        for c in node.children:
+            visit(c)
+
+    visit(subs)
+
+
+def effects_of_argument(arg: _Node, src: bytes, keyword: str) -> Effects:
+    """Effects produced by evaluating one argument of a command.
+
+    ``keyword`` is the uppercased command keyword (``"S"`` / ``"D"``
+    / etc.). The same per-arg helper is used by :func:`effects` for
+    command-level aggregation and by rules that need running defs
+    across multiple arguments.
+
+    For DO/JOB/GOTO, by-reference arguments (``.X``) contribute defs;
+    by-value arguments contribute uses. The call target's identifier
+    (the leftmost variable in the argument) is not tracked as either.
+    """
     out = Effects()
-    kw = _command_keyword(cmd, src)
+    kw = keyword
 
-    pc = _postcond_node(cmd)
-    if pc is not None:
-        for lv in _walk_local_vars(pc):
-            out.uses.append(_make_use(lv, src))
-
-    args = _argument_nodes(cmd)
-
-    if kw in _SET_KW or kw in _MERGE_KW:
-        for arg in args:
-            lvars = list(_walk_local_vars(arg))
-            if not lvars:
-                continue
-            lhs = lvars[0]
-            out.defs.add(_identifier_text(lhs, src))
-            for lv in lvars[1:]:
-                out.uses.append(_make_use(lv, src))
-        return out
-
-    if kw in _READ_KW:
-        for arg in args:
-            lvars = list(_walk_local_vars(arg))
-            if not lvars:
-                continue
-            target = lvars[0]
-            out.defs.add(_identifier_text(target, src))
-            for lv in lvars[1:]:
-                out.uses.append(_make_use(lv, src))
+    if (
+        kw in _SET_KW
+        or kw in _MERGE_KW
+        or kw in _FOR_KW
+        or kw in _READ_KW
+    ):
+        _walk_set_like_arg(arg, src, out)
         return out
 
     if kw in _KILL_KW or kw in _NEW_KW:
-        if not args:
-            out.kills_all = True
-            return out
-        for arg in args:
-            lvars = list(_walk_local_vars(arg))
-            if not lvars:
-                continue
+        lvars = list(_walk_local_vars(arg))
+        if lvars:
             target = lvars[0]
             if _has_subscripts(target):
-                # Subscripted kill / new is a partial operation —
-                # the base variable is still defined; only specific
-                # subscripts move. Don't kill the base; record the
-                # subscript expressions as uses.
+                # Partial kill — base var stays defined; subscripts are uses.
                 for lv in lvars[1:]:
                     out.uses.append(_make_use(lv, src))
             else:
                 out.kills.add(_identifier_text(target, src))
         return out
 
-    if kw in _FOR_KW:
-        for arg in args:
-            lvars = list(_walk_local_vars(arg))
-            if not lvars:
-                continue
-            out.defs.add(_identifier_text(lvars[0], src))
-            for lv in lvars[1:]:
-                out.uses.append(_make_use(lv, src))
-        return out
-
     if kw in _CALL_KW:
-        for arg in args:
-            lvars = list(_walk_local_vars(arg))
-            # Skip the call-target identifier; everything else (the
-            # arguments passed in subscripts) is a read.
-            for lv in lvars[1:]:
-                out.uses.append(_make_use(lv, src))
+        _walk_call_arg(arg, src, out)
         return out
 
-    # Generic command: every local var in arguments is a use.
-    for arg in args:
-        for lv in _walk_local_vars(arg):
+    # Generic: every local var is a use; by-ref (rare) is a def.
+    _walk_generic_arg(arg, src, out)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+
+def uses_in_subtree(node: _Node, src: bytes) -> list[VarUse]:
+    """Every local-variable USE inside ``node`` (postcondition,
+    expression, etc.) in source order. Convenience for rules that
+    need the read sites of an arbitrary subtree."""
+    return [_make_use(lv, src) for lv in _walk_local_vars(node)]
+
+
+def effects(cmd: _Node, src: bytes) -> Effects:
+    """Aggregate variable effects of a single ``command`` AST node.
+
+    Aggregates across the postconditional (uses) and every argument
+    (per :func:`effects_of_argument`). For commands like
+    ``S A=1,B=A`` this rolls A into both defs and uses — rules that
+    need argument-level granularity should walk
+    :func:`argument_nodes` and call :func:`effects_of_argument`
+    directly with running state.
+    """
+    out = Effects()
+    kw = command_keyword(cmd, src)
+
+    pc = postcond_node(cmd)
+    if pc is not None:
+        for lv in _walk_local_vars(pc):
             out.uses.append(_make_use(lv, src))
+
+    if not kw:
+        return out
+
+    # Argumentless K / N kills_all up-front; without the early check
+    # we'd miss it because there are no argument nodes to iterate.
+    args = argument_nodes(cmd)
+    if not args and kw in (_KILL_KW | _NEW_KW):
+        out.kills_all = True
+        return out
+
+    for arg in args:
+        out.merge(effects_of_argument(arg, src, kw))
     return out
 
 

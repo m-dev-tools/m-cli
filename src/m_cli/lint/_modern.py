@@ -2491,3 +2491,124 @@ register(
         fixer_id="expand-intrinsic-functions",
     )
 )
+
+
+# ===========================================================================
+# Phase 7 — Path-sensitive rules (M-MOD-024..027)
+# ===========================================================================
+#
+# These rules consume the per-label CFG + definite-assignment analyzer
+# from m_cli.lint.flow. M-MOD-024 ships first; the lock/transaction/
+# $ETRAP path-sensitive variants (M-MOD-025..027) graduate the
+# Phase 4 intra-label rules to multi-path accounting in subsequent
+# slices.
+
+
+# ---------------------------------------------------------------------------
+# M-MOD-024 — Read of local before any SET on every prior path
+# ---------------------------------------------------------------------------
+
+
+def _check_read_of_undefined(
+    src: bytes, _tree, path: Path, index: NodeIndex, _ctx: LintContext
+) -> Iterator[Diagnostic]:
+    """M-MOD-024 — Read of a local variable that may not have been
+    SET on every path from the label entry.
+
+    Forward MUST-analysis (definite assignment) over the per-label
+    CFG. A variable V is reported at use site U iff V is not in the
+    definitely-defined set entering U's block AND not defined by an
+    earlier argument of the same command.
+
+    By-reference parameters in ``DO``/``JOB`` calls (``D LBL(.X)``)
+    are treated as DEFs — the callee may initialize the variable.
+
+    Dedup: one diagnostic per (label, variable) — long runs of the
+    same uninitialized read collapse to one finding to keep signal
+    high.
+
+    Deliberate limitations (Phase 7+ follow-ups):
+
+      - GOTO targets within the routine are over-approximated as exits;
+        cross-label dataflow is out of scope for this slice.
+      - FOR loops have no back-edge yet; the loop body is treated as
+        straight-line and may under-report on a first-iteration read.
+      - YDB device parameters (``OPEN file:(newversion)``) parse as
+        local variables and may produce false positives on I/O code.
+    """
+    from m_cli.lint.flow import analyze, build_cfgs, formal_params
+    from m_cli.lint.flow.vars import (
+        argument_nodes,
+        command_keyword,
+        effects_of_argument,
+        postcond_node,
+        uses_in_subtree,
+    )
+
+    cfgs = build_cfgs(src, index)
+    for cfg in cfgs:
+        formals = tuple(formal_params(cfg.label_node, src))
+        in_sets = analyze(cfg, src, formals=formals)
+        reported: set[str] = set()
+
+        def _flag(use, reported=reported, label_name=cfg.label_name):
+            if use.name in reported:
+                return None
+            reported.add(use.name)
+            return Diagnostic(
+                rule_id="M-MOD-024",
+                severity=Severity.ERROR,
+                message=(
+                    f"Local '{use.name}' may be read before being "
+                    f"definitely defined on every path from {label_name}"
+                ),
+                path=path,
+                line=use.line,
+                column=use.column,
+                column_end=use.column + len(use.name),
+            )
+
+        for block in cfg.blocks:
+            if block.kind != "command":
+                continue
+            cmd = block.command
+            in_set = in_sets[block.id]
+            running: set[str] = set(in_set)
+            kw = command_keyword(cmd, src)
+
+            pc = postcond_node(cmd)
+            if pc is not None:
+                for use in uses_in_subtree(pc, src):
+                    if use.name in running:
+                        continue
+                    d = _flag(use)
+                    if d is not None:
+                        yield d
+
+            for arg in argument_nodes(cmd):
+                arg_effects = effects_of_argument(arg, src, kw)
+                for use in arg_effects.uses:
+                    if use.name in running:
+                        continue
+                    d = _flag(use)
+                    if d is not None:
+                        yield d
+                running |= arg_effects.defs
+                if arg_effects.kills_all:
+                    running = set()
+                else:
+                    running -= arg_effects.kills
+
+
+register(
+    Rule(
+        id="M-MOD-024",
+        severity=Severity.ERROR,
+        category=Category.BUG,
+        title="Read of local variable before definite assignment",
+        tags=("modern",),
+        check=_check_read_of_undefined,
+        needs_context=True,
+        replaces=(),
+    )
+)

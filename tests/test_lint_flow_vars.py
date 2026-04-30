@@ -241,3 +241,53 @@ def test_do_call_passes_args_as_uses() -> None:
     e = _ef(b" D LBL(X,Y)\n")
     assert e.defs == set()
     assert {u.name for u in e.uses} == {"X", "Y"}
+
+
+# ---------------------------------------------------------------------------
+# By-reference parameters in DO/JOB calls — defs in the caller's frame
+# ---------------------------------------------------------------------------
+
+
+def test_do_call_byref_arg_is_def() -> None:
+    """``D LBL(.X)`` — the callee may set X, so X is a DEF for the
+    caller's frame. Lets the test-framework `new pass,fail; do
+    setup(.pass,.fail)` idiom not fire M-MOD-024 false positives."""
+    e = _ef(b" D LBL(.X)\n")
+    assert e.defs == {"X"}
+    assert e.uses == []
+
+
+def test_do_call_mixed_byref_and_byvalue() -> None:
+    """``D LBL(.X,Y,Z)`` — X is by-ref (def); Y and Z are by-value (uses)."""
+    e = _ef(b" D LBL(.X,Y,Z)\n")
+    assert e.defs == {"X"}
+    assert {u.name for u in e.uses} == {"Y", "Z"}
+
+
+def test_do_call_with_routine_separator_byref() -> None:
+    """``D start^TESTRUN(.pass,.fail)`` — both formals are defs.
+
+    With the `^routine` separator the AST uses an `entry_reference`
+    wrapper instead of `local_variable`; the call-target boundary
+    detection has to handle both. (This is the m-tools test-framework
+    idiom — false-positive elimination here was the motivation for
+    the by-ref handling.)
+    """
+    e = _ef(b" D start^TESTRUN(.pass,.fail)\n")
+    assert e.defs == {"pass", "fail"}
+    assert e.uses == []
+
+
+def test_do_call_with_routine_byvalue() -> None:
+    """``D report^TESTRUN(pass,fail)`` — by-value form of the same call."""
+    e = _ef(b" D report^TESTRUN(pass,fail)\n")
+    assert e.defs == set()
+    assert {u.name for u in e.uses} == {"pass", "fail"}
+
+
+def test_do_call_no_args_no_effects() -> None:
+    """``D LBL`` and ``D ^ROUTINE`` — no parameter list, no var effects."""
+    assert _ef(b" D LBL\n").defs == set()
+    assert _ef(b" D LBL\n").uses == []
+    assert _ef(b" D ^ROUTINE\n").defs == set()
+    assert _ef(b" D ^ROUTINE\n").uses == []

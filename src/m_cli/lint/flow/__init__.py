@@ -12,7 +12,14 @@ from __future__ import annotations
 
 from m_cli.lint.flow.cfg import CFG, Block, build_cfgs
 from m_cli.lint.flow.reaching import analyze
-from m_cli.lint.flow.vars import Effects, VarUse, effects, formal_params
+from m_cli.lint.flow.vars import (
+    Effects,
+    VarUse,
+    effects,
+    effects_of_argument,
+    formal_params,
+    uses_in_subtree,
+)
 
 __all__ = [
     "CFG",
@@ -22,5 +29,7 @@ __all__ = [
     "analyze",
     "build_cfgs",
     "effects",
+    "effects_of_argument",
     "formal_params",
+    "uses_in_subtree",
 ]
