@@ -1278,3 +1278,109 @@ class TestLockLeakPathSensitive:
         diags = [d for d in _lint(src, "M-MOD-025", ctx=_ctx()) if d.rule_id == "M-MOD-025"]
         assert len(diags) == 1
         assert "X" in diags[0].message
+
+
+# ---------------------------------------------------------------------------
+# M-MOD-026 — TSTART leak across exit paths (path-sensitive)
+# ---------------------------------------------------------------------------
+
+
+class TestTransactionLeakPathSensitive:
+    def test_fires_on_unbalanced_tstart(self):
+        """``TSTART`` then ``Q:cond`` then ``TCOMMIT`` — early exit
+        leaks an open transaction."""
+        src = b"LBL(C)\n TSTART\n Q:C=1\n TCOMMIT\n Q\n"
+        diags = [d for d in _lint(src, "M-MOD-026", ctx=_ctx()) if d.rule_id == "M-MOD-026"]
+        assert len(diags) == 1
+        assert "Transaction" in diags[0].message
+
+    def test_silent_on_balanced(self):
+        """``TSTART`` then ``TCOMMIT`` on every path — clean."""
+        src = b"LBL\n TSTART\n TCOMMIT\n Q\n"
+        assert _lint(src, "M-MOD-026", ctx=_ctx()) == []
+
+    def test_silent_on_trollback_close(self):
+        """``TROLLBACK`` also closes the transaction."""
+        src = b"LBL\n TSTART\n TROLLBACK\n Q\n"
+        assert _lint(src, "M-MOD-026", ctx=_ctx()) == []
+
+    def test_fires_when_no_close(self):
+        """Plain ``TSTART`` with no closer — leak."""
+        src = b"LBL\n TSTART\n Q\n"
+        diags = [d for d in _lint(src, "M-MOD-026", ctx=_ctx()) if d.rule_id == "M-MOD-026"]
+        assert len(diags) == 1
+        assert "depth 1" in diags[0].message
+
+    def test_fires_on_nested_unclosed(self):
+        """Nested TSTART without matching TCOMMITs — depth > 1 at exit."""
+        src = b"LBL\n TSTART\n TSTART\n Q\n"
+        diags = [d for d in _lint(src, "M-MOD-026", ctx=_ctx()) if d.rule_id == "M-MOD-026"]
+        assert len(diags) == 1
+        assert "depth 2" in diags[0].message
+
+    def test_silent_on_no_transactions(self):
+        src = b"LBL\n S X=1\n Q\n"
+        assert _lint(src, "M-MOD-026", ctx=_ctx()) == []
+
+    def test_anchors_diagnostic_on_label_header(self):
+        src = b"LBL\n TSTART\n Q\n"
+        diags = [d for d in _lint(src, "M-MOD-026", ctx=_ctx()) if d.rule_id == "M-MOD-026"]
+        assert len(diags) == 1
+        assert diags[0].line == 1
+
+
+# ---------------------------------------------------------------------------
+# M-MOD-027 — $ETRAP leak across exit paths (path-sensitive)
+# ---------------------------------------------------------------------------
+
+
+class TestEtrapLeakPathSensitive:
+    def test_fires_on_set_etrap_without_new(self):
+        """Setting $ETRAP without prior NEW $ETRAP — handler escapes."""
+        src = b'LBL\n S $ETRAP="D ^HANDLE"\n Q\n'
+        diags = [d for d in _lint(src, "M-MOD-027", ctx=_ctx()) if d.rule_id == "M-MOD-027"]
+        assert len(diags) == 1
+        assert "$ETRAP" in diags[0].message
+
+    def test_silent_when_new_etrap_precedes(self):
+        """``NEW $ETRAP`` then ``SET $ETRAP=...`` — protected."""
+        src = b'LBL\n N $ETRAP\n S $ETRAP="D ^HANDLE"\n Q\n'
+        assert _lint(src, "M-MOD-027", ctx=_ctx()) == []
+
+    def test_silent_when_new_et_abbrev_precedes(self):
+        """``NEW $ET`` is the abbreviation."""
+        src = b'LBL\n N $ET\n S $ETRAP="D ^HANDLE"\n Q\n'
+        assert _lint(src, "M-MOD-027", ctx=_ctx()) == []
+
+    def test_fires_when_new_only_on_some_paths(self):
+        """``Q:cond`` exits early; later branch does NEW $ETRAP then SET.
+        Wait — once we get past the early Q, NEW happens before SET.
+        The leak case is: SET happens BEFORE NEW on some path."""
+        src = (
+            b"LBL(C)\n"
+            b' S $ETRAP="early"\n'  # leak: no NEW yet
+            b" N $ETRAP\n"
+            b' S $ETRAP="protected"\n'
+            b" Q\n"
+        )
+        diags = [d for d in _lint(src, "M-MOD-027", ctx=_ctx()) if d.rule_id == "M-MOD-027"]
+        # The first SET fires; the second is protected.
+        assert len(diags) == 1
+        assert diags[0].line == 2
+
+    def test_silent_on_no_etrap_set(self):
+        """``SET X="x"`` is unrelated."""
+        src = b'LBL\n S X="x"\n Q\n'
+        assert _lint(src, "M-MOD-027", ctx=_ctx()) == []
+
+    def test_silent_on_argumentless_new(self):
+        """``NEW`` (argumentless) doesn't protect $ETRAP — but no
+        SET $ETRAP follows here, so no diagnostic either."""
+        src = b"LBL\n N\n S X=1\n Q\n"
+        assert _lint(src, "M-MOD-027", ctx=_ctx()) == []
+
+    def test_fires_on_argumentless_new_followed_by_set_etrap(self):
+        """Argumentless ``NEW`` does NOT protect $ETRAP. SET still leaks."""
+        src = b'LBL\n N\n S $ETRAP="x"\n Q\n'
+        diags = [d for d in _lint(src, "M-MOD-027", ctx=_ctx()) if d.rule_id == "M-MOD-027"]
+        assert len(diags) == 1

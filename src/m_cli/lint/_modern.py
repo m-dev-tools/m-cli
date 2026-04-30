@@ -2671,3 +2671,139 @@ register(
         replaces=("M-MOD-011",),
     )
 )
+
+
+# ---------------------------------------------------------------------------
+# M-MOD-026 — TSTART leak across exit paths
+# ---------------------------------------------------------------------------
+
+
+def _check_transaction_leak_path_sensitive(
+    src: bytes, _tree, path: Path, index: NodeIndex, _ctx: LintContext
+) -> Iterator[Diagnostic]:
+    """M-MOD-026 — At least one path from label entry to exit leaves
+    a transaction open.
+
+    Path-sensitive graduation of M-MOD-012's intra-label balance
+    check. A forward MAY-analysis (max meet) computes the worst-case
+    transaction nesting depth on any path entering the synthetic
+    exit block. Non-zero depth means at least one path forgets to
+    close the transaction.
+    """
+    from m_cli.lint.flow import build_cfgs
+    from m_cli.lint.flow.transaction_state import depth_at_exit
+
+    cfgs = build_cfgs(src, index)
+    for cfg in cfgs:
+        depth = depth_at_exit(cfg, src)
+        if depth <= 0:
+            continue
+        label = cfg.label_node
+        yield Diagnostic(
+            rule_id="M-MOD-026",
+            severity=Severity.ERROR,
+            message=(
+                f"Transaction may be open when {cfg.label_name} exits "
+                f"(max depth {depth}) — TCOMMIT/TROLLBACK on every path"
+            ),
+            path=path,
+            line=label.start_point[0] + 1,
+            column=label.start_point[1] + 1,
+            column_end=label.end_point[1] + 1,
+        )
+
+
+register(
+    Rule(
+        id="M-MOD-026",
+        severity=Severity.ERROR,
+        category=Category.CONCURRENCY,
+        title="TSTART leak across exit paths (path-sensitive)",
+        tags=("modern",),
+        check=_check_transaction_leak_path_sensitive,
+        needs_context=True,
+        replaces=("M-MOD-012",),
+    )
+)
+
+
+# ---------------------------------------------------------------------------
+# M-MOD-027 — $ETRAP leak across exit paths (path-sensitive)
+# ---------------------------------------------------------------------------
+
+
+def _check_etrap_leak_path_sensitive(
+    src: bytes, _tree, path: Path, index: NodeIndex, _ctx: LintContext
+) -> Iterator[Diagnostic]:
+    """M-MOD-027 — ``SET $ETRAP=...`` not preceded by ``NEW $ETRAP``
+    on every path.
+
+    Path-sensitive graduation of M-MOD-013. For each ``SET $ETRAP``
+    (or its abbreviation ``SET $ET``), the analyzer asks: was
+    ``NEW $ETRAP`` executed on every path from the label entry to
+    this block? If not, the new handler persists past label exit
+    into whatever the caller was running with — almost always a bug.
+    """
+    from m_cli.lint.flow import build_cfgs
+    from m_cli.lint.flow.etrap_state import analyze_etrap_protection
+    from m_cli.lint.flow.vars import argument_nodes, command_keyword
+
+    _SET_KW = frozenset({"S", "SET"})
+    _ETRAP_NAMES = frozenset({"$ETRAP", "$ET"})
+
+    def _set_targets_etrap(cmd) -> bool:
+        if command_keyword(cmd, src) not in _SET_KW:
+            return False
+        for arg in argument_nodes(cmd):
+            for c in arg.children:
+                if c.type != "binary_expression":
+                    continue
+                # First child of binary_expression is the LHS.
+                lhs = c.children[0] if c.children else None
+                if lhs is None:
+                    continue
+                if lhs.type == "special_variable":
+                    name = src[lhs.start_byte : lhs.end_byte].decode(
+                        "latin-1", errors="replace"
+                    ).upper()
+                    if name in _ETRAP_NAMES:
+                        return True
+        return False
+
+    cfgs = build_cfgs(src, index)
+    for cfg in cfgs:
+        protections = analyze_etrap_protection(cfg, src)
+        for block in cfg.blocks:
+            if block.kind != "command":
+                continue
+            cmd = block.command
+            if cmd is None or not _set_targets_etrap(cmd):
+                continue
+            if protections[block.id]:
+                continue
+            yield Diagnostic(
+                rule_id="M-MOD-027",
+                severity=Severity.ERROR,
+                message=(
+                    f"SET $ETRAP without preceding NEW $ETRAP on every "
+                    f"path from {cfg.label_name} — handler escapes the label"
+                ),
+                path=path,
+                line=block.line,
+                column=cmd.start_point[1] + 1,
+                column_end=cmd.end_point[1] + 1,
+            )
+
+
+register(
+    Rule(
+        id="M-MOD-027",
+        severity=Severity.ERROR,
+        category=Category.BUG,
+        title="$ETRAP leak across exit paths (path-sensitive)",
+        tags=("modern",),
+        check=_check_etrap_leak_path_sensitive,
+        needs_context=True,
+        replaces=("M-MOD-013",),
+    )
+)
