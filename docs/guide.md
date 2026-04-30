@@ -11,7 +11,10 @@
 
 ## Table of Contents
 
-- [1. What `m-cli` is](#1-what-m-cli-is)
+- [1. Introduction](#1-introduction)
+  - [1.1 What `m-cli` is](#11-what-m-cli-is)
+  - [1.2 How it was built — the dependency sequence](#12-how-it-was-built--the-dependency-sequence)
+  - [1.3 Engine support](#13-engine-support)
 - [2. Why it exists — the M tooling gap](#2-why-it-exists--the-m-tooling-gap)
 - [3. Where `m-cli` fits in the remediation roadmap](#3-where-m-cli-fits-in-the-remediation-roadmap)
   - [3.1 The four-tier framework](#31-the-four-tier-framework)
@@ -21,9 +24,21 @@
 - [6. Subcommand reference](#6-subcommand-reference)
   - [6.1 `m fmt`](#61-m-fmt)
   - [6.2 `m lint`](#62-m-lint)
+    - [6.2.1 Profiles](#621-profiles)
+    - [6.2.2 Two-axis severity + category](#622-two-axis-severity--category)
+    - [6.2.3 The XINDEX rule pack (M-XINDX-NN)](#623-the-xindex-rule-pack-m-xindx-nn)
+    - [6.2.4 The modernization track (M-MOD-NN)](#624-the-modernization-track-m-mod-nn)
+    - [6.2.5 Path-sensitive rules (Phase 7)](#625-path-sensitive-rules-phase-7)
+    - [6.2.6 Taint analysis (Phase 9)](#626-taint-analysis-phase-9)
+    - [6.2.7 Configurable thresholds](#627-configurable-thresholds)
+    - [6.2.8 Engine targeting](#628-engine-targeting)
+    - [6.2.9 Inline disable directives](#629-inline-disable-directives)
+    - [6.2.10 Baseline mode](#6210-baseline-mode)
+    - [6.2.11 Auto-fix linkage with `m fmt`](#6211-auto-fix-linkage-with-m-fmt)
   - [6.3 `m test`](#63-m-test)
-  - [6.4 `m watch`](#64-m-watch)
-  - [6.5 `m lsp`](#65-m-lsp)
+  - [6.4 `m coverage`](#64-m-coverage)
+  - [6.5 `m watch`](#65-m-watch)
+  - [6.6 `m lsp`](#66-m-lsp)
 - [7. Project configuration](#7-project-configuration)
 - [8. Editor integration (VS Code)](#8-editor-integration-vs-code)
 - [9. Library API for downstream tools](#9-library-api-for-downstream-tools)
@@ -34,21 +49,51 @@
 
 ---
 
-## 1. What `m-cli` is
+## 1. Introduction
+
+### 1.1 What `m-cli` is
 
 `m-cli` is a vendor-neutral, source-level developer toolchain for the M (MUMPS) language, exposed as a single `m` binary with subcommands:
 
 ```
-m fmt    — format M source
-m lint   — lint M source (XINDEX-equivalent rule pack + extensions)
-m test   — discover and run M test suites against YottaDB
-m watch  — auto-rerun affected suites on file save
-m lsp    — Language Server (stdio) for editor integration
+m fmt       — format M source
+m lint      — lint M source (XINDEX rule pack + modernization track + taint analysis)
+m test      — discover and run M test suites against YottaDB
+m coverage  — line- and label-level coverage reports
+m watch     — auto-rerun affected suites on file save
+m lsp       — Language Server (stdio) for editor integration
 ```
 
-The tools share a parser ([`tree-sitter-m`](https://github.com/rafael5/tree-sitter-m)) and a language reference ([`m-standard`](https://github.com/rafael5/m-standard)). Source-level tools (`fmt`, `lint`) are engine-neutral — they consume `.m` text via the parser regardless of which M engine the code runs on. Runtime tools (`test`, coverage, trace) currently target YottaDB primarily; an IRIS adapter is a deliberate future concern (see §3.4 of [m-tooling-tier1.md](../../m-tools/docs/m-tooling-tier1.md)).
+`m-cli` is the canonical implementation of the **Tier 1 deliverable** described in [m-tooling-tier1.md](../../m-tools/docs/m-tooling-tier1.md), now extended with the Tier 2 quality-gate features (`m coverage`, pre-commit hooks, style linting) and an opinionated modernization track (the M-MOD-NN rule family — 35 rules covering complexity, concurrency, transaction integrity, engine portability, code-style, and security/taint). It is the active replacement for the legacy `y*` shell scripts in `~/projects/m-tools/bin/` (kept only as references).
 
-`m-cli` is the canonical implementation of the **Tier 1 deliverable** described in [m-tools / m-tooling-tier1.md](../../m-tools/docs/m-tooling-tier1.md), and is the active replacement for the legacy `y*` shell scripts in `~/projects/m-tools/bin/` (kept only as references).
+### 1.2 How it was built — the dependency sequence
+
+`m-cli` did not appear in isolation. Each piece rests on a sequence of foundational projects, chosen so the next layer could stay vendor-neutral and source-only. Built in dependency order:
+
+```
+gap analysis  →  Tier 1 plan  →  tree-sitter-m  →  m-standard  →  VistA corpus  →  m-cli
+   strategy        scope         parsing          semantics      validation       implementation
+```
+
+**1. The gap analysis** — [m-tool-gap-analysis.md](../../m-tools/docs/m-tool-gap-analysis.md). A vendor-neutral inventory of the developer toolchain that mainstream languages (Python, JavaScript/TypeScript, Go, Rust, Java) take for granted, benchmarked against InterSystems IRIS and YottaDB. The headline finding: **22 of 23 applicable categories are common gaps** — both engines ship None or Basic support for source-level developer tooling. The strategic insight: a **single vendor-neutral, source-level tool** built on a shared parser foundation could fill each gap for both engines simultaneously.
+
+**2. The Tier 1 plan** — [m-tooling-tier1.md](../../m-tools/docs/m-tooling-tier1.md). A focused five-tool plan addressing the highest-impact developer-loop gaps: formatter, linter, test runner, single-test selection, file watcher. Defined the architectural principles (vendor-neutral, source-level, validate against VistA on every release) and the validation gates that gate every release.
+
+**3. [`tree-sitter-m`](https://github.com/rafael5/tree-sitter-m)** — the production tree-sitter grammar for M. **99.06% clean parse** on the 39,330-routine VistA corpus. The shared parser. Every `m-cli` subcommand parses `.m` source through this grammar — the formatter relies on its lossless byte ranges; the linter walks its AST node types; the test runner searches for `label` and `formals` AST nodes; the LSP traverses its structure helpers; the Phase 7 control-flow graph builder reads its `command` and `command_sequence` nodes.
+
+**4. [`m-standard`](https://github.com/rafael5/m-standard)** — a machine-readable cross-vendor inventory of **949 M keyword forms** (commands, intrinsic functions, intrinsic special variables) with provenance flags (`in_anno`, `in_ydb`, `in_iris`). Every linter rule that needs to know "is this a standard command?" reads from m-standard, never hardcoded lists. Hover and completion in the LSP serve m-standard's syntax format strings directly. Engine-aware portability rules (M-MOD-021..023) consult its `standard_status` column (`ansi`, `ydb`, `iris`, `ydb-and-iris`, `vista`).
+
+**5. The VistA corpus** — [WorldVistA/VistA-M](https://github.com/WorldVistA/VistA-M). The 39,330-routine open-source M codebase that is the largest in the world. The validation gate for every `m-cli` release: `make vista` round-trips every routine through `m fmt`; `make lint-vista` runs the full XINDEX rule pack across the corpus in 22.6 s on 16 cores. **A tool that doesn't survive VistA isn't ready.** The supplementary `make lint-modern` gate runs the M-MOD-NN track over a curated 4,215-routine non-VistA corpus catalogued in [docs/m-corpus-catalog.md](m-corpus-catalog.md) (YottaDB/YDBTest, mgsql, YDBOcto-aux, EWD, M-Web-Server) — calibrating the modernization rules against contemporary non-VA M code.
+
+**6. `m-cli`** — this project. The Tier 1 deliverable, plus the Tier 2 quality-gate features it laid the groundwork for, plus the M-MOD-NN modernization track (Phases 1–8 of the linting roadmap), plus the Phase 7 data-flow infrastructure (per-label CFG, definite-assignment analyzer, and per-resource state analyzers for LOCK / TSTART / $ETRAP / $TEST), plus the Phase 9 taint-analysis MVP (M-MOD-036 — untrusted data → indirection sinks), plus the LSP server that wraps it all for editor integration.
+
+For per-foundation detail (what each project provides and why `m-cli` depends on it), see §4 below.
+
+### 1.3 Engine support
+
+Source-level tools (`m fmt`, `m lint`, `m lsp`) are **engine-neutral by design** — they consume `.m` text via the shared parser regardless of which M engine the code runs on. Engine-aware lint rules (M-MOD-021..023) read m-standard's allowlists when configured with `--target-engine=yottadb` or `--target-engine=iris`; the default `any` keeps the linter portable.
+
+Runtime tools (`m test`, `m coverage`) currently target **YottaDB**; an IRIS adapter is a deliberate future concern (the runner shells out via an injectable callable, so the IRIS path is a contained extension). See [§3.4 of m-tooling-tier1.md](../../m-tools/docs/m-tooling-tier1.md#34-portability-across-m-implementations) for the layering reasoning.
 
 ---
 
@@ -99,7 +144,7 @@ The table below mirrors the categories in [§7 of m-tool-gap-analysis.md](../../
 | # | Tier | Category | Original gap | m-cli status | Subcommand / module | Notes |
 |---|:---:|---|:---:|:---:|---|---|
 | 1 | 1 | Test runner | MAJOR | ✅ Done | [`m test`](#63-m-test) | Parser-aware suite + label discovery via tree-sitter; YottaDB runner; text / TAP / JSON output. Smoke gate: 11 m-tools suites / 224 assertions pass. |
-| 2 | 1 | Linter (logic) | MAJOR | 🟡 Partial | [`m lint`](#62-m-lint) | 42 of XINDEX's 66 rules implemented: 37 single-file + 3 cross-routine (M-XINDX-007 undefined-routine, M-XINDX-008 undefined-label, M-XINDX-049 unused-label) + 2 control-flow (M-XINDX-009 dead-code-after-QUIT, M-XINDX-051 empty IF/ELSE). Inline `; m-lint: disable=RULE` directives (same-line / next-line / file / `*` wildcard) suppress findings without editing config. LSP hover on a diagnostic shows rule id + title + severity. Remaining ~24 rules require data-flow / scope tracking. |
+| 2 | 1 | Linter (logic) | MAJOR | ✅ Done | [`m lint`](#62-m-lint) | **77 rules** across two families — 42 from XINDEX (legacy VA Toolkit port) and 35 from the **M-MOD-NN modernization track** (greenfield). Path-sensitive analyzers (Phase 7) graduate the LOCK / TSTART / $ETRAP / $TEST checks to per-path correctness. Phase 9 taint MVP (M-MOD-036) flags untrusted data flowing into `@expr` / `XECUTE` sinks. Seven profiles bundle the rules by audience (`default` / `modern` / `pedantic` / `pythonic` / `xindex` / `vista` / `sac` / `all`). Two-axis severity (ERROR / WARNING / STYLE / INFO) + nine-category enum (bug / security / concurrency / performance / style / complexity / documentation / portability / modernization). Inline `; m-lint: disable=RULE` directives. Configurable thresholds. Engine targeting (`--target-engine=any|yottadb|iris`). Baseline mode for adopting on legacy code. |
 | 3 | 1 | Formatter | MAJOR | ✅ Done | [`m fmt`](#61-m-fmt) | Identity formatter round-trips 99.04% of VistA byte-for-byte. `--rules=canonical` adds two hygiene transformations (trim trailing whitespace, uppercase command keywords). `--rules=pythonic` and `--rules=compact` translate between VistA-compact (`S X=1 W $L(X),$T`) and canonical-name (`SET X=1 WRITE $LENGTH(X),$TEST`) forms via 6 case-preserving translation rules. Idempotent + AST-preserving over 38,954 routines. |
 | 4 | 1 | Single-test selection | MAJOR | ✅ Done | `m test FILE.m::tLabel` | Folded into Step 3. |
 | 5 | 1 | Test watcher | MAJOR | ✅ Done | [`m watch`](#64-m-watch) | Polling-based (no inotify dependency). Source-to-suite affinity: `foo.m` → `FOOTST.m`. |
@@ -110,8 +155,8 @@ The table below mirrors the categories in [§7 of m-tool-gap-analysis.md](../../
 | 10 | 2 | Debugger | PARTIAL | ⏸️ Deferred | (none) | DAP-based debug adapter would be a separate, large engineering effort. Both engines ship `ZBREAK` at the engine level (Basic). Not on the near-term roadmap. |
 | 11 | 3 | Documentation generator | MAJOR | ⏸️ Deferred | (none) | Tier 3. |
 | 12 | 3 | Dependency management | MAJOR | ⏸️ Deferred | (none) | Tier 3. Blocked on a manifest-format design in `m-standard`. |
-| 13 | 3 | Dead-code detection | MAJOR | 🟡 Partial | `m lint` (within-file) | Within-file unused-label detection comes free with the existing rule pack. Cross-routine "label not referenced anywhere" awaits Phase B's workspace symbol index. |
-| 14 | 3 | Complexity metrics | MAJOR | ⏳ Planned | `m lint --rules=complexity` | Cyclomatic complexity per label is a natural extension of the AST visitor pattern. Not yet on the immediate roadmap. |
+| 13 | 3 | Dead-code detection | MAJOR | ✅ Done | `m lint` | M-XINDX-049 (unused-label) cross-routine via the workspace symbol index. M-XINDX-009 (dead-code-after-QUIT) intra-routine. M-MOD-024 (read of local before any SET on every prior path) via Phase 7 definite-assignment. |
+| 14 | 3 | Complexity metrics | MAJOR | ✅ Done | `m lint --rules=modern` | M-MOD-005 (cyclomatic), M-MOD-006 (cognitive), M-MOD-007 (dot-block depth), M-MOD-008 (argument count), M-MOD-009 (commands-per-line), all per-label. Configurable thresholds. |
 | 15 | 3 | Fixture management | MAJOR | ⏸️ Deferred | (TESTRUN library in m-tools) | The TESTRUN assertion library in `m-tools/routines/tests/TESTRUN.m` covers basic test-runner fixtures. A deeper fixture system is out of scope for `m-cli`. |
 | 16 | 4 | Snapshot testing | MAJOR | ⏸️ Deferred | (none) | Tier 4. |
 | 17 | 4 | Build / tasks | PARTIAL | ⏸️ Deferred | (project Makefile) | Both engines have *Basic* coverage via Makefile; no dedicated `m build` is planned. |
@@ -119,7 +164,7 @@ The table below mirrors the categories in [§7 of m-tool-gap-analysis.md](../../
 | 19 | 4 | Syntax check | PARTIAL | ✅ Done (implicit) | tree-sitter parse + M-XINDX-021 | Parse errors surface as `m lint` diagnostics; the parser is the syntax check. |
 | 20 | 4 | Profiling | ENGINE-SPECIFIC | ➖ Out of scope | (engine concern) | IRIS-only (`^%SYS.MONLBL`); YDB lacks it. Not source-level. |
 | 21 | 4 | Benchmarking | PARTIAL | ⏸️ Deferred | (none) | `$ZHOROLOG` is the engine primitive both vendors ship. |
-| 22 | 4 | Security scan | MAJOR | ⏸️ Deferred | (none) | Tier 4. |
+| 22 | 4 | Security scan | MAJOR | 🟡 Partial | `m lint --rules=M-MOD-036` | Taint analysis MVP (Phase 9): tracks untrusted data (`READ` input, public-label formals) through assignment chains and flags any flow into an indirection sink (`@expr`, `S @expr=...`, `D @expr`, `G @expr`, `XECUTE`). Cross-routine taint propagation is the remaining stretch piece. |
 | 23 | 4 | Package publishing | MAJOR | ⏳ Planned (own repo only) | (PyPI for m-cli itself) | Publishing `m-cli` + `tree-sitter-m` to PyPI is a near-term unblocker for downstream pre-commit / CI usage. The broader "M package ecosystem" is aspirational. |
 | — | — | Type checking | N/A | ➖ Not applicable | — | M is untyped. |
 | — | — | Import analysis | N/A | ➖ Not applicable | — | M has no import system. |
@@ -245,23 +290,238 @@ PEP-8-style operator spacing (`S X = 1`) and one-command-per-line splitting are 
 
 ### 6.2 `m lint`
 
-Run rule predicates over `.m` source.
+Run rule predicates over `.m` source. The lint engine is **engine- and dialect-neutral**; opinionated rule sets ride on top as named **profiles**.
 
 ```bash
-m lint Routines/                    # default --rules=xindex
-m lint --rules=all Routines/        # everything registered
-m lint --rules=sac Routines/        # SAC-tagged rules only
-m lint --rules=M-XINDX-013,M-XINDX-019 Routines/  # explicit list
-m lint --error-on=warning Routines/ # exit 1 on warning or above
-m lint --format=json Routines/      # CI-friendly output
-m lint --jobs=8 Routines/           # parallel across 8 worker processes
+m lint Routines/                          # default profile (curated daily lint)
+m lint --rules=modern Routines/           # full M-MOD modernization track
+m lint --rules=xindex,vista Routines/     # legacy VistA Toolkit checks
+m lint --rules=pythonic Routines/         # Python-style strict review
+m lint --rules=M-MOD-024,M-MOD-036 Routines/  # explicit list
+m lint --error-on=warning Routines/       # exit 1 on warning or above
+m lint --format=json Routines/            # CI-friendly output
+m lint --jobs=8 Routines/                 # parallel across 8 worker processes
+m lint --target-engine=yottadb Routines/  # unlock YDB-specific allowlists
+m lint --threshold cyclomatic=10 Routines/  # tune a complexity ceiling
+m lint --list-profiles                    # show the live profile list
 ```
 
-**Rule families.** Rules carry stable IDs `M-XINDX-NN` mirroring XINDEX's numeric error codes 1:1. The 37 rules currently implemented cover the most common XINDEX checks; the 30 not yet ported require deeper analysis (data-flow / scope tracking) and are sequenced for follow-up phases. See [TODO.md](../TODO.md) for the explicit punch list.
+**Output formats.** `text` (default, human), `json` (CI / downstream tooling — stable schema, includes `fixer_id` linkage), `tap` (TAP-13 for test-runner pipelines).
 
-**Severity.** Four levels mirror XINDEX's: FATAL / STANDARD / WARNING / INFO. `--error-on` threshold and `[lint.severity]` config overrides ([§7](#7-project-configuration)) let projects tune the gate without forking the rule registry.
+#### 6.2.1 Profiles
 
-**Output formats.** `text` (default), `json`, `tap`. JSON output includes a `fixer_id` field per diagnostic linking it to the `m fmt` rule that auto-fixes it.
+| Profile | Rules | Use when |
+|---------|------:|----------|
+| `default` | 28 | **Daily-lint baseline.** The curated M-MOD subset minus the four loud pedantic rules and minus rules superseded by Phase 7 path-sensitive variants. ~9 findings per routine on the 4K-routine non-VA corpus. This is what `m lint` runs when no `--rules` flag is given. |
+| `modern` | 35 | **Strict review pass.** Full M-MOD-NN track including the four pedantic style rules. Heavy on legacy code; appropriate when reviewing one routine carefully. |
+| `pedantic` | 4 | M-MOD-009 (commands-per-line), M-MOD-028 (label-docstring), M-MOD-031 (magic-numbers), M-MOD-032 (single-letter-vars). Use to focus a style sweep. |
+| `pythonic` | 35 | Same selection as `modern` plus tighter thresholds (line=100, commands-per-line=1, cyclomatic=10, …) for projects coming from PEP-8 conventions. |
+| `xindex` | 34 | **Engine-neutral subset of VA's `^XINDEX` Toolkit.** Mirrors XINDEX's numeric error codes 1:1. Use this for VistA-style discipline. |
+| `vista` | 8 | **VA Kernel-specific** (OPEN→`^%ZIS`, HALT→`^XUSCLEAN`, banner format). Pure false positives outside VistA — opt in only when linting VistA. |
+| `sac` | 23 | Portable VA SAC subset minus the VistA-Kernel mandates. |
+| `all` | 67 | Everything registered, with replaces-suppression applied so legacy ↔ modern pairs don't double-report. Diagnostic-only. |
+
+**Combining:** `--rules` takes a comma-separated list mixing profiles and rule IDs:
+
+```bash
+m lint --rules=xindex,vista Routines/         # VA shops — full VistA flavour
+m lint --rules=default,M-XINDX-013 Routines/  # daily set + one extra rule
+m lint --rules=sac,modern Routines/           # union of both profiles
+```
+
+When a rule R declares `replaces=("S",)` and both R and S end up selected, S is suppressed automatically — no double-reporting.
+
+#### 6.2.2 Two-axis severity + category
+
+Every rule declares **both** a severity (how strictly to enforce) and a category (what kind of issue it catches). The two are orthogonal — filter by either.
+
+**Severity** (CI gate threshold via `--error-on`):
+
+| Severity | Code | LSP map | Meaning |
+|----------|:----:|---------|---------|
+| `error` | E | Error | Must fix; CI fails. Real bugs or undefined behavior. |
+| `warning` | W | Warning | Should fix. Likely-but-not-certain issues, complexity ceilings. |
+| `style` | S | Hint | Auto-fix preferred. Hygiene, casing, formatting. |
+| `info` | I | Information | Informational; no action expected. |
+
+**Category** (orthogonal taxonomy):
+
+| Category | Rules | Covers |
+|----------|------:|--------|
+| `bug` | 21 | Real defects: dead code, undefined references, control-flow holes |
+| `style` | 13 | Casing, spacing, line length, naming |
+| `complexity` | 9 | Cyclomatic / cognitive complexity, nesting, argument counts |
+| `concurrency` | 6 | LOCK / TSTART / $ETRAP / OPEN-CLOSE pairing |
+| `portability` | 8 | Engine-specific `Z*` / `$Z*` use without an allowlist |
+| `documentation` | 6 | Missing comments, label docstrings, TODO ownership |
+| `modernization` | 8 | Idioms with a better post-1990 replacement |
+| `security` | 1 | Untrusted data → indirection / `XECUTE` (M-MOD-036, taint analysis) |
+
+#### 6.2.3 The XINDEX rule pack (M-XINDX-NN)
+
+42 rules ported from VA's `^XINDEX` Toolkit, with stable IDs mirroring XINDEX's numeric error codes 1:1 (`M-XINDX-013` ↔ XINDEX error 13, etc.). Engine-neutral subset (34 rules) ships in the `xindex` profile; the 8 VistA-Kernel-specific rules (banner mandates, `OPEN`→`^%ZIS`, etc.) live in the `vista` profile to avoid false positives outside VistA.
+
+5 XINDEX rules remain registered but intentionally silent (M-XINDX-015 / 021 / 027 / 031 / 054) — patterns the tree-sitter parser already catches via its ERROR nodes. Pinned by `tests/test_xindex_inactive.py`.
+
+**Cross-routine** (workspace-aware): M-XINDX-007 (call to undefined routine), M-XINDX-008 (call to undefined label in another routine), M-XINDX-049 (label declared but never referenced). Backed by `m_cli.workspace.WorkspaceIndex`.
+
+#### 6.2.4 The modernization track (M-MOD-NN)
+
+A greenfield rule family designed against contemporary M idioms (post-2010), engine- and dialect-neutral, **independent of the legacy XINDEX baseline** but with most rules supersesing one or more XINDEX rules via `Rule.replaces=...` metadata. Validated against the 4,215-routine non-VA corpus catalogued in [docs/m-corpus-catalog.md](m-corpus-catalog.md).
+
+**Length / complexity (M-MOD-001..009)** — configurable thresholds:
+- 001 line length, 002 code-line length, 003 routine LOC, 004 label-body LOC
+- 005 cyclomatic complexity, 006 cognitive complexity, 007 dot-block depth, 008 argument count, 009 commands-per-line
+
+**Concurrency / transactions (M-MOD-010..014)** — intra-label heuristics:
+- 010 LOCK without timeout, 011 LOCK acquire/release imbalance, 012 TSTART/TCOMMIT pairing, 013 SET $ETRAP without preceding NEW, 014 OPEN/CLOSE imbalance
+
+**Control-flow (M-MOD-015..020)** — single-pass AST checks:
+- 015 $SELECT without default arm, 016 side-effecting postconditional, 018 argumentless FOR without conditional exit, 019 broad `?.E` pattern, 020 by-reference parameter unused intra-routine
+
+**Engine-aware (M-MOD-021..023)** — consult m-standard's allowlists. Default `--target-engine=any` flags every `$Z*` token; setting `=yottadb` or `=iris` unlocks the engine's documented set.
+- 021 Z-command, 022 $Z* ISV, 023 $Z* function
+
+**Documentation / style (M-MOD-028..035)**:
+- 028 label-docstring, 029 comment-density, 030 TODO/FIXME ownership, 031 magic-numbers, 032 single-letter vars, 033 argumentless NEW, 034 `SET X=X+1` → `$INCREMENT`, 035 $Z* function abbreviation → canonical
+
+**Path-sensitive (Phase 7)** — see §6.2.5.
+
+**Security / taint (Phase 9)** — see §6.2.6.
+
+#### 6.2.5 Path-sensitive rules (Phase 7)
+
+The largest research subproject in the linting roadmap, shipped as five rules built on a shared data-flow infrastructure (`m_cli.lint.flow`):
+
+| Module | Lattice | Meet | What it tracks |
+|--------|---------|------|----------------|
+| `flow.cfg` | n/a | n/a | Per-label control-flow graph (entry / command / exit blocks; fall / branch / skip / if-skip / exit edge kinds) |
+| `flow.vars` | n/a | n/a | Per-command variable extraction (defs / kills / uses + by-reference def handling for DO/JOB and `$$F(.X)` calls) |
+| `flow.reaching` | set of names | intersection | Definite-assignment (forward MUST analysis): "is X defined on every path entering B?" |
+| `flow.lock_state` | set of names | union | Held LOCKs (forward MAY): "may a LOCK on X be held entering B?" |
+| `flow.transaction_state` | int (max=32) | max | Transaction nesting depth (forward MAY): "what's the worst-case TSTART depth entering B?" |
+| `flow.etrap_state` | bool | AND | $ETRAP protection (forward MUST): "has NEW $ETRAP run on every path entering B?" |
+| `flow.dollar_test` | bool | AND | $TEST freshness (forward MUST): "has a $T-setter (IF/OPEN/LOCK/READ/JOB) run on every prior path?" |
+
+**The five Phase 7 rules:**
+
+| Rule | Severity | Replaces | What it catches |
+|------|:--------:|----------|-----------------|
+| **M-MOD-024** | ERROR | — | Read of a local variable before any SET on every prior path. Sources include formals (always defined). Suppresses `$GET(X)` / `$DATA(X)` defensive-read intrinsics; recognizes the `IF $G(X)="" SET X=...` test+default-set idiom. |
+| **M-MOD-025** | ERROR | M-MOD-011 | Path-sensitive LOCK leak: at least one path from label entry to exit leaves a LOCK held. Tracks globals (`^V`), indirection (`@expr` → sentinel `@`), and the incremental `+`/`-`/plain forms. |
+| **M-MOD-026** | ERROR | M-MOD-012 | Path-sensitive TSTART leak: max transaction depth at exit > 0 on at least one path. |
+| **M-MOD-027** | ERROR | M-MOD-013 | Path-sensitive $ETRAP leak: SET $ETRAP without preceding NEW $ETRAP on every prior path. |
+| **M-MOD-017** | WARNING | — | Stale $TEST read: reading `$TEST` / `$T` without a $T-setting command on every prior path. |
+
+The CFG over-approximates indirection (`@var` GOTO) as exit; FOR loops are straight-line in this slice (back-edge is a Phase 7+ refinement). Argumentless `Q` inside a dot-block correctly falls through to the dot-block's continuation rather than terminating the label.
+
+#### 6.2.6 Taint analysis (Phase 9)
+
+The differentiating security feature of the lint suite. Forward MAY-analysis with union meet over a set-of-names lattice, tracking which local variables hold *untrusted* data.
+
+**Sources** — variables a tainted attribute attaches to:
+- `READ X` (terminal input)
+- Formal parameters of every label (configurable via `[lint.taint] formals_tainted = false`)
+
+**Propagation** — strong-update SET semantics:
+- `SET Y = expr` taints Y iff any var in `expr` is tainted (with sanitizer subtree skipping)
+- `KILL X` / `NEW X` removes X from tainted set
+- `D LBL(.X)` / `S R=$$F(.X)` taints X (callee may write any value through by-reference)
+
+**Sanitizers** (default + user-configurable additions):
+- Built-in: `$L` / `$LENGTH` / `$A` / `$ASCII` (return numeric values that can't carry code)
+- Configurable: `[lint.taint] extra_sanitizers = ["$E", "$TR"]` adds `$EXTRACT` / `$TRANSLATE` etc.
+
+**Sinks** (where M-MOD-036 fires):
+- Any `indirection` AST node (`@expr` anywhere — `D @X`, `S @X=...`, `S Y=@X`, `G @X`, …)
+- `XECUTE` command's argument
+
+**M-MOD-036** flags the first tainted local that flows into a sink, dedup'd per (label, variable). Severity ERROR, category `security`. On the modern corpus: 276 findings dominated by the M-API idiom of "label takes a name parameter and indirects on it" — review-worthy in any context where the caller's data isn't fully trusted.
+
+#### 6.2.7 Configurable thresholds
+
+Ten integer knobs drive the metric rules. Set in `[lint.thresholds]` (project config) or via `--threshold KEY=VAL` (repeatable on the CLI). Unknown keys are rejected at config-load time so typos don't silently no-op.
+
+| Key | Default | Used by | Meaning |
+|-----|--------:|---------|---------|
+| `line_length` | 200 | M-MOD-001 | Max bytes per line (any kind) |
+| `code_line_length` | 1000 | M-MOD-002 | Max bytes for non-comment lines |
+| `routine_lines` | 1000 | M-MOD-003 | Max lines per `.m` file |
+| `label_lines` | 50 | M-MOD-004 | Max lines per labeled subroutine |
+| `cyclomatic` | 15 | M-MOD-005 | McCabe cyclomatic per label |
+| `cognitive` | 20 | M-MOD-006 | Cognitive complexity per label |
+| `dot_block_depth` | 5 | M-MOD-007 | Max nested dot-block depth |
+| `argument_count` | 7 | M-MOD-008 | Max formal arguments per label |
+| `commands_per_line` | 3 | M-MOD-009 | Max commands per line |
+| `comment_density_pct` | 10 | M-MOD-029 | Min comment-to-code ratio |
+
+Resolution: built-in default → profile preset (`pythonic` bundles tighter values) → `[lint.thresholds]` config → `--threshold` CLI. CLI always wins.
+
+#### 6.2.8 Engine targeting
+
+Engine-aware rules behave differently per `--target-engine`:
+
+- **`yottadb`** — `$Z*` ISVs and Z-functions documented by YottaDB pass; everything else flags as a portability concern
+- **`iris`** — same for InterSystems IRIS / Caché
+- **`any`** (default) — no engine-specific allowlist; M-MOD-021..023 use the ANSI subset only
+
+Source of truth is m-standard's `standard_status` column. Persistent setting in `.m-cli.toml`:
+
+```toml
+[lint]
+target_engine = "yottadb"   # or "iris" | "any"
+```
+
+When the linter detects ≥ 50 portability-rule findings under `target_engine=any`, it surfaces a one-line hint at the end of the run pointing here.
+
+#### 6.2.9 Inline disable directives
+
+Suppress findings without editing config — comment-driven, line-scoped:
+
+```m
+SOMELABEL ; m-lint: disable=M-MOD-031     ;; suppress on the next code line
+ SET PRICE=1995
+ ; m-lint: disable=M-MOD-009              ;; suppress next-line
+ SET A=1 SET B=2 SET C=3
+ SET X=1 ; m-lint: disable=M-MOD-031      ;; suppress same line (trailing)
+ ; m-lint: file-disable=M-MOD-028          ;; suppress for the entire file
+ ; m-lint: disable=*                       ;; suppress every rule
+```
+
+Forms:
+- **`; m-lint: disable=RULE`** — next line only
+- **trailing on same line** — same-line scope
+- **`file-disable=RULE`** — whole file
+- **`disable=*`** — every rule
+- **`disable=RULE1,RULE2`** — multiple rules at once
+
+LSP hover on a diagnostic shows the rule ID + title so you can copy it directly into the directive. `M-INTERNAL-RULE-CRASH` is exempt from suppression — buggy rules always surface.
+
+#### 6.2.10 Baseline mode
+
+Adopt the linter on a noisy legacy codebase without churning every existing finding:
+
+```bash
+m lint --update-baseline Routines/   # capture current findings; exit 0
+m lint Routines/                      # subsequent runs suppress baselined findings
+m lint --no-baseline Routines/        # opt out for one run; show everything
+```
+
+Stored as `.m-lint-baseline.json` (configurable path via `--baseline`). Schema is pinned and stable for diffs. Discovery walks up to find the nearest baseline file.
+
+#### 6.2.11 Auto-fix linkage with `m fmt`
+
+Some lint rules carry a `fixer_id` pointing to an `m fmt` rule that deterministically fixes the diagnostic:
+
+| Rule | Severity | Auto-fix |
+|------|:--------:|----------|
+| `M-XINDX-013` | style | `m fmt --rules=trim-trailing-whitespace` |
+| `M-XINDX-047` | style | `m fmt --rules=uppercase-command-keywords` |
+| `M-MOD-035` | info | `m fmt --rules=expand-intrinsic-functions` |
+
+The link surfaces in JSON output (`"fixer_id": "..."` per diagnostic) and via `m_cli.lint.fixer_for(rule_id)`. The LSP wrapper exposes these as Quick Fix code actions.
+
+`m lint --fix` applies the fixers in-place: each unique `fixer_id` runs once per affected file; remaining (non-fixable) findings are still reported.
 
 ### 6.3 `m test`
 
@@ -283,7 +543,38 @@ m test --list routines/tests/             # list discovered tests, don't run
 
 **Output formats.** `text` (default, human), `tap` (TAP v13 — one point per parsed assertion), `json`.
 
-### 6.4 `m watch`
+### 6.4 `m coverage`
+
+Collect line- and label-level coverage from a YottaDB test run.
+
+```bash
+m coverage routines/tests/                  # whole directory
+m coverage --routines=routines/             # restrict trace to specific source paths
+m coverage --suites=HELLOTST,IDXTST         # restrict to named suites
+m coverage --format=lcov > coverage.lcov    # genhtml / Codecov / Coveralls
+m coverage --format=text --lines            # per-routine label + line columns
+m coverage --uncovered                      # list uncovered lines only
+m coverage --min-percent=70                 # exit 1 if coverage falls below threshold
+m coverage --quiet                          # suppress per-routine progress
+```
+
+**How it works.** The runner uses YottaDB's built-in `view "TRACE":1:"^ycov":""` to capture per-line hit data in a single trace pass — one trace pass replaces N `ZBREAK`s per label that the legacy `ycover` script needed.
+
+**Trace decoding.** YDB stores hits at `^ycov(routine, LABEL, N)` where N is the line offset from LABEL's declaration line. The parser's `_executable_lines_for_file` walks every `line` AST node with a `command_sequence` child, tracks the owning label's declaration line, and computes absolute line numbers as `label_decl_line + N`. So per-line hit counts are precise.
+
+**Coverage on m-tools** (the validation gate): label-level **85/123 = 69.1%** byte-identical to `ycover`; line-level **340/637 = 53.4%**.
+
+**Output formats:**
+- **`text`** (default) — per-routine summary table + aggregate
+- **`text --lines`** — adds per-line columns
+- **`json`** — richest, includes raw line-hit pairs
+- **`lcov`** — `lcov`-format file for genhtml / Codecov / Coveralls integration
+
+**Env composition** mirrors `m test`: `$YDB` overrides the binary location, falling back to `$ydb_dist/ydb` then plain `ydb` on PATH. `ydb_routines` is honoured if exported, else derived.
+
+The runner subprocess is injectable (`RunnerFn = (cmd, stdin_text, env) -> (stdout, returncode)`), so unit tests don't need a live ydb.
+
+### 6.5 `m watch`
 
 Auto-rerun affected suites on file save.
 
@@ -297,7 +588,7 @@ m watch --once                 # run the initial pass and exit
 
 **Affinity rule.** `<X>.m` source change → suite `<X.upper()>TST.m` if it exists; otherwise every suite re-runs (defensive default). Suite-file edits map to themselves only.
 
-### 6.5 `m lsp`
+### 6.6 `m lsp`
 
 Run the m-cli Language Server over stdio.
 
@@ -343,15 +634,28 @@ Walking stops at the nearest `.git` boundary so configs in unrelated parent dire
 
 ```toml
 [lint]
-rules = "xindex"               # rule filter (same syntax as --rules)
+rules = "default"              # rule filter (same syntax as --rules)
 disable = ["M-XINDX-013"]      # rule ids to skip after selection
+target_engine = "yottadb"      # "any" (default, portable) | "yottadb" | "iris"
 
 [lint.severity]
 "M-XINDX-019" = "warning"      # remap per-rule severity
-                               # values: "fatal" | "standard" | "warning" | "info"
+"M-MOD-031" = "info"           # demote a noisy rule to non-actionable
+                               # values: "error" | "warning" | "style" | "info"
+
+[lint.thresholds]              # configurable knobs for metric rules
+line_length = 100              # M-MOD-001 (default 200)
+commands_per_line = 1          # M-MOD-009 (default 3)
+cyclomatic = 10                # M-MOD-005 (default 15)
+# See §6.2.7 for the full ten-knob table.
+
+[lint.taint]                   # M-MOD-036 taint analysis (Phase 9)
+formals_tainted = true         # default true; set false for purely-internal helpers
+extra_sanitizers = ["$E"]      # ADD to the default sanitizer set
+                               # ($L, $LENGTH, $A, $ASCII)
 
 [fmt]
-rules = "canonical"            # canonical, none (identity), or comma-separated rule ids
+rules = "canonical"            # canonical, none (identity), pythonic, compact, or comma-separated rule ids
 ```
 
 **Resolution order:** defaults → config → CLI flag (CLI always wins). Unknown keys are ignored silently to keep forward compatibility cheap. Invalid values (bad severity name, `disable` not a list) raise on load.
@@ -429,9 +733,10 @@ Per [§3.5 of m-tooling-tier1.md](../../m-tools/docs/m-tooling-tier1.md#35-valid
 | Type check | `make mypy` | `mypy src/` clean |
 | Coverage threshold | `make cov` | Coverage ≥ 70% (currently ~80%) |
 | Full check gate | `make check` | All four above, run together — what CI gates on |
-| **VistA round-trip** | `make vista` | `m fmt` (identity) is byte-for-byte clean over 38,954 VistA routines (376 routines fail to parse — same set as `tree-sitter-m`'s known boundary, see `project_tree_sitter_m_vista_corpus.md` memory). |
+| **VistA round-trip** | `make vista` | `m fmt` (identity) is byte-for-byte clean over 38,954 VistA routines (376 routines fail to parse — same set as `tree-sitter-m`'s known boundary). |
 | **VistA canonical layout** | `make vista-canonical` | `m fmt --rules=canonical` is idempotent + AST-preserving over the corpus. |
 | **VistA lint baseline** | `make lint-vista` | Full XINDEX rule pack runs over the corpus in 22.6 s; findings are byte-identical against the prior baseline. |
+| **Modern-corpus lint baseline** | `make lint-modern` | M-MOD-NN rules run over the catalogued non-VA corpus (YDBTest, mgsql, YDBOcto-aux, EWD, M-Web-Server — 3,470 lintable routines); per-corpus finding counts must match `scripts/lint_modern.baseline.json` within tolerance. |
 
 A change that breaks any of these is a release blocker.
 
@@ -439,19 +744,31 @@ A change that breaks any of these is a release blocker.
 
 ## 12. Roadmap & open work
 
-The strategic phases beyond Tier 1 (in dependency order):
+### What's shipped
 
-| Phase | Capability | Status | Why |
+Strategic phases beyond Tier 1 (in dependency order):
+
+| Phase | Capability | Status | Notes |
 |-------|------------|:---:|---|
-| **A** | Project configuration files (`.m-cli.toml` / `[tool.m-cli]`) | ✅ Done | Lets projects tune lint / fmt without touching the rule registry. |
-| **B (first slice)** | Workspace symbol index → `textDocument/definition` | ✅ Done | One foundation unlocks go-to-def, references, workspace symbol search, and the deferred cross-routine XINDEX rules (M-XINDX-004 et al.). |
-| B (follow-ups) | `textDocument/references`, `workspace/symbol`, incremental `didChangeWatchedFiles` updates | ⏳ Planned | Each is a small handler over the existing index. |
-| **C** | `m coverage` and `m trace` | ⏳ Planned | Wraps `m test` with YDB tracing. Closes the testing feedback loop. |
-| **D** | The 30 remaining XINDEX rules requiring data-flow analysis | ⏸️ Deferred | Far easier *after* Phase B's index exists. |
-| — | Publishing `m-cli` + `tree-sitter-m` to PyPI | ⏳ Planned | Unblocks the `language: repo` pre-commit style and downstream `pip install m-cli`. Held until the library API has had more soak time. |
-| — | DAP debugger integration | ⏸️ Deferred | Tier 2 capability; substantial engineering on its own. |
+| **A** | Project configuration files (`.m-cli.toml` / `[tool.m-cli]`) | ✅ Done | `[lint]`, `[lint.severity]`, `[lint.thresholds]`, `[lint.taint]`, `[fmt]`. |
+| **B** | Workspace symbol index → `textDocument/definition` / `references` / `workspace/symbol` + incremental `didChangeWatchedFiles` updates | ✅ Done | Foundation for cross-routine M-XINDX rules (M-XINDX-007/008/049). |
+| **C** | `m coverage` (line + label, four output formats) and `m trace` foundation | ✅ Done | YDB `view "TRACE"`-based; lcov output for genhtml/Codecov/Coveralls. |
+| **D** | M-MOD modernization track, Phases 1–8 (35 rules) | ✅ Done | Profiles, two-axis severity, configurable thresholds, modern-corpus regression gate. |
+| **Phase 7** | Data-flow infrastructure + path-sensitive rules (M-MOD-024/025/026/027/017) | ✅ Done | Per-label CFG, definite-assignment, lock/transaction/etrap/dollar_test analyzers. |
+| **Phase 9 (MVP)** | Taint analysis (M-MOD-036) | 🟡 MVP shipped | `READ` + formals as sources; `@expr` / `XECUTE` sinks; `$L`/`$A` sanitizers; `[lint.taint]` config schema; by-reference DO/JOB call modeling. |
 
-The TODO list in [TODO.md](../TODO.md) tracks the per-session punch list.
+### What's still open
+
+| Capability | Status | Notes |
+|------------|:---:|---|
+| Cross-routine taint propagation (Phase 9 follow-up) | ⏸️ Deferred | Tainted formal flowing into `$$F(X)` doesn't yet inherit through to the callee's return. Largest remaining piece of Phase 9. |
+| Implicit globals as taint sources (`^TMP("USER", ...)`, `^XTMP`, etc.) | ⏸️ Deferred | Would extend `[lint.taint]` with a `source_globals = [...]` knob. |
+| `$EXTRACT` / `$TRANSLATE` conditional sanitizers | ⏸️ Deferred | Pattern-match safe usage (e.g. `$E(X,1,N)` where N is a constant). Workaround today: add to `extra_sanitizers` if you've audited the call sites. |
+| Publishing `m-cli` + `tree-sitter-m` to PyPI | ⏳ Planned | Unblocks the `language: repo` pre-commit style and downstream `pip install m-cli`. Held until the library API has more soak time. |
+| DAP debugger integration | ⏸️ Deferred | Tier 2 capability; substantial engineering on its own. Both engines ship `ZBREAK` at engine level. |
+| FOR loop back-edge in CFG | ⏸️ Deferred | Phase 7+ refinement. Currently FOR body is straight-line; first-iteration reads of FOR-set variables may under-report. |
+
+The full roadmap with phasing plan and validation criteria lives in [docs/m-linting-implementation-plan.md](m-linting-implementation-plan.md). Per-session punch list in [TODO.md](../TODO.md).
 
 ---
 
@@ -469,4 +786,4 @@ Drawn from [§3.1 of m-tooling-tier1.md](../../m-tools/docs/m-tooling-tier1.md#3
 
 ---
 
-*This guide tracks the state of `m-cli` as of 2026-04-27. For the per-session changelog, see `git log`. For strategic context, the canonical references are [m-tool-gap-analysis.md](../../m-tools/docs/m-tool-gap-analysis.md) and [m-tooling-tier1.md](../../m-tools/docs/m-tooling-tier1.md).*
+*This guide tracks the state of `m-cli` as of 2026-04-30 (after Phase 9 step 3). For the per-session changelog, see `git log`. For the comprehensive lint reference (rule-by-rule, with worked examples), see [docs/m-linting-user-guide.md](m-linting-user-guide.md). For strategic context, the canonical references are [m-tool-gap-analysis.md](../../m-tools/docs/m-tool-gap-analysis.md) and [m-tooling-tier1.md](../../m-tools/docs/m-tooling-tier1.md).*
