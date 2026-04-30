@@ -94,6 +94,31 @@ m lint --format=tap <paths>              # CI integration
 m lint --error-on=fatal <paths>          # exit-1 only on fatal
 ```
 
+**Engine targeting (recommended):** if your code targets a specific
+M engine (YottaDB or IRIS), set `--target-engine` to silence the
+engine-portability rules' false positives. The default (`any`) flags
+*every* `$Z*` token as non-portable; on engine-specific code this
+generates thousands of irrelevant findings dominated by
+`M-MOD-021` / `M-MOD-022` / `M-MOD-023`.
+
+```bash
+m lint --rules=default --target-engine=yottadb <paths>
+m lint --rules=default --target-engine=iris <paths>
+```
+
+Persist via `.m-cli.toml` so you don't need the flag every run:
+
+```toml
+[lint]
+target_engine = "yottadb"   # or "iris"; "any" = portable lint
+```
+
+When the linter detects a heavy load of portability-rule findings
+under `target_engine=any`, it surfaces a one-line hint at the end
+of the run pointing here. (Real impact on YottaDB code: a recent
+audit measured 134,848 → 125,561 findings (-7%) just from setting
+`--target-engine=yottadb`.)
+
 The XINDEX-parity rule pack will grow incrementally toward the full 66-rule baseline. After parity, `m lint` extends with parser-aware checks XINDEX cannot do (deeper control-flow analysis, dead-code detection, naked-reference hazards, etc.). New rules from non-VA sources will use their own ID prefix (e.g. `M-IRIS-NN`, `M-YDB-NN`) and ship under their own profile.
 
 ### VistA-corpus baseline (Step 2.1)

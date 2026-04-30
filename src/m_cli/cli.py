@@ -101,7 +101,13 @@ def main(argv: list[str] | None = None) -> int:
             "curated baseline. Run `m lint --list-profiles` to see what "
             "ships (e.g. 'xindex' — VA VistA Toolkit ^XINDEX port; 'sac' — "
             "VA SAC subset). Pass --rules=<profile> to switch, or "
-            "--rules=M-XINDX-013,M-XINDX-019 for a specific rule subset."
+            "--rules=M-XINDX-013,M-XINDX-019 for a specific rule subset.\n\n"
+            "TIP: if you're linting YottaDB-specific or IRIS-specific code, "
+            "set --target-engine=yottadb (or =iris) — engine-aware rules "
+            "(M-MOD-021/022/023) flag $Z* tokens as non-portable under the "
+            "default --target-engine=any, generating thousands of findings "
+            "on engine-specific code. Set in .m-cli.toml as `[lint] "
+            "target_engine = \"yottadb\"` to make it permanent."
         ),
     )
     lint_parser.add_argument(

@@ -530,3 +530,22 @@ def _print_summary(
     else:
         parts.append("no findings")
     print("m lint: " + ", ".join(parts), file=sys.stderr)
+
+    # Engine-target hint: if a meaningful share of findings are from
+    # the engine-aware portability rules and target_engine is `any`,
+    # nudge the user toward setting it. The threshold is a hard
+    # number rather than a percentage so the hint also fires on small
+    # corpora where the absolute count is what matters.
+    if target_engine == "any" and diags:
+        portability_rules = ("M-MOD-021", "M-MOD-022", "M-MOD-023")
+        n_portability = sum(1 for d in diags if d.rule_id in portability_rules)
+        if n_portability >= 50 and n_portability >= len(diags) // 4:
+            print(
+                f"m lint: hint — {n_portability} finding(s) from "
+                f"engine-portability rules (M-MOD-021/022/023). If this "
+                f"code targets a specific engine, set "
+                f"`--target-engine=yottadb` (or =iris) to silence "
+                f"engine-allowed $Z* uses. Persist via "
+                f"`[lint] target_engine = \"yottadb\"` in .m-cli.toml.",
+                file=sys.stderr,
+            )

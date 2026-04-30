@@ -2509,6 +2509,108 @@ register(
 # ---------------------------------------------------------------------------
 
 
+def _find_test_default_set_protections(cfg, src: bytes) -> dict[str, int]:
+    """Detect the canonical M ``IF $G(X)="" SET X=default`` idiom
+    (and ``$D`` variants) and return ``{var_name: protection_line}``
+    where ``protection_line`` is the 1-based line of the IF.
+
+    After this line, the variable is guaranteed defined on every path:
+    if the IF condition was false (X already defined and non-empty,
+    or X exists for the $D case), the IF skips the rest of the line
+    and X retains its prior value; if the condition was true, the
+    SET runs and assigns the default.
+
+    Pattern matched (intra-line):
+
+      IF <expr-containing-$G(X)-or-$D(X)>  SET X=...
+
+    The IF and SET must be on the SAME line. Multi-line variants
+    (``IF '$D(X) DO`` with a dot-block ``. SET X=...``) are not
+    matched in this slice; document and accept until the false-
+    positive volume on real corpora justifies adding them.
+    """
+    from m_cli.lint.flow.vars import (
+        _is_defensive_intrinsic,
+        argument_nodes,
+        command_keyword,
+        effects_of_argument,
+    )
+
+    protections: dict[str, int] = {}
+
+    # Group command-blocks by source line, in source order.
+    by_line: dict[int, list] = {}
+    for block in cfg.blocks:
+        if block.kind == "command":
+            by_line.setdefault(block.line, []).append(block)
+
+    def _vars_tested_defensively(if_cmd) -> set[str]:
+        """Local-var names appearing inside ``$G(...)`` or ``$D(...)``
+        in the IF's argument tree. The first ``variable`` child of a
+        defensive function_call is the tested name."""
+        names: set[str] = set()
+
+        def visit(node) -> None:
+            if (
+                node.type == "function_call"
+                and _is_defensive_intrinsic(node)
+            ):
+                seen_first_var = False
+                for c in node.children:
+                    if not seen_first_var and c.type == "variable":
+                        seen_first_var = True
+                        for cc in c.children:
+                            if cc.type == "local_variable":
+                                for ccc in cc.children:
+                                    if ccc.type == "identifier":
+                                        text = src[
+                                            ccc.start_byte : ccc.end_byte
+                                        ].decode("latin-1", errors="replace")
+                                        if text:
+                                            names.add(text)
+                                        break
+                                break
+                        # Continue visiting siblings to handle
+                        # second-arg expressions normally.
+                        continue
+                    visit(c)
+                return
+            for c in node.children:
+                visit(c)
+
+        for arg in argument_nodes(if_cmd):
+            visit(arg)
+        return names
+
+    for line, blocks in by_line.items():
+        for i, block in enumerate(blocks):
+            cmd = block.command
+            kw = command_keyword(cmd, src).upper()
+            if kw not in ("I", "IF"):
+                continue
+            tested = _vars_tested_defensively(cmd)
+            if not tested:
+                continue
+            # Look at the remaining same-line blocks for a SET
+            # targeting any of the tested vars.
+            for nb in blocks[i + 1 :]:
+                ncmd = nb.command
+                nkw = command_keyword(ncmd, src).upper()
+                if nkw not in ("S", "SET"):
+                    continue
+                set_targets: set[str] = set()
+                for arg in argument_nodes(ncmd):
+                    eff = effects_of_argument(arg, src, "S")
+                    set_targets |= eff.defs
+                for var in tested & set_targets:
+                    # Earliest-protecting line wins (a var protected
+                    # on line 5 is also protected on line 10).
+                    if var not in protections or line < protections[var]:
+                        protections[var] = line
+
+    return protections
+
+
 def _check_read_of_undefined(
     src: bytes, _tree, path: Path, index: NodeIndex, _ctx: LintContext
 ) -> Iterator[Diagnostic]:
@@ -2550,9 +2652,20 @@ def _check_read_of_undefined(
         formals = tuple(formal_params(cfg.label_node, src))
         in_sets = analyze(cfg, src, formals=formals)
         reported: set[str] = set()
+        # Map var-name → 1-based line at-or-after which the
+        # ``IF $G(X)="" SET X=...`` (or ``$D``) test+default-set
+        # idiom guarantees X is definitely defined for the rest of
+        # the label. Strict-greater check (``use.line > line``)
+        # avoids over-suppressing earlier same-line uses.
+        protections = _find_test_default_set_protections(cfg, src)
 
         def _flag(use, reported=reported, label_name=cfg.label_name):
             if use.name in reported:
+                return None
+            if (
+                use.name in protections
+                and use.line > protections[use.name]
+            ):
                 return None
             reported.add(use.name)
             return Diagnostic(

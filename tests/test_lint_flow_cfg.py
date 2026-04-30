@@ -232,6 +232,56 @@ def test_reachable_from_entry() -> None:
     assert keywords == ["ENTRY", "EXIT", "Q"]
 
 
+def test_argumentless_quit_inside_dot_block_falls_through() -> None:
+    """``Q`` inside a dot-block exits the dot-block, not the label.
+    Modeling it as label-exit kills every downstream IN set
+    (regression seen in ``utf8Encode`` from ewd/_zewdSmart.m)."""
+    src = (
+        b"LBL\n"
+        b" F I=1:1:5 D\n"
+        b" . S X=1\n"
+        b" . Q\n"  # argumentless Q inside dot block — must NOT exit label
+        b" S Y=2\n"
+        b" Q\n"
+    )
+    cfg = _build(src)[0]
+    # Find the inner ``Q`` block (line 4) — it must NOT have an
+    # ``"exit"`` edge; instead it falls through to the next command.
+    inner_q = None
+    for b in cfg.blocks:
+        if b.kind != "command":
+            continue
+        if b.line == 4 and _kw(b, src) == "Q":
+            inner_q = b
+            break
+    assert inner_q is not None, "expected to find inner Q at line 4"
+    assert "exit" not in inner_q.edge_kinds, (
+        f"argumentless Q inside dot-block must not be a label-exit edge "
+        f"(got {inner_q.edge_kinds})"
+    )
+    # The outer ``Q`` on line 6 (no dot-block) is still a label-exit.
+    outer_q = None
+    for b in cfg.blocks:
+        if b.kind == "command" and b.line == 6 and _kw(b, src) == "Q":
+            outer_q = b
+            break
+    assert outer_q is not None
+    assert outer_q.edge_kinds == ["exit"]
+
+
+def test_argumentless_quit_outside_dot_block_still_exits() -> None:
+    """Sanity: top-level argumentless QUIT keeps label-exit semantics."""
+    src = b"LBL\n S X=1\n Q\n S Y=2\n"
+    cfg = _build(src)[0]
+    # Find the Q on line 3.
+    for b in cfg.blocks:
+        if b.kind == "command" and _kw(b, src) == "Q":
+            assert b.edge_kinds == ["exit"]
+            assert b.successors == [cfg.exit().id]
+            return
+    raise AssertionError("expected to find Q block")
+
+
 def test_all_paths_from_entry_to_exit() -> None:
     """Every reachable command must have a path to exit (no infinite
     loops in the structural CFG yet — FOR not modeled)."""

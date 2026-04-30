@@ -1226,6 +1226,50 @@ class TestReadOfUndefined:
         diags = [d for d in _lint(src, "M-MOD-024", ctx=_ctx()) if d.rule_id == "M-MOD-024"]
         assert diags == []
 
+    def test_silent_on_test_default_set_with_dollar_get(self):
+        """``IF $G(X)="" SET X=default`` then later ``WRITE X`` —
+        idiom guarantees X is defined; rule must not flag the
+        downstream read."""
+        src = b'LBL\n I $G(X)="" S X="default"\n W X\n Q\n'
+        diags = [d for d in _lint(src, "M-MOD-024", ctx=_ctx()) if d.rule_id == "M-MOD-024"]
+        assert diags == []
+
+    def test_silent_on_test_default_set_with_dollar_data_existence(self):
+        """``IF $D(X) SET X=default`` then ``WRITE X`` — same idiom
+        with $D for existence test."""
+        src = b'LBL\n I $D(X) S X="default"\n W X\n Q\n'
+        diags = [d for d in _lint(src, "M-MOD-024", ctx=_ctx()) if d.rule_id == "M-MOD-024"]
+        assert diags == []
+
+    def test_silent_on_test_default_set_with_negated_dollar_data(self):
+        """``IF '$D(X) SET X=default`` — negated existence test."""
+        src = b'LBL\n I \'$D(X) S X="default"\n W X\n Q\n'
+        diags = [d for d in _lint(src, "M-MOD-024", ctx=_ctx()) if d.rule_id == "M-MOD-024"]
+        assert diags == []
+
+    def test_test_default_set_pattern_only_protects_named_var(self):
+        """``IF $G(X)="" SET Y=default`` — pattern protects nothing
+        (sets a different var). Read of X downstream still fires."""
+        src = b'LBL\n I $G(X)="" S Y="default"\n W X\n Q\n'
+        diags = [d for d in _lint(src, "M-MOD-024", ctx=_ctx()) if d.rule_id == "M-MOD-024"]
+        assert any("X" in d.message for d in diags)
+
+    def test_test_default_set_does_not_protect_earlier_use(self):
+        """The pattern guarantees X is defined for code AFTER it,
+        not for code BEFORE it. A use on a previous line still fires."""
+        src = b'LBL\n W X\n I $G(X)="" S X="default"\n Q\n'
+        diags = [d for d in _lint(src, "M-MOD-024", ctx=_ctx()) if d.rule_id == "M-MOD-024"]
+        assert any("X" in d.message for d in diags)
+
+    def test_silent_on_canonical_dollar_get_dollar_data(self):
+        """Canonical names ``$GET``/``$DATA`` are recognized too."""
+        src = b'LBL\n I $GET(X)="" S X="d"\n W X\n Q\n'
+        diags1 = [d for d in _lint(src, "M-MOD-024", ctx=_ctx()) if d.rule_id == "M-MOD-024"]
+        assert diags1 == []
+        src2 = b'LBL\n I $DATA(X) S X="d"\n W X\n Q\n'
+        diags2 = [d for d in _lint(src2, "M-MOD-024", ctx=_ctx()) if d.rule_id == "M-MOD-024"]
+        assert diags2 == []
+
 
 # ---------------------------------------------------------------------------
 # M-MOD-025 — LOCK leak across exit paths (path-sensitive)

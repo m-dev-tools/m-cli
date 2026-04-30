@@ -18,8 +18,8 @@
         "M-MOD-021": 38,
         "M-MOD-022": 158,
         "M-MOD-023": 10,
-        "M-MOD-024": 807,
-        "M-MOD-025": 13,
+        "M-MOD-024": 751,
+        "M-MOD-025": 11,
         "M-MOD-028": 603,
         "M-MOD-029": 117,
         "M-MOD-030": 8,
@@ -29,12 +29,12 @@
         "M-MOD-035": 5
       },
       "by_severity": {
-        "error": 824,
+        "error": 766,
         "info": 908,
         "style": 5085,
         "warning": 1094
       },
-      "findings_total": 7911,
+      "findings_total": 7853,
       "routines_linted": 77,
       "routines_total": 86
     },
@@ -45,7 +45,7 @@
         "M-MOD-005": 4,
         "M-MOD-006": 4,
         "M-MOD-009": 99,
-        "M-MOD-024": 157,
+        "M-MOD-024": 150,
         "M-MOD-028": 34,
         "M-MOD-029": 19,
         "M-MOD-030": 1,
@@ -54,12 +54,12 @@
         "M-MOD-034": 45
       },
       "by_severity": {
-        "error": 157,
+        "error": 150,
         "info": 99,
         "style": 1040,
         "warning": 8
       },
-      "findings_total": 1304,
+      "findings_total": 1297,
       "routines_linted": 16,
       "routines_total": 23
     },
@@ -77,7 +77,7 @@
         "M-MOD-020": 236,
         "M-MOD-021": 37,
         "M-MOD-022": 49,
-        "M-MOD-024": 1019,
+        "M-MOD-024": 847,
         "M-MOD-026": 1,
         "M-MOD-028": 83,
         "M-MOD-029": 119,
@@ -87,12 +87,12 @@
         "M-MOD-034": 587
       },
       "by_severity": {
-        "error": 1022,
+        "error": 850,
         "info": 790,
         "style": 1604,
         "warning": 359
       },
-      "findings_total": 3775,
+      "findings_total": 3603,
       "routines_linted": 24,
       "routines_total": 36
     },
@@ -148,10 +148,10 @@
         "M-MOD-021": 2875,
         "M-MOD-022": 3744,
         "M-MOD-023": 2818,
-        "M-MOD-024": 7617,
-        "M-MOD-025": 162,
-        "M-MOD-026": 32,
-        "M-MOD-027": 247,
+        "M-MOD-024": 7385,
+        "M-MOD-025": 158,
+        "M-MOD-026": 31,
+        "M-MOD-027": 246,
         "M-MOD-028": 13069,
         "M-MOD-029": 2817,
         "M-MOD-030": 40,
@@ -162,12 +162,12 @@
         "M-MOD-035": 119
       },
       "by_severity": {
-        "error": 8315,
+        "error": 8077,
         "info": 18195,
         "style": 83028,
         "warning": 11006
       },
-      "findings_total": 120544,
+      "findings_total": 120306,
       "routines_linted": 3336,
       "routines_total": 4049
     }

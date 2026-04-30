@@ -68,6 +68,7 @@ _Node = Any
 # from the CFG's perspective. GOTO/G is over-approximated as exit
 # in this slice.
 _EXIT_KEYWORDS = frozenset({"Q", "QUIT", "H", "HALT", "G", "GOTO"})
+_QUIT_KEYWORDS = frozenset({"Q", "QUIT"})
 
 # IF and its abbreviation. ``IF cond`` evaluated false skips the rest
 # of the line.
@@ -172,6 +173,30 @@ def _has_postconditional(cmd: _Node) -> bool:
     return any(c.type == "postconditional" for c in cmd.children)
 
 
+def _has_arguments(cmd: _Node) -> bool:
+    """True if ``cmd`` has any non-empty argument_list."""
+    for c in cmd.children:
+        if c.type == "argument_list":
+            return any(child.type == "argument" for child in c.children)
+    return False
+
+
+def _is_inside_dot_block(cmd: _Node) -> bool:
+    """True if ``cmd``'s enclosing line carries a ``dot_block_prefix``.
+
+    Argumentless QUIT inside a dot-block exits ONLY the dot-block,
+    not the entire label — so the CFG must treat such a QUIT as
+    fall-through to the next command, not as a label-exit edge.
+    """
+    seq = cmd.parent  # command_sequence
+    if seq is None:
+        return False
+    line = seq.parent  # line
+    if line is None:
+        return False
+    return any(c.type == "dot_block_prefix" for c in line.children)
+
+
 def _build_one_cfg(
     src: bytes,
     index: NodeIndex,
@@ -219,14 +244,36 @@ def _build_one_cfg(
         has_pc = _has_postconditional(cmd)
 
         if is_exit_kw:
+            # Argumentless ``Q`` / ``QUIT`` inside a dot-block exits
+            # only the dot-block, not the label — model as fall-
+            # through to the next sibling rather than label-exit.
+            # (Argumented Q in an extrinsic-call context can still
+            # exit the routine; over-approximating as fall-through
+            # is the safer default for definite-assignment than
+            # killing every downstream IN set.)
+            quit_in_dot_block = (
+                kw in _QUIT_KEYWORDS
+                and _is_inside_dot_block(cmd)
+                and not _has_arguments(cmd)
+            )
             if has_pc:
-                # Postconditional Q/G/H: branch to exit on true, skip
-                # to next on false.
-                blocks[i].successors = [exit_id, next_cmd_id]
-                blocks[i].edge_kinds = ["branch", "skip"]
+                if quit_in_dot_block:
+                    # Postcond true → fall through (dot-block exit
+                    # treated as continuation); false → also next.
+                    blocks[i].successors = [next_cmd_id, next_cmd_id]
+                    blocks[i].edge_kinds = ["fall", "skip"]
+                else:
+                    # Postconditional Q/G/H: branch to exit on true,
+                    # skip to next on false.
+                    blocks[i].successors = [exit_id, next_cmd_id]
+                    blocks[i].edge_kinds = ["branch", "skip"]
             else:
-                blocks[i].successors = [exit_id]
-                blocks[i].edge_kinds = ["exit"]
+                if quit_in_dot_block:
+                    blocks[i].successors = [next_cmd_id]
+                    blocks[i].edge_kinds = ["fall"]
+                else:
+                    blocks[i].successors = [exit_id]
+                    blocks[i].edge_kinds = ["exit"]
             continue
 
         if is_if_kw and not has_pc:
