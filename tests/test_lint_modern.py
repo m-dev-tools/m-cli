@@ -1344,6 +1344,44 @@ class TestTaintToIndirection:
         diags = [d for d in _lint(src, "M-MOD-036", ctx=_ctx()) if d.rule_id == "M-MOD-036"]
         assert len(diags) == 1
 
+    def test_config_disables_formals_tainted(self):
+        """``[lint.taint] formals_tainted = false`` opts out of the
+        formals-as-source model — internal helpers no longer trigger
+        false positives on every label-with-formal-into-indirection."""
+        from m_cli.config import Config
+        from m_cli.lint.context import LintContext
+        from m_cli.lint.thresholds import validate as validate_thresholds
+
+        src = b"LBL(routine)\n D @routine\n Q\n"
+        ctx = LintContext(
+            thresholds=validate_thresholds({}),
+            config=Config(lint_taint_formals_tainted=False),
+        )
+        diags = [d for d in _lint(src, "M-MOD-036", ctx=ctx) if d.rule_id == "M-MOD-036"]
+        assert diags == []
+        # And confirm without the config knob it DOES fire (regression).
+        diags2 = [d for d in _lint(src, "M-MOD-036", ctx=_ctx()) if d.rule_id == "M-MOD-036"]
+        assert len(diags2) >= 1
+
+    def test_config_extra_sanitizers_silences_findings(self):
+        """User adds ``$E`` to the sanitizer set — taint flowing
+        through ``$E(X)`` becomes clean."""
+        from m_cli.config import Config
+        from m_cli.lint.context import LintContext
+        from m_cli.lint.thresholds import validate as validate_thresholds
+
+        # Without the config knob, $E is not a sanitizer → taint flows.
+        src = b"LBL\n R X\n S Y=$E(X,1,5)\n D @Y\n Q\n"
+        diags = [d for d in _lint(src, "M-MOD-036", ctx=_ctx()) if d.rule_id == "M-MOD-036"]
+        assert len(diags) >= 1
+        # With the config knob, $E is a sanitizer → no findings.
+        ctx = LintContext(
+            thresholds=validate_thresholds({}),
+            config=Config(lint_taint_extra_sanitizers=("$E", "$EXTRACT")),
+        )
+        diags2 = [d for d in _lint(src, "M-MOD-036", ctx=ctx) if d.rule_id == "M-MOD-036"]
+        assert diags2 == []
+
 
 # ---------------------------------------------------------------------------
 # M-MOD-025 — LOCK leak across exit paths (path-sensitive)

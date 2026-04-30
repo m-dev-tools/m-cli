@@ -79,6 +79,12 @@ class Config:
     lint_severity_overrides: dict[str, "Severity"] = field(default_factory=dict)
     lint_target_engine: str | None = None
     lint_thresholds: dict[str, int] = field(default_factory=dict)
+    # [lint.taint] — controls Phase 9 taint analysis (M-MOD-036).
+    # ``None`` for ``lint_taint_formals_tainted`` means "use the
+    # built-in default" (which is True — public-label formals are
+    # treated as untrusted attack surface).
+    lint_taint_formals_tainted: bool | None = None
+    lint_taint_extra_sanitizers: tuple[str, ...] = ()
     fmt_rules: str | None = None
     source_path: Path | None = None  # where this Config was loaded from, if any
 
@@ -220,12 +226,39 @@ def _from_dict(section: dict, *, source: Path) -> Config:
             )
         target_engine = normalized
 
+    taint_raw = lint.get("taint", {}) or {}
+    if not isinstance(taint_raw, dict):
+        raise ValueError(
+            f"{source}: [lint.taint] must be a table, got "
+            f"{type(taint_raw).__name__}"
+        )
+    taint_formals_tainted: bool | None = None
+    if "formals_tainted" in taint_raw:
+        ft = taint_raw["formals_tainted"]
+        if not isinstance(ft, bool):
+            raise ValueError(
+                f"{source}: [lint.taint] formals_tainted must be a boolean, "
+                f"got {type(ft).__name__}"
+            )
+        taint_formals_tainted = ft
+    extra_san_raw = taint_raw.get("extra_sanitizers", []) or []
+    if not isinstance(extra_san_raw, list):
+        raise ValueError(
+            f"{source}: [lint.taint] extra_sanitizers must be a list of "
+            f"intrinsic-keyword strings, got {type(extra_san_raw).__name__}"
+        )
+    taint_extra_sanitizers = tuple(
+        str(item).strip().upper() for item in extra_san_raw if item
+    )
+
     return Config(
         lint_rules=lint_rules,
         lint_disable=disable,
         lint_severity_overrides=overrides,
         lint_target_engine=target_engine,
         lint_thresholds=thresholds,
+        lint_taint_formals_tainted=taint_formals_tainted,
+        lint_taint_extra_sanitizers=taint_extra_sanitizers,
         fmt_rules=fmt_rules,
         source_path=source,
     )

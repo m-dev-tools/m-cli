@@ -231,6 +231,15 @@ disable = ["M-XINDX-013"]      # rule ids to skip after selection
 "M-XINDX-019" = "warning"      # remap per-rule severity
                                # values: "fatal" | "standard" | "warning" | "info"
 
+[lint.taint]                   # M-MOD-036 taint analysis (Phase 9)
+formals_tainted = true         # treat public-label formals as untrusted
+                               # input. Default true. Set to false for
+                               # purely-internal helper labels.
+extra_sanitizers = ["$E"]      # additional intrinsic-function keywords
+                               # whose output is treated as clean. Defaults
+                               # cover $L/$LENGTH/$A/$ASCII; add $E for
+                               # $EXTRACT, $TR for $TRANSLATE, etc.
+
 [fmt]
 rules = "canonical"            # canonical, none (identity), or comma-separated rule ids
 ```

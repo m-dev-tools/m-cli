@@ -3060,7 +3060,25 @@ def _check_taint_to_indirection(
         command_keyword,
     )
 
-    config = TaintConfig()
+    # Build TaintConfig from [lint.taint] config (if any). Defaults
+    # apply when the user hasn't set a knob; explicit user values
+    # always win.
+    user_cfg = _ctx.config if _ctx is not None else None
+    formals_tainted = (
+        user_cfg.lint_taint_formals_tainted
+        if user_cfg is not None and user_cfg.lint_taint_formals_tainted is not None
+        else True
+    )
+    default_sanitizers = TaintConfig().sanitizers
+    extra = (
+        frozenset(user_cfg.lint_taint_extra_sanitizers)
+        if user_cfg is not None
+        else frozenset()
+    )
+    config = TaintConfig(
+        formals_tainted=formals_tainted,
+        sanitizers=default_sanitizers | extra,
+    )
     sanitizers = config.sanitizers
 
     def _walk_indirections(node):

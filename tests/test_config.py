@@ -278,3 +278,73 @@ def test_load_config_rejects_thresholds_not_a_table(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match="thresholds.*must be a table"):
         load_config(tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# [lint.taint]
+# ---------------------------------------------------------------------------
+
+
+def test_load_config_taint_omitted_yields_defaults(tmp_path: Path) -> None:
+    cfg_path = tmp_path / CONFIG_FILENAME
+    cfg_path.write_text('[lint]\nrules = "default"\n', encoding="utf-8")
+    cfg = load_config(tmp_path)
+    # Default: formals are tainted; no extra sanitizers configured.
+    assert cfg.lint_taint_formals_tainted is None
+    assert cfg.lint_taint_extra_sanitizers == ()
+
+
+def test_load_config_reads_taint_formals_tainted_false(tmp_path: Path) -> None:
+    cfg_path = tmp_path / CONFIG_FILENAME
+    cfg_path.write_text(
+        "[lint.taint]\nformals_tainted = false\n", encoding="utf-8"
+    )
+    cfg = load_config(tmp_path)
+    assert cfg.lint_taint_formals_tainted is False
+
+
+def test_load_config_reads_taint_formals_tainted_true(tmp_path: Path) -> None:
+    cfg_path = tmp_path / CONFIG_FILENAME
+    cfg_path.write_text(
+        "[lint.taint]\nformals_tainted = true\n", encoding="utf-8"
+    )
+    cfg = load_config(tmp_path)
+    assert cfg.lint_taint_formals_tainted is True
+
+
+def test_load_config_reads_taint_extra_sanitizers(tmp_path: Path) -> None:
+    cfg_path = tmp_path / CONFIG_FILENAME
+    cfg_path.write_text(
+        '[lint.taint]\nextra_sanitizers = ["$E", "$TR"]\n', encoding="utf-8"
+    )
+    cfg = load_config(tmp_path)
+    assert cfg.lint_taint_extra_sanitizers == ("$E", "$TR")
+
+
+def test_load_config_rejects_taint_not_a_table(tmp_path: Path) -> None:
+    cfg_path = tmp_path / CONFIG_FILENAME
+    cfg_path.write_text('[lint]\ntaint = "boom"\n', encoding="utf-8")
+    with pytest.raises(ValueError, match=r"\[lint\.taint\].*must be a table"):
+        load_config(tmp_path)
+
+
+def test_load_config_rejects_taint_formals_tainted_not_bool(
+    tmp_path: Path,
+) -> None:
+    cfg_path = tmp_path / CONFIG_FILENAME
+    cfg_path.write_text(
+        '[lint.taint]\nformals_tainted = "yes"\n', encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="formals_tainted.*must be a boolean"):
+        load_config(tmp_path)
+
+
+def test_load_config_rejects_taint_extra_sanitizers_not_list(
+    tmp_path: Path,
+) -> None:
+    cfg_path = tmp_path / CONFIG_FILENAME
+    cfg_path.write_text(
+        '[lint.taint]\nextra_sanitizers = "$E"\n', encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="extra_sanitizers.*must be a list"):
+        load_config(tmp_path)
