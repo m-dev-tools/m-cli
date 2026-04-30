@@ -2,16 +2,25 @@
 
 Public surface:
 
-  * :class:`CFG`, :class:`Block` — per-label control-flow graph
-  * :func:`build_cfgs` — construct CFGs for every top-level label
-
-Downstream analyzers (reaching-definitions, lock-state) layer on top
-of this graph; their public API will be added here as Phase 7
-progresses.
+  * :class:`CFG`, :class:`Block`, :func:`build_cfgs` — per-label CFG
+  * :class:`Effects`, :class:`VarUse`, :func:`effects`,
+    :func:`formal_params` — per-command variable extraction
+  * :func:`analyze` — definite-assignment (forward MUST) over the CFG
 """
 
 from __future__ import annotations
 
 from m_cli.lint.flow.cfg import CFG, Block, build_cfgs
+from m_cli.lint.flow.reaching import analyze
+from m_cli.lint.flow.vars import Effects, VarUse, effects, formal_params
 
-__all__ = ["CFG", "Block", "build_cfgs"]
+__all__ = [
+    "CFG",
+    "Block",
+    "Effects",
+    "VarUse",
+    "analyze",
+    "build_cfgs",
+    "effects",
+    "formal_params",
+]
