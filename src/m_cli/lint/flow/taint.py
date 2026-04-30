@@ -65,6 +65,7 @@ Limitations (this MVP, deliberate)
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -105,6 +106,10 @@ _SET_KW = frozenset({"S", "SET"})
 _MERGE_KW = frozenset({"M", "MERGE"})
 _KILL_KW = frozenset({"K", "KILL"})
 _NEW_KW = frozenset({"N", "NEW"})
+# Commands that may invoke a callee that writes to by-reference args.
+# DO / JOB always; GOTO doesn't return so any by-ref effects don't
+# matter from the caller's perspective post-call.
+_CALL_KW = frozenset({"D", "DO", "J", "JOB"})
 
 
 def _identifier_text(local_var: _Node, src: bytes) -> str:
@@ -245,6 +250,29 @@ def _set_arg_taint(
     return found[0]
 
 
+def _by_reference_names(node: _Node, src: bytes) -> Iterator[str]:
+    """Yield every identifier appearing inside a ``by_reference``
+    node anywhere in ``node``'s subtree.
+
+    By-reference parameters (``.X`` in ``D LBL(.X)`` or
+    ``S R=$$F(.X)``) authorise the callee to write into the caller's
+    variable. From the caller's perspective post-call, X may hold
+    anything — MAY-analysis taints X conservatively.
+    """
+    if node.type == "by_reference":
+        for c in node.children:
+            if c.type == "identifier":
+                text = src[c.start_byte : c.end_byte].decode(
+                    "latin-1", errors="replace"
+                )
+                if text:
+                    yield text
+                return
+        return
+    for c in node.children:
+        yield from _by_reference_names(c, src)
+
+
 def _apply_command(
     in_tainted: frozenset[str], cmd: _Node, src: bytes, config: TaintConfig
 ) -> frozenset[str]:
@@ -260,6 +288,12 @@ def _apply_command(
 
     if kw in _SET_KW or kw in _MERGE_KW:
         for arg in argument_nodes(cmd):
+            # SET RHS may pass by-reference into an extrinsic call
+            # (``S R=$$F(.X)``) — the callee may write tainted data
+            # into X. Taint by-ref args before the LHS strong-update
+            # so the LHS sees the post-call tainted state.
+            for name in _by_reference_names(arg, src):
+                out.add(name)
             lhs = _set_arg_lhs(arg, src)
             if lhs is None:
                 continue
@@ -276,6 +310,13 @@ def _apply_command(
         for arg in args:
             eff = effects_of_argument(arg, src, "K")
             out -= eff.kills
+        return frozenset(out)
+
+    if kw in _CALL_KW:
+        # DO / JOB — by-reference args may be written by the callee.
+        for arg in argument_nodes(cmd):
+            for name in _by_reference_names(arg, src):
+                out.add(name)
         return frozenset(out)
 
     return frozenset(out)

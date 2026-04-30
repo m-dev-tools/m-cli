@@ -27,15 +27,15 @@
         "M-MOD-032": 1287,
         "M-MOD-034": 175,
         "M-MOD-035": 5,
-        "M-MOD-036": 89
+        "M-MOD-036": 93
       },
       "by_severity": {
-        "error": 855,
+        "error": 859,
         "info": 908,
         "style": 5085,
         "warning": 1094
       },
-      "findings_total": 7942,
+      "findings_total": 7946,
       "routines_linted": 77,
       "routines_total": 86
     },
@@ -87,15 +87,15 @@
         "M-MOD-031": 390,
         "M-MOD-032": 882,
         "M-MOD-034": 587,
-        "M-MOD-036": 4
+        "M-MOD-036": 5
       },
       "by_severity": {
-        "error": 854,
+        "error": 855,
         "info": 790,
         "style": 1604,
         "warning": 359
       },
-      "findings_total": 3607,
+      "findings_total": 3608,
       "routines_linted": 24,
       "routines_total": 36
     },
@@ -164,15 +164,15 @@
         "M-MOD-033": 131,
         "M-MOD-034": 2150,
         "M-MOD-035": 119,
-        "M-MOD-036": 165
+        "M-MOD-036": 166
       },
       "by_severity": {
-        "error": 8242,
+        "error": 8243,
         "info": 18195,
         "style": 83028,
         "warning": 11006
       },
-      "findings_total": 120471,
+      "findings_total": 120472,
       "routines_linted": 3336,
       "routines_total": 4049
     }

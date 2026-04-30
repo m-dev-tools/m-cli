@@ -200,3 +200,52 @@ def test_subscript_uses_in_lhs_propagate() -> None:
     # Conservative: tainted subscript means A's "shape" is attacker-
     # controlled, so A is tainted.
     assert "A" in taint[cfg.exit().id]
+
+
+# ---------------------------------------------------------------------------
+# By-reference DO/JOB calls — callee may write tainted data
+# ---------------------------------------------------------------------------
+
+
+def test_by_ref_call_taints_arg() -> None:
+    """``D LBL(.X)`` — the callee may write any value (including
+    untrusted) into X. MAY-analysis taints X conservatively."""
+    src = b"LBL\n D F(.X)\n Q\n"
+    taint, cfg = _analyze(src)
+    assert "X" in taint[cfg.exit().id]
+
+
+def test_by_ref_call_taints_multiple() -> None:
+    src = b"LBL\n D F(.X,.Y,Z)\n Q\n"
+    taint, cfg = _analyze(src)
+    assert "X" in taint[cfg.exit().id]
+    assert "Y" in taint[cfg.exit().id]
+    # Z is by-value — untouched (and Z's prior state is "clean" since
+    # nothing has set it).
+    assert "Z" not in taint[cfg.exit().id]
+
+
+def test_by_ref_call_through_extrinsic_taints_arg() -> None:
+    """``S R=$$F(.X)`` — extrinsic call may write to X (and the result
+    R is also tainted because $$F may return user-influenced value).
+    The MVP's strong-update SET handling already taints R when X is in
+    the post-call tainted set; this test pins the by-ref leg."""
+    src = b"LBL\n S R=$$F(.X)\n Q\n"
+    taint, cfg = _analyze(src)
+    assert "X" in taint[cfg.exit().id]
+
+
+def test_by_value_call_does_not_taint() -> None:
+    """``D F(X)`` where X is clean stays clean (no by-ref writes)."""
+    src = b"LBL\n S X=1\n D F(X)\n Q\n"
+    taint, cfg = _analyze(src)
+    assert "X" not in taint[cfg.exit().id]
+
+
+def test_by_ref_call_does_not_untaint() -> None:
+    """If X is already tainted, ``D F(.X)`` keeps it tainted (the
+    callee MIGHT clean it, but we conservatively assume it might
+    not — MAY analysis)."""
+    src = b"LBL\n R X\n D F(.X)\n Q\n"
+    taint, cfg = _analyze(src)
+    assert "X" in taint[cfg.exit().id]
