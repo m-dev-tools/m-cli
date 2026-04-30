@@ -1225,3 +1225,56 @@ class TestReadOfUndefined:
         src = b"LBL\n S A=1, B=A\n Q\n"
         diags = [d for d in _lint(src, "M-MOD-024", ctx=_ctx()) if d.rule_id == "M-MOD-024"]
         assert diags == []
+
+
+# ---------------------------------------------------------------------------
+# M-MOD-025 — LOCK leak across exit paths (path-sensitive)
+# ---------------------------------------------------------------------------
+
+
+class TestLockLeakPathSensitive:
+    def test_fires_when_lock_held_on_any_exit_path(self):
+        """``L +X`` then ``Q:cond`` then ``L -X`` then ``Q``.
+
+        The Q:cond branch exits while X is still held — leak."""
+        src = b"LBL(C)\n L +X\n Q:C=1\n L -X\n Q\n"
+        diags = [d for d in _lint(src, "M-MOD-025", ctx=_ctx()) if d.rule_id == "M-MOD-025"]
+        assert len(diags) == 1
+        assert "X" in diags[0].message
+
+    def test_silent_when_release_on_every_path(self):
+        """Unconditional acquire + unconditional release — no leak."""
+        src = b"LBL\n L +X\n L -X\n Q\n"
+        assert _lint(src, "M-MOD-025", ctx=_ctx()) == []
+
+    def test_silent_with_argumentless_release(self):
+        """``L +X`` then ``L`` (release-all) — no leak."""
+        src = b"LBL\n L +X\n L \n Q\n"
+        assert _lint(src, "M-MOD-025", ctx=_ctx()) == []
+
+    def test_fires_on_multiple_leaked_locks(self):
+        """Multiple LOCK targets leaked → one diagnostic per target."""
+        src = b"LBL\n L +A,+B,+C\n Q\n"
+        diags = [d for d in _lint(src, "M-MOD-025", ctx=_ctx()) if d.rule_id == "M-MOD-025"]
+        assert len(diags) == 3
+        assert {d.message.split("'")[1] for d in diags} == {"A", "B", "C"}
+
+    def test_silent_when_no_locks_at_all(self):
+        src = b"LBL\n S X=1\n Q\n"
+        assert _lint(src, "M-MOD-025", ctx=_ctx()) == []
+
+    def test_anchors_diagnostic_on_label_header(self):
+        """The diagnostic line points at the label header, not at
+        the QUIT — so an editor outline shows the leak right at the
+        label name."""
+        src = b"LBL\n L +X\n Q\n"
+        diags = [d for d in _lint(src, "M-MOD-025", ctx=_ctx()) if d.rule_id == "M-MOD-025"]
+        assert len(diags) == 1
+        assert diags[0].line == 1  # the label header
+
+    def test_each_label_independent(self):
+        """LBL1 leaks; LBL2 clean — only one finding."""
+        src = b"LBL1\n L +X\n Q\nLBL2\n L +Y\n L -Y\n Q\n"
+        diags = [d for d in _lint(src, "M-MOD-025", ctx=_ctx()) if d.rule_id == "M-MOD-025"]
+        assert len(diags) == 1
+        assert "X" in diags[0].message

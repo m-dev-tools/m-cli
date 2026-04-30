@@ -2612,3 +2612,62 @@ register(
         replaces=(),
     )
 )
+
+
+# ---------------------------------------------------------------------------
+# M-MOD-025 — LOCK leak across exit paths
+# ---------------------------------------------------------------------------
+
+
+def _check_lock_leak_path_sensitive(
+    src: bytes, _tree, path: Path, index: NodeIndex, _ctx: LintContext
+) -> Iterator[Diagnostic]:
+    """M-MOD-025 — At least one path from label entry to exit leaves
+    a LOCK held.
+
+    Path-sensitive graduation of M-MOD-011: a forward MAY-analysis
+    (union meet) computes the set of LOCK targets that are held on
+    at least one path entering the synthetic exit block. Any name in
+    that set is a real leak — there's a sequence of branches that
+    reaches the QUIT (or end-of-label) without a matching release.
+
+    Reports one diagnostic per (label, leaked variable). The
+    diagnostic anchors on the label header so the leak is obvious in
+    an editor's outline; the message names the leaked variable(s).
+    """
+    from m_cli.lint.flow import build_cfgs
+    from m_cli.lint.flow.lock_state import held_at_exit
+
+    cfgs = build_cfgs(src, index)
+    for cfg in cfgs:
+        held = held_at_exit(cfg, src)
+        if not held:
+            continue
+        label = cfg.label_node
+        for name in sorted(held):
+            yield Diagnostic(
+                rule_id="M-MOD-025",
+                severity=Severity.ERROR,
+                message=(
+                    f"LOCK on '{name}' may be held when {cfg.label_name} "
+                    "exits — release on every path"
+                ),
+                path=path,
+                line=label.start_point[0] + 1,
+                column=label.start_point[1] + 1,
+                column_end=label.end_point[1] + 1,
+            )
+
+
+register(
+    Rule(
+        id="M-MOD-025",
+        severity=Severity.ERROR,
+        category=Category.CONCURRENCY,
+        title="LOCK leak across exit paths (path-sensitive)",
+        tags=("modern",),
+        check=_check_lock_leak_path_sensitive,
+        needs_context=True,
+        replaces=("M-MOD-011",),
+    )
+)
