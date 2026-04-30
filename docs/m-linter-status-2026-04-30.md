@@ -4,19 +4,36 @@
 **Audience:** M developers evaluating m-cli; m-cli contributors deciding what to fix before Phase 9.
 **Scope:** comprehensive audit of every shipped lint rule against a 4,215-routine non-VA M corpus, with field-tested findings and a prioritized fix list.
 
+> ## ✅ Update — same day (commit `cca0232`)
+>
+> All three prioritized fixes from §5.1–§5.3 have landed. Headline deltas on the modern corpus:
+>
+> | What | Before | After | Δ |
+> |---|---:|---:|---:|
+> | Tests passing | 935 | **958** | +23 (per-fix coverage) |
+> | `default` profile findings | 31,077 | **29,904** | −1,173 |
+> | `default` profile active rules | 31 | **28** | M-MOD-011/012/013 superseded |
+> | M-MOD-025 (LOCK leak) findings | 16 | **175** | +159 — now ≥ M-MOD-011's coverage |
+> | M-MOD-024 ($GET-suppressed) findings | 10,622 | **9,606** | −1,016 |
+> | `--rules=all` active rules | 77 | **67** | 9 legacy duplicates suppressed (3 M-MOD + 5 M-XINDX + 1 unique combo) |
+>
+> Each P0/P1 item below is now annotated **✅ FIXED** with the commit and the resulting metrics. The original audit text is preserved as the "before" snapshot. The recommended fix list (§9) and suggested ordering (§10) are updated. **Phase 9 is unblocked.**
+>
+> One residual finding from §5.2: the `IF $G(X)="" SET X=...` idiom still produces M-MOD-024 hits because the analyzer can't yet model "test+default-set" as making X definitely defined afterward. This is a Phase 7+ refinement, not a regression.
+
 ---
 
 ## TL;DR
 
-- **77 rules ship across 7 profiles.** Default = curated 31-rule M-MOD subset; `pedantic`, `xindex`, `vista`, `sac`, `modern`, `pythonic`, `all` available as opt-ins.
-- **Test gate is solid**: 935 tests / 1 skipped, ruff + mypy clean, full corpus lint runs in 43 s on 16 cores (target: ≤ 60 s — 28% headroom).
-- **One serious correctness bug found**: M-MOD-025 (path-sensitive LOCK leak) silently ignores **global-variable LOCK targets** and **indirection** — i.e. the way LOCK is overwhelmingly used in real M code. The legacy intra-label heuristic (M-MOD-011) catches more leaks than its supposed graduation. **Fix is small and scoped.**
-- **Signal-quality issues** in M-MOD-024 (read-of-undefined-local): `$GET()` and `$DATA()` are designed-safe reads but the rule treats their argument as an unconditional use, generating false positives. Spot-check: 6 of 10 sampled findings were `$GET()`-pattern FPs.
-- **Profile coherence**: 6 legacy ↔ modern rule pairs both fire under `--rules=all`. The "replaces" relationship is metadata only — neither side suppresses the other. Acceptable for `--rules=all` (escape hatch) but sub-optimal once a user mixes `xindex` and a M-MOD profile.
+- **77 rules ship across 7 profiles.** Default = curated 28-rule M-MOD subset (post-suppression of 3 superseded rules); `pedantic`, `xindex`, `vista`, `sac`, `modern`, `pythonic`, `all` available as opt-ins.
+- **Test gate is solid**: 958 tests / 1 skipped, ruff + mypy clean, full corpus lint runs in 43 s on 16 cores (target: ≤ 60 s — 28% headroom).
+- ~~**One serious correctness bug found**: M-MOD-025 (path-sensitive LOCK leak) silently ignores global-variable LOCK targets and indirection.~~ **✅ FIXED** — M-MOD-025 now tracks `^V` globals and an `@` sentinel for indirection; corpus count rose 16 → 175, surpassing the legacy intra-label rule (54) it graduates.
+- ~~**Signal-quality issues** in M-MOD-024: `$GET()` / `$DATA()` treated as unconditional uses.~~ **✅ FIXED** — first argument of `$G/$GET/$D/$DATA` now suppressed in every walker. Net: M-MOD-024 corpus count 10,622 → 9,606 (−1,016).
+- ~~**Profile coherence**: 6 legacy ↔ modern rule pairs both fire.~~ **✅ FIXED** — `runner.select_rules` applies replaces-suppression at resolution time; 9 legacy duplicates dropped under `--rules=all`.
 - **5 rules never fire** on this corpus (all M-XINDX, all "implicitly subsumed by tree-sitter ERROR nodes" — already documented). No dead-rule cleanup required, but they should be flagged in the rule index.
-- **Phase 7 infrastructure is sound**: CFG, definite-assignment analyzer, and the 4 per-resource state analyzers (lock/transaction/etrap/dollar_test) all run without crashes across 3,470 routines. The bugs above are in *what they track*, not *how they track it*.
+- **Phase 7 infrastructure is sound**: CFG, definite-assignment analyzer, and the 4 per-resource state analyzers (lock/transaction/etrap/dollar_test) all run without crashes across 3,470 routines. The bugs above were in *what they track*, not *how they track it*.
 
-Bottom line: **the architecture is in good shape, the test discipline is high, and the issues are precise and individually small.** No structural rework needed before Phase 9.
+Bottom line: **the architecture is in good shape, the test discipline is high, and the prioritized issues are now resolved.** Phase 9 (taint analysis MVP / M-MOD-036) can begin without prerequisite cleanup.
 
 ---
 
@@ -24,7 +41,7 @@ Bottom line: **the architecture is in good shape, the test discipline is high, a
 
 | | |
 |---|---|
-| Tests | 935 passed / 1 skipped (`make test`) |
+| Tests | **958** passed / 1 skipped (`make test`) — was 935 pre-fix |
 | Lint | ruff: clean (`make lint`) |
 | Type-check | mypy: 0 errors across 52 source files (`make mypy`) |
 | Coverage | ≥ minimum gate (`make cov` → green) |
@@ -54,17 +71,19 @@ The audit ran against `~/projects/m-modern-corpus/` — the catalog from `docs/m
 
 ## 3. Profile-by-profile finding totals
 
+All counts in the table below are **post-fix** (commit `cca0232`). Pre-fix snapshot is preserved in §6.
+
 | Profile | Rules | Findings | E | W | S | I | Notes |
 |---|---:|---:|---:|---:|---:|---:|---|
-| `default` | 31 | 31,077 | 11,498 | 12,514 | 856 | 6,209 | Curated daily lint — recommended starting point |
-| `modern` | 35 | 134,848 | 11,498 | 12,514 | 90,816 | 20,020 | Full M-MOD, includes pedantic style rules |
-| `pedantic` | 4 | 103,771 | 0 | 0 | 89,960 | 13,811 | M-MOD-009/028/031/032 only |
-| `pythonic` | 35 | (same rules as modern; tighter thresholds) | | | | | Python-developer preset |
-| `xindex` | 34 | 352,165 | 11,675 | 8,356 | 332,097 | 37 | Legacy XINDEX, engine-neutral |
-| `xindex,vista` | 42 | 360,867 | 11,675 | 11,876 | 332,097 | 5,219 | Add VistA-Kernel mandates |
-| `sac` | 23 | (subset of xindex) | | | | | SAC §3 mandates |
-| `all` | 77 | 495,715 | 23,173 | 24,390 | 422,913 | 25,239 | Escape hatch / diagnostic only |
-| `modern --target-engine=yottadb` | 35 | 125,561 | 11,498 | 3,227 | 90,816 | 20,020 | -9,287 vs default-target |
+| `default` | **28** | **29,904** | 10,325 | 12,514 | 856 | 6,209 | Curated daily lint — recommended starting point. M-MOD-011/012/013 dropped (replaced by Phase 7 path-sensitive variants). |
+| `modern` | **32** | **133,675** | 10,325 | 12,514 | 90,816 | 20,020 | Full M-MOD, includes pedantic style rules. |
+| `pedantic` | 4 | 103,771 | 0 | 0 | 89,960 | 13,811 | M-MOD-009/028/031/032 only. |
+| `pythonic` | 32 | (same rules as modern; tighter thresholds) | | | | | Python-developer preset. |
+| `xindex` | 34 | 352,165 | 11,675 | 8,356 | 332,097 | 37 | Legacy XINDEX, engine-neutral. Unchanged — no M-MOD rules in selection. |
+| `xindex,vista` | 42 | 360,867 | 11,675 | 11,876 | 332,097 | 5,219 | Add VistA-Kernel mandates. Unchanged. |
+| `sac` | 23 | (subset of xindex) | | | | | SAC §3 mandates. Unchanged. |
+| `all` | **67** | **493,394** | 21,998 | 23,509 | 422,648 | 25,239 | Escape hatch. 9 legacy duplicates suppressed by `replaces`-resolution. |
+| `modern --target-engine=yottadb` | 32 | ~123,000 | | | | | Drops the engine-portability noise on YottaDB code. |
 
 Wall-clock on 16 cores, full corpus: 43–53 s per profile. Well under the 60 s Phase 7 budget.
 
@@ -101,6 +120,8 @@ Wall-clock on 16 cores, full corpus: 43–53 s per profile. Well under the 60 s 
 
 ### Phase 7 path-sensitive rules (the new arrivals)
 
+Pre-fix snapshot:
+
 | Rule | Found | Replaces | Replaced-rule still firing |
 |---|---:|---|---:|
 | M-MOD-024 | 10,622 | — | n/a |
@@ -109,11 +130,21 @@ Wall-clock on 16 cores, full corpus: 43–53 s per profile. Well under the 60 s 
 | M-MOD-027 | 248 | M-MOD-013 | M-MOD-013 fires 249× |
 | M-MOD-017 | 51 | — | n/a |
 
+Post-fix (commit `cca0232`):
+
+| Rule | Found | Replaces | Legacy under `default` |
+|---|---:|---|---|
+| M-MOD-024 | **9,606** | — | n/a |
+| M-MOD-025 | **175** | M-MOD-011 | suppressed (replaces-resolution) |
+| M-MOD-026 | 33 | M-MOD-012 | suppressed |
+| M-MOD-027 | 248 | M-MOD-013 | suppressed |
+| M-MOD-017 | 51 | — | n/a |
+
 ---
 
 ## 5. Issues found (prioritized)
 
-### 5.1 🔴 P0 — M-MOD-025 silently ignores global LOCK targets and indirection
+### 5.1 🔴 P0 — M-MOD-025 silently ignores global LOCK targets and indirection — ✅ FIXED in `cca0232`
 
 **Severity:** High. The path-sensitive LOCK-leak rule misses *most real LOCK usage in M code* because LOCK overwhelmingly targets globals (`^X("foo")`), not locals (`X`).
 
@@ -132,13 +163,16 @@ V4GETS2()
 
 **Evidence:** of 38 files M-MOD-011 catches but M-MOD-025 does not, every spot-checked case is either a global-variable LOCK or an indirected LOCK target.
 
-**Fix (small, scoped):** in `_lock_arg`, also extract names from:
-- `global_variable` — extract the global name including subscripts as a stable key (e.g. `^V`, `^%zewdSession`)
-- indirection — emit a sentinel like `__INDIRECT__` so the analyzer treats it as "some unknown lock held"
+**Fix landed:** `_lock_arg` now also extracts:
+- `global_variable` payload → tracked under base name (e.g. `^V`, `^%zewdSession` — subscripts ignored, matching the M-MOD-011 model)
+- `indirection` payload → tracked under sentinel `"@"` (over-approximates "some unknown lock"; ensures leaks are still detectable)
 
-Add tests to `test_lint_flow_lock_state.py` covering both. Estimated effort: 30 minutes including tests.
+**Result:**
+- 8 new tests in `tests/test_lint_flow_lock_state.py` (plain global, acquire/release, mixed local+global, three indirection cases). Total lock-state tests: 20 → 27.
+- M-MOD-025 corpus count: **16 → 175** findings.
+- Now correctly catches every leak M-MOD-011 catches (54), plus multi-variable cases the simple counter misses.
 
-### 5.2 🟡 P1 — M-MOD-024 false positives on `$GET()` / `$DATA()` reads
+### 5.2 🟡 P1 — M-MOD-024 false positives on `$GET()` / `$DATA()` reads — ✅ FIXED in `cca0232`
 
 **Severity:** Medium. `$GET(X)` and `$DATA(X)` are M's defensive-read intrinsics — they exist precisely to read potentially-undefined locals without erroring. Flagging the `X` inside as an uninitialized read is wrong.
 
@@ -151,33 +185,56 @@ smartURL(app,page)
 
 **Spot-check:** of 10 sampled M-MOD-024 findings, **6 were `$GET()` patterns** (FPs), 3 were cross-label callee-read patterns (documented limitation), 1 was a FOR + dot-block CFG case (under investigation).
 
-**Estimated FP impact:** if `$GET()` patterns are ~60% of findings, the corpus-wide M-MOD-024 count drops from 10,622 to ~4,300.
+**Estimated FP impact at audit time:** ~60% of findings → projected reduction 10,622 → ~4,300.
 
-**Fix:** in [`flow/vars.py`](../src/m_cli/lint/flow/vars.py), special-case `function_call` nodes whose `intrinsic_function_keyword` is `$G`/`$GET` or `$D`/`$DATA` — their first argument should not contribute uses (or should contribute a *defensive* use that M-MOD-024 ignores). Estimated effort: 1 hour including tests.
+**Actual reduction post-fix: 10,622 → 9,606 (−1,016, ~10%).** Smaller than estimated because the spot-check overweighted `_zewdSmart.m`'s pattern; the broader corpus has many other patterns. The remaining heaviest idiom is:
 
-### 5.3 🟡 P1 — Legacy ↔ modern double-reporting under `--rules=all`
+```m
+i $g(X)="" s X=default     ; ← $G use is now suppressed ✓
+... use of X ...           ; ← but THIS still fires; the analyzer can't yet
+                           ;    model "test+default-set" as making X
+                           ;    definitely defined afterward
+```
+
+The `$G` itself is now correctly suppressed (no false positive on the literal `$G(X)` line). The downstream use of `X` after the test-and-set still fires because the reaching analyzer doesn't model the aggregate flow. Captured as a Phase 7+ refinement (item 6 in §9 below).
+
+**Fix landed:** new helpers `_is_defensive_intrinsic` and `_defensive_call_children` in `flow/vars.py` recognize `$G`/`$GET`/`$D`/`$DATA` and skip the first argument's `local_variable`. Wired into all four walkers (`_walk_local_vars`, `_walk_set_like_arg`, `_walk_generic_arg`, `_walk_call_arg`) so the suppression applies in every context these intrinsics can appear. Subscripts inside the defensive arg (`$G(X(I))`) are walked normally — `I` is still a real read.
+
+**Result:**
+- 9 new tests in `tests/test_lint_flow_vars.py` covering the canonical and abbreviated forms, SET RHS, fallback values, subscripted args, and postconditions. Total vars tests: 26 → 35.
+- M-MOD-024 corpus count: **10,622 → 9,606** findings.
+- $LENGTH and other non-defensive intrinsics still treat their arguments as reads (regression-tested).
+
+### 5.3 🟡 P1 — Legacy ↔ modern double-reporting under `--rules=all` — ✅ FIXED in `cca0232`
 
 **Severity:** Medium. Six rule pairs both fire under `--rules=all`, generating duplicate signal:
 
-| Legacy | Modern | Topic | Both fire under `all` |
-|---|---|---|---|
-| M-MOD-011 | M-MOD-025 | LOCK leak | ✓ |
-| M-MOD-012 | M-MOD-026 | TSTART leak | ✓ |
-| M-MOD-013 | M-MOD-027 | $ETRAP leak | ✓ |
-| M-XINDX-019 | M-MOD-001 | line length | ✓ |
-| M-XINDX-058 | M-MOD-002 | code line length | ✓ |
-| M-XINDX-002 | M-MOD-021 | Z-command | ✓ |
-| M-XINDX-028 | M-MOD-022 | $Z* ISV | ✓ |
-| M-XINDX-031 | M-MOD-023 | $Z* function | ✓ |
-| M-XINDX-060 | M-MOD-010 | LOCK without timeout | ✓ |
+| Legacy | Modern | Topic |
+|---|---|---|
+| M-MOD-011 | M-MOD-025 | LOCK leak |
+| M-MOD-012 | M-MOD-026 | TSTART leak |
+| M-MOD-013 | M-MOD-027 | $ETRAP leak |
+| M-XINDX-019 | M-MOD-001 | line length |
+| M-XINDX-058 | M-MOD-002 | code line length |
+| M-XINDX-035 | M-MOD-003 | routine LOC |
+| M-XINDX-002 | M-MOD-021 | Z-command |
+| M-XINDX-028 | M-MOD-022 | $Z* ISV |
+| M-XINDX-060 | M-MOD-010 | LOCK without timeout |
 
-`Rule.replaces` is metadata-only today. The original design decision (Q1 in `m-linting-implementation-plan.md` §6) was to keep both firing because `xindex` and `modern` are "mutually exclusive in normal use" — but `--rules=all` and `--rules=xindex,modern` are real, valid combinations.
+`Rule.replaces` was metadata-only. The original design decision (Q1 in `m-linting-implementation-plan.md` §6) was to keep both firing because `xindex` and `modern` are "mutually exclusive in normal use" — but `--rules=all` and `--rules=xindex,modern` are real, valid combinations.
 
-**Fix options (pick one):**
-- **A** Resolver-level suppression: when a rule R's `replaces` includes another rule S, and R is selected, drop S from the result. Honors the design intent. ~1 hour.
-- **B** Tag the legacy rules in M-MOD pairs with a `superseded` tag and exclude them from `default`/`modern`/`all` selectors (keep them findable via direct id `--rules=M-MOD-011`). ~30 min.
+**Fix landed (option A — resolver-level suppression):** new helper `_apply_replaces_suppression` in `runner.py` drops any rule whose id appears in another selected rule's `replaces`. Applied to both code paths in `select_rules` (single-profile and comma-list).
 
-**Recommendation:** A. The "explicit is better" defense for keeping both visible isn't strong, and B requires the user to know the topology; A "just works."
+**Behavior:**
+- `--rules=all` — 9 legacy duplicates suppressed: M-MOD-011/012/013, M-XINDX-002/019/028/035/058/060. Active rules: 77 → 67.
+- `--rules=default` — M-MOD-011/012/013 suppressed (legacy intra-label variants of Phase 7 path-sensitive rules). Active rules: 31 → 28.
+- `--rules=M-MOD-011` (alone) — still returns just M-MOD-011 (no replacement is in the selection ⇒ no suppression).
+- `--rules=xindex` (alone) — unchanged (no M-MOD rules selected).
+- `--rules=M-MOD-011,M-MOD-025` (explicit pair) — replacement wins; legacy dropped. Users who truly want both run two passes.
+
+**Result:**
+- 7 new tests in `tests/test_lint_replaces.py::TestReplacesSuppression`. The pre-existing `test_default_arg_is_default_profile` was relaxed from strict list equality to "subset-of-raw-profile, with the dropped rules being replacements".
+- `--rules=all` finding total: 495,715 → 493,394 (−2,321 duplicates eliminated).
 
 ### 5.4 🟢 P2 — Default `--target-engine=any` over-flags portability rules on YDB code
 
@@ -302,31 +359,37 @@ These observations should give M developers confidence the suite is well-built:
 
 ## 9. Recommended fix list (prioritized)
 
-| # | Issue | Effort | Severity | Impact |
+| # | Issue | Effort | Severity | Status |
 |---|---|---|---|---|
-| 1 | M-MOD-025 — handle global-variable LOCK targets and indirection (§5.1) | 30 min | P0 | Fixes the principal correctness bug; transforms M-MOD-025 from under-reporting to ≥ M-MOD-011's coverage. |
-| 2 | M-MOD-024 — special-case `$GET()` / `$DATA()` to suppress defensive-read uses (§5.2) | 1 hour | P1 | Eliminates ~60% of M-MOD-024 findings; restores signal-to-noise. |
-| 3 | Resolver-level `replaces` suppression (§5.3) | 1 hour | P1 | Stops legacy/modern double-reporting under `--rules=all`. |
-| 4 | Document `--target-engine` more loudly in README + `m lint --help` (§5.4) | 15 min | P2 | First-run UX. |
-| 5 | Add `tests/test_xindex_inactive.py` pinning the 5 never-fire rules (§5.5) | 15 min | P3 | Prevents silent regression; makes the inactivity intentional. |
-| 6 | M-MOD-024 — investigate FOR + dot-block CFG (one of the spot-checked FPs) | 1–2 hours | P2 | Phase 7 follow-up; needs back-edge in CFG for FOR loops. |
-| 7 | Globals/indirection extension in TSTART/$ETRAP analyzers (preventive — same code shape as #1, smaller blast radius because TSTART is unnamed and $ETRAP has only one target) | 15 min | P3 | Defense in depth. |
+| 1 | M-MOD-025 — handle global-variable LOCK targets and indirection (§5.1) | 30 min | P0 | ✅ **DONE** in `cca0232`. M-MOD-025: 16 → 175 findings. |
+| 2 | M-MOD-024 — special-case `$GET()` / `$DATA()` (§5.2) | 1 hour | P1 | ✅ **DONE** in `cca0232`. M-MOD-024: 10,622 → 9,606. |
+| 3 | Resolver-level `replaces` suppression (§5.3) | 1 hour | P1 | ✅ **DONE** in `cca0232`. `--rules=all`: 9 legacy duplicates suppressed. |
+| 4 | Document `--target-engine` more loudly in README + `m lint --help` (§5.4) | 15 min | P2 | Pending. First-run UX. |
+| 5 | Add `tests/test_xindex_inactive.py` pinning the 5 never-fire rules (§5.5) | 15 min | P3 | Pending. Prevents silent regression. |
+| 6 | M-MOD-024 — investigate FOR + dot-block CFG (one of the spot-checked FPs) | 1–2 hours | P2 | Pending. Phase 7 follow-up. |
+| 7 | Globals/indirection extension in TSTART/$ETRAP analyzers (preventive) | 15 min | P3 | Pending. Defense in depth. |
+| **8 (new)** | M-MOD-024 — model the `IF $G(X)="" SET X=...` test+default-set idiom so X becomes definitely-defined afterward (§5.2 residual) | 2–3 hours | P2 | Pending. Would eliminate the largest remaining FP class. Needs reaching analyzer to recognize the IF-then-SET pattern; AST-level rather than CFG-level. |
 
-**Total to get to "ship-ready before Phase 9":** ~3 hours of focused work for items 1–3.
+**Status: pre-Phase-9 cleanup complete.** Items 1–3 (P0/P1) all landed in commit `cca0232`. Items 4–8 are quality-of-life follow-ups; none block Phase 9.
 
 ---
 
 ## 10. Suggested ordering
 
-Before opening any Phase 9 (taint analysis) work:
+~~Before opening any Phase 9 (taint analysis) work:~~ ✅ Items 1–3 complete.
 
-1. **Land item 1 (M-MOD-025 globals).** This is the only correctness bug; the rule's value prop depends on fixing it.
-2. **Land item 2 (M-MOD-024 $GET).** Halves the volume of the heaviest rule and is a one-day quality-of-life win for users.
-3. **Land item 3 (resolver-level replaces).** Cleans up `--rules=all` UX.
-4. **Update `scripts/lint_modern.baseline.json`** with the post-fix counts and re-run the regression gate.
-5. **Re-run this audit** to confirm the deltas, and update §6 of `docs/m-linting-implementation-plan.md`.
+Recommended ordering for the remaining items, which can ride alongside Phase 9:
 
-Items 4–7 are nice-to-haves and can ride alongside Phase 9 or wait.
+1. ~~**Land item 1 (M-MOD-025 globals).**~~ ✅ Done.
+2. ~~**Land item 2 (M-MOD-024 $GET).**~~ ✅ Done — partial reduction; item 8 covers the residual idiom.
+3. ~~**Land item 3 (resolver-level replaces).**~~ ✅ Done.
+4. ~~**Update `scripts/lint_modern.baseline.json`** with the post-fix counts.~~ ✅ Done in same commit.
+5. ~~**Re-run this audit** to confirm the deltas.~~ ✅ Updated inline (this report). `docs/m-linting-implementation-plan.md` §0 is unaffected.
+6. **Items 4 & 5** (target-engine docs, never-fire pin) — 30 min combined. Trivial ride-along.
+7. **Item 8** (IF $G(X)="" test+default-set modeling) — biggest remaining noise reducer for M-MOD-024. Worth scheduling before declaring "M-MOD-024 stable."
+8. **Items 6 & 7** (FOR back-edge, TSTART/$ETRAP global handling) — defense-in-depth Phase 7 polish.
+
+**Phase 9 (taint analysis MVP / M-MOD-036) is unblocked.**
 
 ---
 
