@@ -167,6 +167,72 @@ def standard_functions() -> set[str]:
     return canonical | abbrev | _FALLBACK_FUNCTIONS
 
 
+# Map ``target_engine`` → set of m-standard ``standard_status`` values
+# whose tokens are SAFE to use on that engine. Per m-standard's data
+# model:
+#
+#   "ansi"             — pure ANSI M-1995 / ISO 11756; safe everywhere
+#   "ydb-extension"    — YottaDB-only extension
+#   "iris-extension"   — IRIS-only extension
+#   "multi-vendor-ext" — extension supported on both YDB and IRIS but
+#                       not in ANSI
+#
+# An "any" target — meaning "this code must be portable to any future
+# M engine" — accepts only ANSI tokens.
+_ENGINE_SAFE_STATUSES: dict[str, frozenset[str]] = {
+    "any": frozenset({"ansi"}),
+    "yottadb": frozenset({"ansi", "ydb-extension", "multi-vendor-ext"}),
+    "iris": frozenset({"ansi", "iris-extension", "multi-vendor-ext"}),
+}
+
+
+@lru_cache(maxsize=8)
+def engine_allowlist(target_engine: str, kind: str) -> frozenset[str]:
+    """Return the set of token names (canonical + abbreviation) safe
+    to use on the given engine for the given kind.
+
+    ``target_engine`` is one of ``"any"``, ``"yottadb"``, or ``"iris"``.
+    Unknown values fall back to the strictest set (ANSI-only).
+
+    ``kind`` is one of ``"command"``, ``"isv"``, or ``"function"``.
+
+    All returned names are uppercase. The set includes both the
+    canonical form (e.g. ``"$ZHOROLOG"``) and the abbreviation
+    (``"$ZH"``) when m-standard records one. When m-standard is not
+    available, falls back to the simple ``standard_*()`` sets, which
+    means engine-aware checks degrade gracefully to "ANSI-only".
+    """
+    safe_statuses = _ENGINE_SAFE_STATUSES.get(
+        target_engine, _ENGINE_SAFE_STATUSES["any"]
+    )
+    out: set[str] = set()
+    has_record_data = False
+    for rec in keyword_records():
+        if rec.kind != kind:
+            continue
+        # Distinguish "real status set" from "synthetic fallback" — the
+        # synthetic fallback path leaves standard_status empty.
+        if rec.standard_status:
+            has_record_data = True
+            if rec.standard_status not in safe_statuses:
+                continue
+        if rec.canonical:
+            out.add(rec.canonical.upper())
+        if rec.abbreviation:
+            out.add(rec.abbreviation.upper())
+    if not has_record_data:
+        # m-standard wasn't available — fall back to the simple sets.
+        # All sets here represent the ANSI baseline so this is the
+        # strictest behavior, matching ``target_engine="any"``.
+        if kind == "command":
+            return frozenset(s.upper() for s in standard_commands())
+        if kind == "isv":
+            return frozenset(s.upper() for s in standard_isvs())
+        if kind == "function":
+            return frozenset(s.upper() for s in standard_functions())
+    return frozenset(out)
+
+
 # Fallback sets in case m-standard isn't installed. These are the
 # ANSI core; engine-specific Z* commands/funcs live in m-standard
 # proper. Letting m-standard win when present is the design intent.

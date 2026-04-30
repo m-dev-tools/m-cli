@@ -45,8 +45,22 @@ def _lint_one(args: tuple[Path, str]) -> tuple[Path, list, bool, bool]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("root", type=Path, help="Root of the VistA Packages directory")
-    parser.add_argument("--sample", type=int, default=0, help="Lint only first N routines (0 = all)")
-    parser.add_argument("--rules", default="xindex", help="Rule family or comma-separated IDs")
+    parser.add_argument(
+        "--sample",
+        type=int,
+        default=0,
+        help="Lint only first N routines (0 = all)",
+    )
+    parser.add_argument(
+        "--rules",
+        default="xindex,vista",
+        help=(
+            "Profile name(s) and/or comma-separated rule IDs. The VistA "
+            "regression default is `xindex,vista` — engine-neutral XINDEX "
+            "rules plus the VA-Kernel-specific rules (since the corpus "
+            "*is* VistA, both apply)."
+        ),
+    )
     parser.add_argument("--top", type=int, default=10, help="Show top-N noisiest routines")
     parser.add_argument(
         "--jobs",
@@ -126,7 +140,7 @@ def main() -> int:
 
     print()
     print("By severity:")
-    for sev in ("fatal", "standard", "warning", "info"):
+    for sev in ("error", "warning", "style", "info"):
         print(f"  {sev:9s} {sev_counts.get(sev, 0):>7}")
 
     if per_routine and args.top > 0:

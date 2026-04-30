@@ -158,7 +158,7 @@ def test_lint_source_internal_rule_crash_is_never_suppressed(
 ) -> None:
     """Disable directives must not silence the rule-crash diagnostic —
     the user always wants to know about a buggy rule."""
-    from m_cli.lint.diagnostic import Severity
+    from m_cli.lint.diagnostic import Category, Severity
     from m_cli.lint.rules import _REGISTRY as registry
     from m_cli.lint.rules import Rule
 
@@ -168,6 +168,7 @@ def test_lint_source_internal_rule_crash_is_never_suppressed(
     crash_rule = Rule(
         id="TEST-CRASH-1",
         severity=Severity.WARNING,
+        category=Category.BUG,
         title="Crash test rule",
         tags=("test",),
         check=crashing_check,

@@ -27,13 +27,25 @@ Public library surface (stable for out-of-tree tooling):
 
 from m_cli.fmt.cli import fmt_command
 from m_cli.fmt.formatter import ParseError, format_file, format_source
-from m_cli.fmt.rules import FmtRule, all_rules, canonical_rules, rule_by_id, select_fmt_rules
+from m_cli.fmt.rules import (
+    FmtRule,
+    all_rules,
+    canonical_rules,
+    compact_rules,
+    pythonic_lower_rules,
+    pythonic_rules,
+    rule_by_id,
+    select_fmt_rules,
+)
 
 __all__ = [
     "fmt_command",
     "format_source",
     "format_file",
     "canonical_rules",
+    "pythonic_rules",
+    "pythonic_lower_rules",
+    "compact_rules",
     "select_fmt_rules",
     "all_rules",
     "rule_by_id",

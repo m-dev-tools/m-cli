@@ -100,7 +100,7 @@ The table below mirrors the categories in [§7 of m-tool-gap-analysis.md](../../
 |---|:---:|---|:---:|:---:|---|---|
 | 1 | 1 | Test runner | MAJOR | ✅ Done | [`m test`](#63-m-test) | Parser-aware suite + label discovery via tree-sitter; YottaDB runner; text / TAP / JSON output. Smoke gate: 11 m-tools suites / 224 assertions pass. |
 | 2 | 1 | Linter (logic) | MAJOR | 🟡 Partial | [`m lint`](#62-m-lint) | 42 of XINDEX's 66 rules implemented: 37 single-file + 3 cross-routine (M-XINDX-007 undefined-routine, M-XINDX-008 undefined-label, M-XINDX-049 unused-label) + 2 control-flow (M-XINDX-009 dead-code-after-QUIT, M-XINDX-051 empty IF/ELSE). Inline `; m-lint: disable=RULE` directives (same-line / next-line / file / `*` wildcard) suppress findings without editing config. LSP hover on a diagnostic shows rule id + title + severity. Remaining ~24 rules require data-flow / scope tracking. |
-| 3 | 1 | Formatter | MAJOR | ✅ Done | [`m fmt`](#61-m-fmt) | Identity formatter round-trips 99.04% of VistA byte-for-byte. `--rules=canonical` adds two opt-in transformations (trim trailing whitespace, uppercase command keywords). Idempotent + AST-preserving over 38,954 routines. |
+| 3 | 1 | Formatter | MAJOR | ✅ Done | [`m fmt`](#61-m-fmt) | Identity formatter round-trips 99.04% of VistA byte-for-byte. `--rules=canonical` adds two hygiene transformations (trim trailing whitespace, uppercase command keywords). `--rules=pythonic` and `--rules=compact` translate between VistA-compact (`S X=1 W $L(X),$T`) and canonical-name (`SET X=1 WRITE $LENGTH(X),$TEST`) forms via 6 case-preserving translation rules. Idempotent + AST-preserving over 38,954 routines. |
 | 4 | 1 | Single-test selection | MAJOR | ✅ Done | `m test FILE.m::tLabel` | Folded into Step 3. |
 | 5 | 1 | Test watcher | MAJOR | ✅ Done | [`m watch`](#64-m-watch) | Polling-based (no inotify dependency). Source-to-suite affinity: `foo.m` → `FOOTST.m`. |
 | 6 | 2 | CI script | PARTIAL | 🟡 Partial | Project Makefile + pre-commit hooks | `m-cli` is dogfooded in its own CI (`make check`). Downstream M projects get a CI starter via [pre-commit hooks](#10-pre-commit-integration). A dedicated `m ci` orchestrator is not yet in the roadmap. |
@@ -213,10 +213,33 @@ m fmt path/to/file.m              # rewrite in place (default)
 m fmt --check Routines/           # exit 1 if anything would change (CI gate)
 m fmt --diff Routines/            # print unified diff, no writes
 m fmt --stdout single.m           # print formatted to stdout (one file)
-m fmt --rules=canonical Routines/ # apply opt-in canonical-layout rules
+m fmt --rules=canonical Routines/      # SAC hygiene: trim + uppercase
+m fmt --rules=pythonic Routines/       # expand abbreviations: S→SET, $L→$LENGTH
+m fmt --rules=pythonic-lower Routines/ # same but lowercase: set, $length
+m fmt --rules=compact Routines/        # compact canonical names: SET→S, $LENGTH→$L
 ```
 
-**Default mode is identity:** the formatter parses then re-emits each file byte-for-byte where the parser's lossless ranges allow. `--rules=canonical` opts into transformations: `trim-trailing-whitespace`, `uppercase-command-keywords`. Both are validated for AST-preservation across the full VistA corpus before being added.
+**Default mode is identity:** the formatter parses then re-emits each file byte-for-byte where the parser's lossless ranges allow.
+
+**`--rules=canonical`** is the SAC hygiene preset: `trim-trailing-whitespace` + `uppercase-command-keywords`. Both validated for AST-preservation across the full VistA corpus.
+
+**`--rules=pythonic` / `--rules=pythonic-lower` / `--rules=compact`** are the Phase A translation presets. `pythonic` expands abbreviations to canonical names (`S X=1 W $L(X),$T` → `SET X=1 WRITE $LENGTH(X),$TEST`) for readers coming from Python or other modern languages. `pythonic-lower` is the same but produces lowercase output (`set X=1 write $length(X),$test`) for projects that prefer PEP-8-style keyword casing. `compact` is the inverse of `pythonic`. Nine rules ship under these presets:
+
+| Rule ID | Direction | Example |
+|---------|-----------|---------|
+| `expand-command-keywords` | abbrev → canonical | `S` → `SET`, `Q` → `QUIT` |
+| `compact-command-keywords` | canonical → abbrev | `SET` → `S`, `QUIT` → `Q` |
+| `lowercase-command-keywords` | upper → lower | `SET` → `set`, `S` → `s` |
+| `expand-intrinsic-functions` | abbrev → canonical | `$L` → `$LENGTH`, `$E` → `$EXTRACT` |
+| `compact-intrinsic-functions` | canonical → abbrev | `$LENGTH` → `$L`, `$EXTRACT` → `$E` |
+| `lowercase-intrinsic-functions` | upper → lower | `$LENGTH` → `$length` |
+| `expand-special-variables` | abbrev → canonical | `$T` → `$TEST`, `$H` → `$HOROLOG` |
+| `compact-special-variables` | canonical → abbrev | `$TEST` → `$T`, `$HOROLOG` → `$H` |
+| `lowercase-special-variables` | upper → lower | `$TEST` → `$test` |
+
+Expand/compact rules are case-preserving (`s` → `set`); lowercase rules unconditionally fold the keyword bytes (`SET` → `set`, `S` → `s`). The `pythonic-lower` preset chains lowercase-then-expand: lowercase first so the case-preserving expand sees a lowercase token and emits a lowercase canonical. All rules are idempotent, AST-shape-preserving, and load their abbrev↔canonical mappings from m-standard's `keyword_records()`. Translation is *normalizing* — mixed-form input (some `NEW`, some `N`) collapses to one form. The round-trip property holds on already-normalized input only: `compact(pythonic(compact(src))) == compact(src)`.
+
+PEP-8-style operator spacing (`S X = 1`) and one-command-per-line splitting are intentionally *not* offered as fmt rules: the first breaks the M parser (whitespace is M's argument terminator), the second violates the AST-shape-preservation contract. The lint rule `M-MOD-009` flags multi-command lines for manual fix.
 
 `make vista` (in the project root) runs the identity gate; `make vista-canonical` runs the canonical idempotency gate.
 

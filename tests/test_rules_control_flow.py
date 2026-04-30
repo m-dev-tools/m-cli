@@ -142,7 +142,8 @@ def test_xindx_051_silent_on_other_commands(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_new_rules_dont_need_workspace() -> None:
+def test_new_rules_dont_need_context() -> None:
+    # Pure single-file rules do not opt into the LintContext dispatch.
     for rid in ("M-XINDX-009", "M-XINDX-051"):
         rule = _REGISTRY[rid]
-        assert rule.needs_workspace is False
+        assert rule.needs_context is False

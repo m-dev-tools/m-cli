@@ -36,9 +36,13 @@ def test_top_level_lint_source_importable() -> None:
 
 
 def test_top_level_diagnostic_and_severity_importable() -> None:
-    from m_cli import Diagnostic, Severity
+    from m_cli import Category, Diagnostic, Severity
 
-    assert hasattr(Severity, "FATAL")
+    assert hasattr(Severity, "ERROR")
+    assert hasattr(Severity, "WARNING")
+    assert hasattr(Severity, "STYLE")
+    assert hasattr(Severity, "INFO")
+    assert hasattr(Category, "BUG")
     assert hasattr(Diagnostic, "__annotations__")
 
 
@@ -57,6 +61,16 @@ def test_top_level_fmt_helpers_importable() -> None:
     assert hasattr(FmtRule, "__annotations__")
 
 
+def test_top_level_translation_presets_importable() -> None:
+    from m_cli import compact_rules, pythonic_rules
+
+    assert callable(pythonic_rules)
+    assert callable(compact_rules)
+    assert {r.id for r in pythonic_rules()} & {r.id for r in compact_rules()} == {
+        "trim-trailing-whitespace"
+    }
+
+
 def test_top_level_parse_error_importable() -> None:
     from m_cli import ParseError
 
@@ -65,6 +79,7 @@ def test_top_level_parse_error_importable() -> None:
 
 def test_subpackage_lint_surface() -> None:
     from m_cli.lint import (
+        Category,
         Diagnostic,
         Rule,
         Severity,
@@ -74,7 +89,8 @@ def test_subpackage_lint_surface() -> None:
 
     assert callable(lint_source)
     assert callable(select_rules)
-    assert hasattr(Severity, "FATAL")
+    assert hasattr(Severity, "ERROR")
+    assert hasattr(Category, "BUG")
     assert hasattr(Diagnostic, "__annotations__")
     assert hasattr(Rule, "__annotations__")
 

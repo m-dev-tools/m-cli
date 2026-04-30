@@ -205,7 +205,7 @@ class TestRuleSelection:
         assert {r.id for r in rules} == {"M-XINDX-013", "M-XINDX-019"}
 
     def test_unknown_id_raises(self):
-        with pytest.raises(ValueError, match="unknown rule id"):
+        with pytest.raises(ValueError, match="unknown profile / rule id"):
             select_rules("M-XINDX-999")
 
 

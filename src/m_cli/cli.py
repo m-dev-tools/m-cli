@@ -58,9 +58,13 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help=(
             "Canonical-layout rules to apply: 'none' (identity, default), "
-            "'canonical' (every safe rule), 'all', or a comma-separated "
-            "list of rule ids (e.g. 'trim-trailing-whitespace'). When "
-            "unset, falls back to [fmt] rules from .m-cli.toml / pyproject.toml."
+            "'canonical' (SAC hygiene: trim + uppercase), 'pythonic' "
+            "(expand abbreviations to canonical names: S→SET, $L→$LENGTH), "
+            "'pythonic-lower' (same but lowercase output: set, $length), "
+            "'compact' (inverse: SET→S, $LENGTH→$L), 'all' (every "
+            "registered rule — diagnostic only), or a comma-separated "
+            "list of rule ids. When unset, falls back to [fmt] rules "
+            "from .m-cli.toml / pyproject.toml."
         ),
     )
     fmt_parser.add_argument(
@@ -91,15 +95,18 @@ def main(argv: list[str] | None = None) -> int:
         "lint",
         help="Lint M source files",
         description=(
-            "Run linter rules over M (.m) source files. The default rule "
-            "family is 'xindex' — replicating the VistA Toolkit ^XINDEX "
-            "rule set as the baseline. Use --rules=all for everything, or "
-            "--rules=M-XINDX-013,M-XINDX-019 for a specific subset."
+            "Run linter rules over M (.m) source files. m-cli's lint engine "
+            "is engine- and dialect-neutral; opinionated rule sets ship as "
+            "named *profiles*. The default profile ('default') is m-cli's "
+            "curated baseline. Run `m lint --list-profiles` to see what "
+            "ships (e.g. 'xindex' — VA VistA Toolkit ^XINDEX port; 'sac' — "
+            "VA SAC subset). Pass --rules=<profile> to switch, or "
+            "--rules=M-XINDX-013,M-XINDX-019 for a specific rule subset."
         ),
     )
     lint_parser.add_argument(
         "paths",
-        nargs="+",
+        nargs="*",
         type=Path,
         help="One or more .m files (or directories — searched recursively for *.m)",
     )
@@ -107,8 +114,37 @@ def main(argv: list[str] | None = None) -> int:
         "--rules",
         default=None,
         help=(
-            "Rule family or comma-separated rule IDs (default: xindex, "
-            "or [lint] rules from .m-cli.toml / pyproject.toml)"
+            "Profile name or comma-separated rule IDs (default: 'default', "
+            "or [lint] rules from .m-cli.toml / pyproject.toml). See "
+            "--list-profiles for the available named profiles."
+        ),
+    )
+    lint_parser.add_argument(
+        "--list-profiles",
+        action="store_true",
+        help="List the named lint profiles and exit",
+    )
+    lint_parser.add_argument(
+        "--target-engine",
+        choices=("any", "yottadb", "iris"),
+        default=None,
+        help=(
+            "Target M engine for engine-aware rules. 'any' (default) keeps "
+            "the linter portable; 'yottadb' / 'iris' unlock engine-specific "
+            "allowlists for $Z* ISVs/functions and Z-commands. CLI wins over "
+            "[lint] target_engine in .m-cli.toml."
+        ),
+    )
+    lint_parser.add_argument(
+        "--threshold",
+        action="append",
+        metavar="KEY=VAL",
+        default=None,
+        help=(
+            "Override a [lint.thresholds] config value. Repeatable. "
+            "Example: --threshold line_length=120 --threshold routine_lines=2000. "
+            "Known keys: line_length, code_line_length, routine_lines, "
+            "label_lines (see m_cli.lint.thresholds.KNOWN_THRESHOLDS)."
         ),
     )
     lint_parser.add_argument(
@@ -122,7 +158,7 @@ def main(argv: list[str] | None = None) -> int:
         default="warning",
         help=(
             "Severity threshold for non-zero exit code: "
-            "fatal | standard | warning | info (default: warning)"
+            "error | warning | style | info (default: warning)"
         ),
     )
     lint_parser.add_argument(
@@ -144,6 +180,42 @@ def main(argv: list[str] | None = None) -> int:
         "--quiet",
         action="store_true",
         help="Suppress summary output",
+    )
+    lint_parser.add_argument(
+        "--fix",
+        action="store_true",
+        help=(
+            "Apply auto-fixes for diagnostics whose rule has a `fixer_id`. "
+            "Each unique fixer (an `m fmt` rule) runs once per affected file. "
+            "Files are rewritten in place; remaining (non-fixable) findings "
+            "are still reported. Combine with --check to preview without "
+            "writing."
+        ),
+    )
+    lint_parser.add_argument(
+        "--baseline",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help=(
+            "Path to a baseline file (default: .m-lint-baseline.json in the "
+            "first ancestor that contains one). Findings present in the "
+            "baseline are suppressed. Use --update-baseline to regenerate."
+        ),
+    )
+    lint_parser.add_argument(
+        "--no-baseline",
+        action="store_true",
+        help="Disable baseline filtering even if .m-lint-baseline.json exists.",
+    )
+    lint_parser.add_argument(
+        "--update-baseline",
+        action="store_true",
+        help=(
+            "Write current findings to the baseline file (default: "
+            ".m-lint-baseline.json in the project root) and exit 0. "
+            "Existing entries are replaced wholesale."
+        ),
     )
     lint_parser.set_defaults(func=lint_command)
 
@@ -274,7 +346,8 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help=(
             "Rule filter for diagnostics — passed to `m_cli.lint.select_rules`. "
-            "Examples: `xindex` (default), `all`, `sac`, `M-XINDX-013,M-XINDX-019`."
+            "Examples: `default` (the built-in default profile), `all`, "
+            "`xindex` (VA VistA Toolkit), `sac`, `M-XINDX-013,M-XINDX-019`."
         ),
     )
     # vscode-languageclient appends `--stdio` when TransportKind.stdio is set;

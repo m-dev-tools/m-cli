@@ -1,0 +1,168 @@
+{
+  "corpora": {
+    "ewd": {
+      "by_rule": {
+        "M-MOD-001": 58,
+        "M-MOD-003": 21,
+        "M-MOD-004": 209,
+        "M-MOD-005": 129,
+        "M-MOD-006": 156,
+        "M-MOD-007": 50,
+        "M-MOD-008": 20,
+        "M-MOD-009": 792,
+        "M-MOD-010": 4,
+        "M-MOD-011": 7,
+        "M-MOD-014": 8,
+        "M-MOD-016": 31,
+        "M-MOD-018": 4,
+        "M-MOD-020": 490,
+        "M-MOD-021": 38,
+        "M-MOD-022": 158,
+        "M-MOD-023": 10,
+        "M-MOD-028": 603,
+        "M-MOD-029": 117,
+        "M-MOD-030": 8,
+        "M-MOD-031": 2718,
+        "M-MOD-032": 1287,
+        "M-MOD-034": 175,
+        "M-MOD-035": 5
+      },
+      "by_severity": {
+        "error": 11,
+        "info": 908,
+        "style": 5085,
+        "warning": 1094
+      },
+      "findings_total": 7098,
+      "routines_linted": 77,
+      "routines_total": 86
+    },
+    "m-web-server": {
+      "by_rule": {
+        "M-MOD-001": 21,
+        "M-MOD-004": 5,
+        "M-MOD-005": 4,
+        "M-MOD-006": 4,
+        "M-MOD-009": 99,
+        "M-MOD-028": 34,
+        "M-MOD-029": 19,
+        "M-MOD-030": 1,
+        "M-MOD-031": 364,
+        "M-MOD-032": 551,
+        "M-MOD-034": 45
+      },
+      "by_severity": {
+        "info": 99,
+        "style": 1040,
+        "warning": 8
+      },
+      "findings_total": 1147,
+      "routines_linted": 16,
+      "routines_total": 23
+    },
+    "mgsql": {
+      "by_rule": {
+        "M-MOD-001": 15,
+        "M-MOD-004": 7,
+        "M-MOD-005": 13,
+        "M-MOD-006": 6,
+        "M-MOD-008": 16,
+        "M-MOD-009": 310,
+        "M-MOD-010": 2,
+        "M-MOD-016": 1,
+        "M-MOD-018": 1,
+        "M-MOD-020": 236,
+        "M-MOD-021": 37,
+        "M-MOD-022": 49,
+        "M-MOD-028": 83,
+        "M-MOD-029": 119,
+        "M-MOD-030": 1,
+        "M-MOD-031": 390,
+        "M-MOD-032": 882,
+        "M-MOD-034": 587
+      },
+      "by_severity": {
+        "error": 2,
+        "info": 790,
+        "style": 1604,
+        "warning": 359
+      },
+      "findings_total": 2755,
+      "routines_linted": 24,
+      "routines_total": 36
+    },
+    "ydbocto-aux": {
+      "by_rule": {
+        "M-MOD-001": 1,
+        "M-MOD-004": 2,
+        "M-MOD-005": 1,
+        "M-MOD-006": 2,
+        "M-MOD-009": 22,
+        "M-MOD-013": 1,
+        "M-MOD-015": 2,
+        "M-MOD-016": 3,
+        "M-MOD-021": 5,
+        "M-MOD-022": 16,
+        "M-MOD-023": 18,
+        "M-MOD-028": 22,
+        "M-MOD-029": 5,
+        "M-MOD-030": 1,
+        "M-MOD-031": 24,
+        "M-MOD-032": 10
+      },
+      "by_severity": {
+        "error": 1,
+        "info": 28,
+        "style": 59,
+        "warning": 47
+      },
+      "findings_total": 135,
+      "routines_linted": 17,
+      "routines_total": 21
+    },
+    "ydbtest": {
+      "by_rule": {
+        "M-MOD-001": 270,
+        "M-MOD-002": 3,
+        "M-MOD-003": 3,
+        "M-MOD-004": 241,
+        "M-MOD-005": 196,
+        "M-MOD-006": 190,
+        "M-MOD-007": 126,
+        "M-MOD-008": 60,
+        "M-MOD-009": 4074,
+        "M-MOD-010": 257,
+        "M-MOD-011": 47,
+        "M-MOD-012": 13,
+        "M-MOD-013": 248,
+        "M-MOD-014": 234,
+        "M-MOD-015": 86,
+        "M-MOD-016": 221,
+        "M-MOD-018": 66,
+        "M-MOD-019": 8,
+        "M-MOD-020": 200,
+        "M-MOD-021": 2875,
+        "M-MOD-022": 3744,
+        "M-MOD-023": 2818,
+        "M-MOD-028": 13069,
+        "M-MOD-029": 2817,
+        "M-MOD-030": 40,
+        "M-MOD-031": 34763,
+        "M-MOD-032": 43674,
+        "M-MOD-033": 131,
+        "M-MOD-034": 2150,
+        "M-MOD-035": 119
+      },
+      "by_severity": {
+        "error": 565,
+        "info": 18195,
+        "style": 83028,
+        "warning": 10955
+      },
+      "findings_total": 112743,
+      "routines_linted": 3336,
+      "routines_total": 4049
+    }
+  },
+  "rule_filter": "modern"
+}

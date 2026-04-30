@@ -16,9 +16,9 @@ from m_cli.lint.diagnostic import Diagnostic, Severity
 from m_cli.lint.runner import fixer_for
 
 _SEV_COLOR = {
-    Severity.FATAL: "\033[1;31m",  # bold red
-    Severity.STANDARD: "\033[33m",  # yellow
+    Severity.ERROR: "\033[1;31m",  # bold red
     Severity.WARNING: "\033[33m",  # yellow
+    Severity.STYLE: "\033[2;36m",  # dim cyan — auto-fix territory, low-noise
     Severity.INFO: "\033[36m",  # cyan
 }
 _RESET = "\033[0m"

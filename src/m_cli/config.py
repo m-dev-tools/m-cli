@@ -14,11 +14,25 @@ yields :func:`Config.empty()` and changes nothing.
 Schema (TOML)::
 
     [lint]
-    rules = "xindex"               # rule filter (same syntax as --rules)
+    rules = "default"              # profile name or comma-list of rule IDs
+                                   # — built-in profiles: default, xindex
+                                   # (VA VistA Toolkit), sac, all. See
+                                   # `m lint --list-profiles`.
     disable = ["M-XINDX-013"]      # rule ids to skip after selection
+    target_engine = "any"          # "any" (default) | "yottadb" | "iris"
+                                   # Used by engine-aware rules to choose
+                                   # the right $Z*/Z-command allowlist.
 
     [lint.severity]
     "M-XINDX-019" = "warning"      # downgrade/upgrade per-rule severity
+
+    [lint.thresholds]
+    line_length = 200              # M-MOD-001 (replaces M-XINDX-019)
+    code_line_length = 1000        # M-MOD-002 (replaces M-XINDX-058)
+    routine_lines = 1000           # M-MOD-003 (replaces M-XINDX-035)
+    label_lines = 50               # M-MOD-004
+    # See `m_cli.lint.thresholds.KNOWN_THRESHOLDS` for the full list
+    # of supported keys and their defaults.
 
     [fmt]
     rules = "identity"             # canonical, identity, or comma-list
@@ -44,6 +58,14 @@ PYPROJECT_FILENAME = "pyproject.toml"
 PYPROJECT_TABLE = "m-cli"  # nested under [tool.m-cli]
 
 
+# Recognized values for `[lint] target_engine` / `--target-engine`.
+# `any` (default) means engine-aware rules don't apply — the linter
+# stays portable. The named engines unlock engine-specific allowlists
+# (e.g. which $Z* ISVs are legitimate, which Z-commands ship with the
+# engine).
+KNOWN_ENGINES: tuple[str, ...] = ("any", "yottadb", "iris")
+
+
 @dataclass(frozen=True)
 class Config:
     """Resolved m-cli configuration.
@@ -55,6 +77,8 @@ class Config:
     lint_rules: str | None = None
     lint_disable: tuple[str, ...] = ()
     lint_severity_overrides: dict[str, "Severity"] = field(default_factory=dict)
+    lint_target_engine: str | None = None
+    lint_thresholds: dict[str, int] = field(default_factory=dict)
     fmt_rules: str | None = None
     source_path: Path | None = None  # where this Config was loaded from, if any
 
@@ -142,9 +166,7 @@ def _from_dict(section: dict, *, source: Path) -> Config:
 
     severity_raw = lint.get("severity", {}) or {}
     if not isinstance(severity_raw, dict):
-        raise ValueError(
-            f"{source}: [lint.severity] must be a table mapping rule id -> severity"
-        )
+        raise ValueError(f"{source}: [lint.severity] must be a table mapping rule id -> severity")
     overrides: dict[str, Severity] = {}
     valid_names = {sev.value: sev for sev in Severity}
     for rule_id, sev_name in severity_raw.items():
@@ -161,20 +183,60 @@ def _from_dict(section: dict, *, source: Path) -> Config:
             )
         overrides[rule_id] = sev
 
+    thresholds_raw = lint.get("thresholds", {}) or {}
+    if not isinstance(thresholds_raw, dict):
+        raise ValueError(
+            f"{source}: [lint.thresholds] must be a table mapping name -> "
+            f"positive integer, got {type(thresholds_raw).__name__}"
+        )
+    # Validate against the m_cli.lint.thresholds allowlist. Imported here
+    # to avoid a circular dep at module load time (m_cli.lint imports
+    # m_cli.config via the lint CLI).
+    from m_cli.lint.thresholds import validate as _validate_thresholds
+
+    try:
+        # _validate_thresholds returns the merged dict (defaults + overrides)
+        # but Config stores ONLY the user-supplied overrides — defaults are
+        # applied at LintContext-build time. Validating here just rejects
+        # bad values early.
+        _validate_thresholds({k: v for k, v in thresholds_raw.items()})
+    except ValueError as e:
+        raise ValueError(f"{source}: [lint.thresholds]: {e}") from e
+    thresholds: dict[str, int] = {
+        str(k): int(v) for k, v in thresholds_raw.items()
+    }
+
+    target_engine_raw = lint.get("target_engine")
+    target_engine: str | None = None
+    if target_engine_raw is not None:
+        if not isinstance(target_engine_raw, str):
+            type_name = type(target_engine_raw).__name__
+            raise ValueError(f"{source}: [lint] target_engine must be a string, got {type_name}")
+        normalized = target_engine_raw.strip().lower()
+        if normalized not in KNOWN_ENGINES:
+            raise ValueError(
+                f"{source}: [lint] target_engine {target_engine_raw!r}: unknown "
+                f"engine (expected one of {list(KNOWN_ENGINES)})"
+            )
+        target_engine = normalized
+
     return Config(
         lint_rules=lint_rules,
         lint_disable=disable,
         lint_severity_overrides=overrides,
+        lint_target_engine=target_engine,
+        lint_thresholds=thresholds,
         fmt_rules=fmt_rules,
         source_path=source,
     )
 
 
 __all__ = [
-    "Config",
-    "find_config",
-    "load_config",
     "CONFIG_FILENAME",
+    "Config",
+    "KNOWN_ENGINES",
     "PYPROJECT_FILENAME",
     "PYPROJECT_TABLE",
+    "find_config",
+    "load_config",
 ]

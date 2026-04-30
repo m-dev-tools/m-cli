@@ -26,10 +26,14 @@ from m_cli.fmt import (
     FmtRule,
     ParseError,
     canonical_rules,
+    compact_rules,
     format_source,
+    pythonic_lower_rules,
+    pythonic_rules,
     select_fmt_rules,
 )
 from m_cli.lint import (
+    Category,
     Diagnostic,
     Rule,
     Severity,
@@ -47,6 +51,9 @@ __all__ = [
     # m fmt
     "format_source",
     "canonical_rules",
+    "pythonic_rules",
+    "pythonic_lower_rules",
+    "compact_rules",
     "select_fmt_rules",
     "FmtRule",
     "ParseError",
@@ -56,6 +63,7 @@ __all__ = [
     "Rule",
     "Diagnostic",
     "Severity",
+    "Category",
 ]
 
 logging.getLogger(__name__).addHandler(logging.NullHandler())

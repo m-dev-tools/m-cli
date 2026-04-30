@@ -71,6 +71,9 @@ def _open_doc(srv: FakeServer, uri: str, src: str) -> None:
 
 def test_lint_document_publishes_diagnostics_for_real_lint_findings() -> None:
     srv = FakeServer()
+    # M-XINDX-013 (trailing whitespace) lives in `xindex`, not `default`
+    # post-Phase-8. Use the explicit profile so the test sees a finding.
+    srv.m_cli_rule_filter = "xindex"
     uri = "file:///tmp/hello.m"
     src = "hello ;c\n quit \n"  # trailing space → M-XINDX-013
     _open_doc(srv, uri, src)
@@ -119,7 +122,11 @@ def test_lint_document_returns_quietly_for_unknown_uri() -> None:
 
 
 def test_lint_document_uses_lsp_severity_codes() -> None:
+    # Use `xindex` to surface M-XINDX-013 (trailing whitespace) — the
+    # `default` profile is M-MOD-only post-Phase-8 and doesn't include
+    # XINDEX legacy rules.
     srv = FakeServer()
+    srv.m_cli_rule_filter = "xindex"
     uri = "file:///tmp/hello.m"
     src = "hello ;c\n quit \n"
     _open_doc(srv, uri, src)
@@ -127,14 +134,16 @@ def test_lint_document_uses_lsp_severity_codes() -> None:
     lint_document(srv, uri)
 
     diags = srv.published[0].diagnostics
-    # M-XINDX-013 is WARNING in m-cli → DiagnosticSeverity.Warning
+    # M-XINDX-013 is STYLE in m-cli → DiagnosticSeverity.Hint
+    # (auto-fixable convention; LSP Hint is the right semantic).
     sev_for_013 = next(d.severity for d in diags if d.code == "M-XINDX-013")
-    assert sev_for_013 == DiagnosticSeverity.Warning
+    assert sev_for_013 == DiagnosticSeverity.Hint
 
 
 def test_lint_document_carries_fixer_id_in_data() -> None:
     """Stage 3 will use this to expose Quick Fix actions."""
     srv = FakeServer()
+    srv.m_cli_rule_filter = "xindex"
     uri = "file:///tmp/hello.m"
     src = "hello ;c\n quit \n"
     _open_doc(srv, uri, src)
@@ -180,7 +189,11 @@ def test_lint_document_honors_config_disable_list() -> None:
     from m_cli.config import Config
 
     srv = FakeServer()
-    srv.m_cli_config = Config(lint_disable=("M-XINDX-013",))
+    # Need lint_rules="xindex" so M-XINDX-013 is in the active set
+    # (post-Phase-8, `default` excludes XINDEX legacy rules).
+    srv.m_cli_config = Config(
+        lint_rules="xindex", lint_disable=("M-XINDX-013",)
+    )
     uri = "file:///tmp/hello.m"
     _open_doc(srv, uri, "hello ;c\n quit \n")  # would normally trigger M-XINDX-013
 
@@ -198,7 +211,10 @@ def test_lint_document_applies_config_severity_overrides() -> None:
     from m_cli.lint.diagnostic import Severity
 
     srv = FakeServer()
-    srv.m_cli_config = Config(lint_severity_overrides={"M-XINDX-013": Severity.FATAL})
+    srv.m_cli_config = Config(
+        lint_rules="xindex",  # XINDEX-013 not in default post-Phase-8
+        lint_severity_overrides={"M-XINDX-013": Severity.ERROR},
+    )
     uri = "file:///tmp/hello.m"
     _open_doc(srv, uri, "hello ;c\n quit \n")
 
@@ -206,7 +222,7 @@ def test_lint_document_applies_config_severity_overrides() -> None:
 
     diags = srv.published[0].diagnostics
     d013 = next(d for d in diags if d.code == "M-XINDX-013")
-    # FATAL maps to LSP DiagnosticSeverity.Error per to_lsp_diagnostic.
+    # ERROR maps to LSP DiagnosticSeverity.Error per to_lsp_diagnostic.
     assert d013.severity == DiagnosticSeverity.Error
 
 

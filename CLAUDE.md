@@ -17,8 +17,8 @@ All five Tier 1 capabilities from [m-tooling-tier1.md](../m-tools/docs/m-tooling
 
 | Step | Tool | Status |
 |------|------|--------|
-| 1 | `m fmt` | **Done.** Identity (default) round-trips 99.04% byte-for-byte. Opt-in `--rules=canonical` adds trim-trailing-whitespace + uppercase-command-keywords; idempotent + AST-preserving over 38,954 VistA routines. |
-| 2 | `m lint --rules=xindex` | **Done (breadth-first) + cross-routine + control-flow.** 42 of XINDEX's 66 rules ship: 37 single-file, 3 cross-routine (M-XINDX-007/008/049: undefined routine / undefined label / unused label), 2 control-flow (M-XINDX-009 dead-code-after-QUIT, M-XINDX-051 empty IF/ELSE). Cross-routine rules consume a `WorkspaceIndex` built once by the CLI when any selected rule has `needs_workspace=True`. Inline `; m-lint: disable=...` directives suppress findings on a per-line / per-file basis (mirrors ruff/eslint convention). VistA gate 22.6 s on 16 cores. |
+| 1 | `m fmt` | **Done + Phase A translation.** Identity (default) round-trips 99.04% byte-for-byte. `--rules=canonical` adds trim-trailing-whitespace + uppercase-command-keywords; idempotent + AST-preserving over 38,954 VistA routines. **Phase A translation rules** (`--rules=pythonic` / `--rules=pythonic-lower` / `--rules=compact`) translate between VistA-compact (`S X=1 W $L(X),$T`) and canonical-name (`SET X=1 WRITE $LENGTH(X),$TEST`) or lowercase canonical (`set X=1 write $length(X),$test`) for Python-style readability. 9 case-preserving rules + 3 presets; idempotent normalizers (mixed-form input collapses to one canonical form). |
+| 2 | `m lint` | **Done (breadth-first) + cross-routine + control-flow + M-MOD modernization track + profile split.** Engine- and dialect-neutral lint engine; opinionated rule sets ship as named **profiles** (`default`/26, `modern`/30, `pedantic`/4, `xindex`/34, `vista`/8, `sac`/23, `all`/72) registered in `m_cli.lint.profiles`. **`default` is now the curated daily-lint subset of M-MOD** (the 4 pedantic rules — M-MOD-009/028/031/032 — that fire 90% of noise on real M code are split into a separate `pedantic` profile, opt-in via `--rules=modern` for the strict review pass). VA shops use `--rules=xindex` (engine-neutral XINDEX) or `--rules=xindex,vista`. The 42 XINDEX-derived rules cover legacy VA conventions; M-MOD-001..035 (24 shipped) cover modern idioms across length/complexity, concurrency, transactions, control-flow correctness, engine-aware portability, docs/style polish. Validation on a 4K-routine non-VA corpus: `default` produces 2,912 findings (3.3/routine — usable daily), `modern` produces 50,284 (mostly from the pedantic style rules). M-MOD-017/024–027/036 deferred to Phase 7 (data-flow infra). VistA legacy gate 22.6 s on 16 cores. |
 | 3 | `m test` | **Done.** Parser-aware discovery; ydb runner; text / TAP / JSON output. Smoke gate: 11 m-tools suites / 224 assertions pass. |
 | 4 | Single-test selection | **Done** as part of Step 3 (`m test FILE.m::tLabel`). |
 | 5 | `m watch` | **Done.** Polling-based file watcher; source→suite affinity. |
@@ -57,7 +57,7 @@ make check      # lint + mypy + cov (full CI gate)
 make format     # ruff format
 make vista          # full VistA round-trip gate for `m fmt` (identity)
 make vista-canonical # full VistA canonical-layout gate (idempotency + AST shape)
-make lint-vista     # full VistA lint baseline for `m lint --rules=xindex`
+make lint-vista     # full VistA lint baseline (xindex + vista profiles)
 ```
 
 ## Environment
@@ -75,10 +75,14 @@ src/m_cli/
 │   ├── cli.py              # `m fmt` argparse + file orchestration
 │   └── formatter.py        # round-trip pretty-printer (identity for now)
 ├── lint/
-│   ├── cli.py              # `m lint` argparse (--rules, --format, --error-on)
+│   ├── cli.py              # `m lint` argparse (--rules, --format, --error-on, --list-profiles, --threshold, --target-engine)
 │   ├── runner.py           # select_rules(), lint_source() with rule isolation
-│   ├── rules.py            # all M-XINDX-NN rule implementations + register()
-│   ├── diagnostic.py       # Diagnostic dataclass + Severity enum
+│   ├── profiles.py         # Profile registry (default, xindex, vista, sac, modern, all) — design separation point
+│   ├── rules.py            # XINDEX rule implementations + Rule/register()
+│   ├── _modern.py          # M-MOD-NN rule implementations (greenfield track)
+│   ├── context.py          # LintContext — thresholds + target engine + workspace + config
+│   ├── thresholds.py       # KNOWN_THRESHOLDS defaults + validate()
+│   ├── diagnostic.py       # Diagnostic dataclass + Severity + Category enums (engine-neutral)
 │   ├── output.py           # text / json / tap formatters
 │   └── _keywords.py        # loads command/ISV/function sets from m-standard
 ├── test/
@@ -124,19 +128,37 @@ scripts/
 - **Discovery dedup.** When the user passes overlapping paths (e.g. `routines/` and `routines/tests/`), each suite is discovered once. The dedup is via `Path.resolve()` so symlinks count as the same file.
 - **`--once`.** Runs the initial pass and exits — used by tests and as a manual smoke check before starting a long-running watch session.
 
+## Formatter conventions (project-specific)
+
+- **Rule-selector forms.** `--rules=canonical` (SAC hygiene: trim-trailing-whitespace + uppercase-command-keywords) is the default opt-in; `--rules=pythonic`, `--rules=pythonic-lower`, and `--rules=compact` are the Phase A translation presets. `--rules=all` returns *every* registered rule and is **diagnostic-only** — never use it as a formatter pipeline because `expand-*` / `compact-*` / `uppercase-*` / `lowercase-*` rules race when applied together. `--rules=none` (or omitting the flag) is identity.
+- **Phase A translation rules.** Six AST-preserving, case-preserving, idempotent expand/compact rules ride alongside the canonical hygiene rules: `expand-command-keywords` (`S→SET`), `compact-command-keywords` (`SET→S`), `expand-intrinsic-functions` (`$L→$LENGTH`), `compact-intrinsic-functions`, `expand-special-variables` (`$T→$TEST`), `compact-special-variables`. Each walks the parse tree, finds nodes of one type (`command_keyword` / `intrinsic_function_keyword` / `special_variable_keyword`), looks up the uppercase token in m-standard's abbrev↔canonical map, applies edits right-to-left. The maps are built lazily from `keyword_records()` and lru-cached.
+- **Case-folding rules.** Three companion rules force a single case across every node of the relevant type (regardless of canonical/abbrev): `lowercase-command-keywords`, `lowercase-intrinsic-functions`, `lowercase-special-variables`. They share the engine `_rewrite_node_case(src, node_type, transform)` with `uppercase-command-keywords`. Used by the `pythonic-lower` preset to produce all-lowercase output (`set X=1 write $length(X),$test`) for Python-influenced projects. The lowercase rules must run *before* the expand rules in the pipeline so that case-preserving expand sees a lowercase abbreviation and emits a lowercase canonical.
+- **Case preservation (in expand/compact).** All-lowercase reference (`s`) → all-lowercase replacement (`set`). Anything else (`S`, `Set`, `SET`) → uppercase replacement. The unusual mixed-case form is rare in M and unlikely deliberate, so we don't try to mirror it.
+- **Translation is *normalizing*, not *invertible*.** Mixed-form input (some `NEW`, some `N`) collapses to one form. The round-trip property holds on already-normalized input only: `compact(pythonic(compact(src))) == compact(src)`. This is the intended behavior.
+- **Why no operator spacing or one-command-per-line.** PEP-8-style `S X = 1` breaks the M parser (whitespace is M's argument terminator). Statement splitting (one command per line) violates the AST-shape-preservation contract. Both are out of scope for fmt rules; the lint rule `M-MOD-009` flags multi-command lines for manual fix.
+
 ## Linter conventions (project-specific)
 
-- **Rule IDs:** `M-XINDX-NN` mirrors XINDEX's numeric error codes 1:1. When porting a new rule, use the same number.
+- **Engine vs profiles — design separation.** The lint engine (`runner`, `rules`, `diagnostic`) is engine- and dialect-neutral. Opinionated rule sets ride on top as named **profiles** registered in [src/m_cli/lint/profiles.py](src/m_cli/lint/profiles.py). XINDEX is *one profile*, not the canonical baseline. New rule families (IRIS-style, ANSI-strict, YDB-best-practice, ...) get their own profile and ID prefix; they do not need to be tagged `xindex`.
+- **Tags = provenance + policy.** Two distinct concerns ride on the rule's `tags` tuple. `xindex` is *provenance* — the rule was ported from VA's `^XINDEX` scanner. `sac` is *policy* — the rule maps to a documented section of the VA SAC (Standards & Conventions). Most rules carry both because XINDEX was VA's automated SAC checker, but the sets are not identical: 31 of m-cli's 42 XINDEX-ported rules are also SAC-tagged; the other 11 (parse errors, dead-code, missing-label, hygiene, etc.) are XINDEX-internal smells with no SAC mandate. The classification is pinned by `tests/test_lint_profiles.py::TestSacClassification` and the rationale lives in [src/m_cli/lint/rules.py](src/m_cli/lint/rules.py) module docstring.
+- **Rule IDs:** `M-XINDX-NN` mirrors XINDEX's numeric error codes 1:1 — use the same number when porting an XINDEX rule. `M-MOD-NN` is the greenfield modernization track (engine- and dialect-neutral, derived from contemporary M idioms; see [docs/m-linting-survey.md](docs/m-linting-survey.md) §7). When an `M-MOD` rule supersedes an `M-XINDX` rule, declare the relationship via `Rule.replaces=("M-XINDX-NN", ...)`. Future engine- or standard-specific prefixes (`M-IRIS-NN`, `M-YDB-NN`, `M-ANSI-NN`) ship under their own profile and tag.
+- **Engine targeting:** `[lint] target_engine = "yottadb" | "iris" | "any"` in `.m-cli.toml`, or `--target-engine`. Default `any` keeps the linter portable; the named engines unlock engine-aware rules ($Z* allowlists, Z-command sets) once those rules ship.
+- **Configurable thresholds:** `[lint.thresholds]` config table or `--threshold KEY=VAL` CLI flag (repeatable). Known keys: `line_length` (200), `code_line_length` (1000), `routine_lines` (1000), `label_lines` (50), `cyclomatic` (15), `cognitive` (20), `dot_block_depth` (5), `argument_count` (7), `commands_per_line` (3), `comment_density_pct` (10). Defaults live in [src/m_cli/lint/thresholds.py](src/m_cli/lint/thresholds.py); unknown keys are rejected at config-load time (catches typos).
+- **`LintContext` (single dispatch path):** Rules opt into a richer signature via `needs_context=True` and receive a `LintContext` carrying `thresholds`, `target_engine`, `workspace`, and `config`. Replaces the legacy `needs_workspace` flag — cross-routine rules now read `ctx.workspace`. Built once at lint-command entry and threaded through to every context-aware rule.
+- **Wild-corpus gates:** `make lint-vista` over the full VistA corpus is the regression gate for VA-flavoured rules (`xindex`, `vista` profiles). The non-VistA, post-2010, *pure-`.m`* corpora catalogued in [docs/m-corpus-catalog.md](docs/m-corpus-catalog.md) (anchored on `YottaDB/YDBTest`, `chrisemunt/mgsql`, `YottaDB/YDBOcto src/aux/`) seed the future `make lint-modern` gate for `M-MOD-NN` rules. **`.cls` files are out of scope** — ObjectScript class definitions are a superset of MUMPS that `tree-sitter-m` does not parse; the substantial InterSystems `.cls` corpora (ipm, isc-rest, isc-codetidy, etc.) become candidates only if a `tree-sitter-objectscript` ships.
+- **Default profile:** `default` is the **curated M-MOD daily-lint subset** (26 rules) — the M-MOD-NN modernization track *minus* the four pedantic style rules (M-MOD-009 commands-per-line, M-MOD-028 label-docstring, M-MOD-031 magic-numbers, M-MOD-032 single-letter-vars) which fire ~90% of noise on real M code. The full M-MOD set is opt-in via `--rules=modern`; the pedantic-only view via `--rules=pedantic`. VA shops use `--rules=xindex` (engine-neutral legacy XINDEX) or `--rules=xindex,vista` for the full VistA-flavoured rule set. Python-influenced developers get `--rules=pythonic` (same rules as `modern` plus tighter thresholds: `line_length=100`, `commands_per_line=1`, `cyclomatic=10`, etc.). The default change from "engine-neutral XINDEX" to "curated M-MOD" was driven by the modern-corpus validation finding that XINDEX legacy rules generate ~62K findings on a non-VA modern corpus (mostly from SAC mandates around lowercase variables/commands that aren't followed in non-VA code).
+- **Profile presets:** Profiles can bundle threshold defaults via `Profile.default_thresholds`. The `pythonic` profile is the only one that uses this today. Threshold resolution layers profile preset → `[lint.thresholds]` config → `--threshold KEY=VAL` CLI (CLI wins). Other profiles (`default`, `modern`, `xindex`, etc.) carry empty `default_thresholds` and rely on the system-wide defaults in `m_cli.lint.thresholds.KNOWN_THRESHOLDS`.
 - **Keyword sets:** never hardcode command/ISV/function lists in `rules.py`. Use `_keywords.py` (`standard_commands()`, `standard_isvs()`, `standard_functions()`), which loads from m-standard's TSVs with ANSI fallback.
-- **Severity:** FATAL / STANDARD / WARNING / INFO map to XINDEX's F / S / W / I.
+- **Severity (actionability):** ERROR (must fix; CI fails) · WARNING (should fix) · STYLE (auto-fix preferred; LSP `Hint`) · INFO (informational; no action). The dividing line between actionable and not is `Severity.is_actionable` — only INFO is not. Compact summary uses E/W/S/I letters.
+- **Category (kind, orthogonal to severity):** `bug` · `security` · `concurrency` · `performance` · `style` · `complexity` · `documentation` · `portability` · `modernization`. Every Rule declares both severity AND category at registration. Filter by either dimension.
 - **Per-rule isolation:** `runner.lint_source` wraps each rule in try/except so one buggy rule can't crash a lint pass — it emits an `M-INTERNAL-RULE-CRASH` diagnostic instead.
-- **VistA is the gate:** every rule should be sanity-checked with `make lint-vista` to catch wild-corpus surprises before commit.
+- **VistA is *a* gate, not *the* gate:** `make lint-vista` runs `xindex,vista` (both profiles) over the VistA corpus and is the wild-corpus regression check for VA-flavoured rules. The forthcoming `make lint-modern` (Phase 1B) runs the `modern` profile over the non-VistA corpora catalogued in [docs/m-corpus-catalog.md](docs/m-corpus-catalog.md).
 
 ## LSP server (Stages 1 + 2 + 3 + 4 + 4b + B)
 
 `m lsp` starts the m-cli Language Server over stdio. Editors invoke it as a subprocess and exchange LSP messages on stdin/stdout. Optional dependency: `pip install 'm-cli[lsp]'` adds `pygls` + `lsprotocol`. The dispatcher reports a friendly install hint if a user runs `m lsp` without the extra.
 
-**Stage 1 — diagnostics push.** Handlers: `textDocument/didOpen`, `didChange`, `didSave`, `didClose`. Open/change/save re-lint the document and push diagnostics; close clears them. Each LSP `Diagnostic` carries `code = rule_id`, `source = "m-cli"`, severity mapped from the four-level XINDEX scheme, and `data = {"fixer_id": ...}` when the rule is auto-fixable.
+**Stage 1 — diagnostics push.** Handlers: `textDocument/didOpen`, `didChange`, `didSave`, `didClose`. Open/change/save re-lint the document and push diagnostics; close clears them. Each LSP `Diagnostic` carries `code = rule_id`, `source = "m-cli"`, severity mapped from the engine-neutral four-level scheme (Fatal/Standard/Warning/Info), and `data = {"fixer_id": ...}` when the rule is auto-fixable.
 
 **Stage 2 — formatting.** `textDocument/formatting` runs `format_source(src, rules=canonical_rules())` and returns a single `TextEdit` covering the full document. Empty list when the source is already canonical (avoids churning the editor's undo history) or has parse errors (we refuse to reformat broken code). Capability advertised as `documentFormattingProvider: True`.
 
@@ -146,7 +168,7 @@ scripts/
 
 - `textDocument/hover` resolves the M token under the cursor (commands, ISVs, intrinsic functions — case-insensitive, abbreviation or canonical) against m-standard's TSVs and returns Markdown with canonical name, abbreviation, syntax format, and standard status. Local labels and user routines return None — m-cli has no cross-routine symbol index. Capability advertised as `hoverProvider: True`.
 - `textDocument/completion` returns the universe of M commands, ISVs, and intrinsic functions as `CompletionItem`s (kind = Keyword / Constant / Function; detail = the syntax format from m-standard). The list is `isIncomplete: false` — the set doesn't grow per-keystroke; the client filters by typed prefix. Capability advertised as `completionProvider`.
-- `m lsp --rules <filter>` overrides the default `xindex` rule filter at startup. Accepts the same forms as `m lint --rules` (`xindex`, `all`, `sac`, `M-XINDX-013,M-XINDX-019`). Wired by stashing the filter on the `LanguageServer` instance and read inside `lint_document`. The full LSP `workspace/configuration` round-trip is intentionally not implemented — the CLI flag covers the same need without async plumbing.
+- `m lsp --rules <filter>` overrides the default `default` profile at startup. Accepts the same forms as `m lint --rules` (single profile name, comma list mixing profiles + rule IDs, e.g. `default`, `xindex,vista`, `sac,M-XINDX-013`). Wired by stashing the filter on the `LanguageServer` instance and read inside `lint_document`. The full LSP `workspace/configuration` round-trip is intentionally not implemented — the CLI flag covers the same need without async plumbing.
 
 **Stage 4b — document structure, navigation, and per-test code lenses.**
 
@@ -201,7 +223,8 @@ Schema:
 
 ```toml
 [lint]
-rules = "xindex"               # rule filter (same syntax as --rules)
+rules = "default"              # profile name or comma-list of rule IDs
+                               # (e.g. "xindex" for the VA VistA Toolkit profile)
 disable = ["M-XINDX-013"]      # rule ids to skip after selection
 
 [lint.severity]

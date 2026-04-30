@@ -26,11 +26,12 @@ def test_rule_dataclass_has_fixer_id_field() -> None:
 
 def test_rule_can_be_constructed_without_fixer_id() -> None:
     """Backwards compatibility: existing register(Rule(...)) calls still work."""
-    from m_cli.lint.diagnostic import Severity
+    from m_cli.lint.diagnostic import Category, Severity
 
     r = Rule(
         id="X",
         severity=Severity.INFO,
+        category=Category.BUG,
         title="x",
         tags=("test",),
         check=lambda src, tree, path, index: iter(()),
@@ -39,11 +40,12 @@ def test_rule_can_be_constructed_without_fixer_id() -> None:
 
 
 def test_rule_accepts_fixer_id() -> None:
-    from m_cli.lint.diagnostic import Severity
+    from m_cli.lint.diagnostic import Category, Severity
 
     r = Rule(
         id="X",
         severity=Severity.INFO,
+        category=Category.STYLE,
         title="x",
         tags=("test",),
         check=lambda src, tree, path, index: iter(()),
@@ -84,14 +86,29 @@ def test_lint_rules_without_fixer_default_to_none() -> None:
             )
 
 
-def test_canonical_fmt_rules_cover_every_lint_fixer() -> None:
-    """Every fmt rule referenced as a fixer must be in canonical_rules() —
-    otherwise running ``m fmt --rules=canonical`` won't actually apply
-    the fix the LSP advertised."""
+def test_canonical_fmt_rules_cover_hygiene_fixers() -> None:
+    """Hygiene fixers (the SAC-default canonical layout) must be in
+    ``canonical_rules()`` so that ``m fmt --rules=canonical`` applies them.
+
+    Translation fixers (``expand-*`` / ``compact-*``) are intentionally
+    excluded from canonical — they race with their inverses and ship under
+    explicit opt-in presets (``pythonic`` / ``compact``). The LSP applies
+    them per-rule via ``WorkspaceEdit`` so coverage is via the registry,
+    not canonical.
+    """
     canonical_ids = {r.id for r in canonical_rules()}
+    fmt_ids = {r.id for r in all_fmt_rules()}
+    translation_prefixes = ("expand-", "compact-", "lowercase-")
     referenced = {r.fixer_id for r in all_lint_rules() if r.fixer_id}
-    missing = referenced - canonical_ids
-    assert not missing, f"Lint rules reference fmt rules that aren't in canonical: {missing}"
+    for fid in referenced:
+        # Every fixer must resolve to a real fmt rule.
+        assert fid in fmt_ids, f"unknown fmt rule {fid!r}"
+        # Hygiene fixers must additionally be in canonical.
+        if not fid.startswith(translation_prefixes):
+            assert fid in canonical_ids, (
+                f"hygiene fixer {fid!r} should be in canonical_rules() so "
+                f"`m fmt --rules=canonical` applies it"
+            )
 
 
 # ---------------------------------------------------------------------------

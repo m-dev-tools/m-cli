@@ -40,7 +40,7 @@ def test_xindx_007_flags_call_to_unknown_routine(tmp_path: Path) -> None:
     assert "M-XINDX-007" in rule_ids
     finding = next(d for d in diags if d.rule_id == "M-XINDX-007")
     assert "MISSING" in finding.message
-    assert finding.severity == Severity.FATAL
+    assert finding.severity == Severity.ERROR
 
 
 def test_xindx_007_silent_when_routine_exists(tmp_path: Path) -> None:
@@ -201,7 +201,9 @@ def test_workspace_rules_skipped_when_no_workspace(tmp_path: Path) -> None:
     assert not any(d.rule_id == "M-XINDX-007" for d in diags)
 
 
-def test_all_three_rules_carry_needs_workspace_flag() -> None:
+def test_all_three_rules_carry_needs_context_flag() -> None:
+    # Cross-routine rules opt into LintContext dispatch and read
+    # ``ctx.workspace`` rather than receiving a raw workspace arg.
     for rid in ("M-XINDX-007", "M-XINDX-008", "M-XINDX-049"):
         rule = _REGISTRY[rid]
-        assert rule.needs_workspace is True, f"{rid} missing needs_workspace=True"
+        assert rule.needs_context is True, f"{rid} missing needs_context=True"

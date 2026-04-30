@@ -31,8 +31,18 @@ from m_cli.fmt.formatter import ParseError, format_source
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("root", type=Path, help="Root of the VistA Packages directory")
-    parser.add_argument("--sample", type=int, default=0, help="Process only first N routines (0 = all)")
-    parser.add_argument("--show-failures", type=int, default=10, help="Show first N failures")
+    parser.add_argument(
+        "--sample",
+        type=int,
+        default=0,
+        help="Process only first N routines (0 = all)",
+    )
+    parser.add_argument(
+        "--show-failures",
+        type=int,
+        default=10,
+        help="Show first N failures",
+    )
     args = parser.parse_args()
 
     if not args.root.is_dir():

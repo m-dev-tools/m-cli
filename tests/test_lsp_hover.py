@@ -243,7 +243,7 @@ def test_hover_on_unknown_rule_id_falls_back_to_message() -> None:
         uri: [
             Diagnostic(
                 rule_id="UNKNOWN-RULE-X",
-                severity=Severity.FATAL,
+                severity=Severity.ERROR,
                 message="something exploded",
                 path=Path("/tmp/hello.m"),
                 line=1,

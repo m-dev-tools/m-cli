@@ -74,22 +74,24 @@ def test_missing_column_end_collapses_to_point_range() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_fatal_maps_to_error() -> None:
-    out = to_lsp_diagnostic(_diag(severity=Severity.FATAL))
+def test_error_maps_to_lsp_error() -> None:
+    out = to_lsp_diagnostic(_diag(severity=Severity.ERROR))
     assert out.severity == DiagnosticSeverity.Error
 
 
-def test_standard_maps_to_warning() -> None:
-    out = to_lsp_diagnostic(_diag(severity=Severity.STANDARD))
-    assert out.severity == DiagnosticSeverity.Warning
-
-
-def test_warning_maps_to_warning() -> None:
+def test_warning_maps_to_lsp_warning() -> None:
     out = to_lsp_diagnostic(_diag(severity=Severity.WARNING))
     assert out.severity == DiagnosticSeverity.Warning
 
 
-def test_info_maps_to_information() -> None:
+def test_style_maps_to_lsp_hint() -> None:
+    # STYLE diagnostics surface as LSP Hints (subtle suggestion / refactor
+    # opportunity), since they are typically auto-fixable conventions.
+    out = to_lsp_diagnostic(_diag(severity=Severity.STYLE))
+    assert out.severity == DiagnosticSeverity.Hint
+
+
+def test_info_maps_to_lsp_information() -> None:
     out = to_lsp_diagnostic(_diag(severity=Severity.INFO))
     assert out.severity == DiagnosticSeverity.Information
 

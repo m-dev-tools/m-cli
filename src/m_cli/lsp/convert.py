@@ -2,8 +2,9 @@
 
 LSP positions are zero-indexed, m-cli's are one-indexed. LSP severity
 is a four-level enum (Error/Warning/Information/Hint); m-cli's
-severity is also four levels but with different semantics — the
-mapping below is the agreed compromise.
+severity is also four levels and the mapping is now semantically
+aligned: STYLE → Hint matches LSP's "subtle suggestion / refactor
+opportunity" convention, which is what auto-fixable style rules are.
 
 The auto-fixer linkage (``Rule.fixer_id``, ``m_cli.lint.fixer_for``)
 is forwarded into LSP's ``data`` field so the Stage 3 code-action
@@ -20,9 +21,9 @@ from lsprotocol.types import DiagnosticSeverity, Position, Range
 from m_cli.lint import Diagnostic, Severity, fixer_for
 
 _SEVERITY_MAP: dict[Severity, DiagnosticSeverity] = {
-    Severity.FATAL: DiagnosticSeverity.Error,
-    Severity.STANDARD: DiagnosticSeverity.Warning,
+    Severity.ERROR: DiagnosticSeverity.Error,
     Severity.WARNING: DiagnosticSeverity.Warning,
+    Severity.STYLE: DiagnosticSeverity.Hint,
     Severity.INFO: DiagnosticSeverity.Information,
 }
 

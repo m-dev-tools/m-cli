@@ -25,8 +25,10 @@ Wires the existing ``m_cli.lint`` and ``m_cli.fmt`` libraries to LSP:
     returns the same set as completion items so editors can suggest
     keywords as the user types.
 
-The rule filter for diagnostics defaults to ``"xindex"``; pass
-``--rules <filter>`` to ``m lsp`` to override (e.g. ``--rules all``).
+The rule filter for diagnostics defaults to ``"default"`` — m-cli's
+built-in curated profile; pass ``--rules <filter>`` to ``m lsp`` to
+override (e.g. ``--rules all`` for every registered rule, or
+``--rules xindex`` for the VA VistA Toolkit profile).
 
 Public handler entry points (``did_*``, ``text_document_*``,
 ``lint_document``, ``format_document``, ``code_actions_for_uri``,
@@ -113,6 +115,7 @@ from m_cli import __version__
 from m_cli.config import Config, load_config
 from m_cli.fmt import FmtRule, ParseError, canonical_rules, format_source, rule_by_id
 from m_cli.lint import lint_source, select_rules
+from m_cli.lint.profiles import DEFAULT_PROFILE
 from m_cli.lsp.convert import to_lsp_diagnostics
 from m_cli.lsp.structure import find_dot_blocks, find_labels
 from m_cli.lsp.symbols import KeywordRecord, all_keywords, lookup_keyword, token_at
@@ -138,9 +141,10 @@ def lint_document(server, uri: str, *, rule_filter: str | None = None) -> None:
 
     Resolution order for the rule filter: explicit ``rule_filter``
     argument → ``server.m_cli_rule_filter`` (CLI ``--rules`` flag) →
-    config file's ``[lint] rules`` → ``"xindex"``. Config also
-    contributes the ``[lint] disable`` list and ``[lint.severity]``
-    overrides, applied after rule selection / linting.
+    config file's ``[lint] rules`` → :data:`DEFAULT_PROFILE` (m-cli's
+    curated, engine-neutral baseline). Config also contributes the
+    ``[lint] disable`` list and ``[lint.severity]`` overrides, applied
+    after rule selection / linting.
     """
     if not uri.endswith(".m"):
         return
@@ -156,13 +160,44 @@ def lint_document(server, uri: str, *, rule_filter: str | None = None) -> None:
         rule_filter
         or getattr(server, "m_cli_rule_filter", None)
         or config.lint_rules
-        or "xindex"
+        or DEFAULT_PROFILE
     )
     rules = select_rules(effective_filter)
     if config.lint_disable:
         rules = [r for r in rules if r.id not in config.lint_disable]
     path = Path(doc.path) if getattr(doc, "path", None) else Path(uri)
-    diags = lint_source(path, src_bytes, rules)
+
+    # Build a LintContext for context-aware rules. Workspace comes
+    # from the LSP's workspace index attribute when present; thresholds
+    # come from (profile preset → config → built-in defaults) and
+    # target_engine from config.
+    from m_cli.lint.context import LintContext
+    from m_cli.lint.profiles import get_profile
+    from m_cli.lint.thresholds import validate as _validate_thresholds
+
+    # Layer profile preset thresholds (e.g. `pythonic` ships
+    # line_length=100) under the user's [lint.thresholds] config.
+    profile_defaults: dict[str, int] = {}
+    if (
+        "," not in effective_filter
+        and not effective_filter.startswith("M-")
+    ):
+        profile = get_profile(effective_filter)
+        if profile is not None:
+            profile_defaults = dict(profile.default_thresholds)
+    layered = dict(profile_defaults)
+    layered.update(config.lint_thresholds)
+    try:
+        thresholds = _validate_thresholds(layered)
+    except ValueError:
+        thresholds = _validate_thresholds(None)  # fall back to defaults
+    ctx = LintContext(
+        thresholds=thresholds,
+        target_engine=config.lint_target_engine or "any",
+        workspace=getattr(server, "m_cli_workspace_index", None),
+        config=config,
+    )
+    diags = lint_source(path, src_bytes, rules, ctx=ctx)
     # Stash the most recent diagnostics for this URI so hover_at can
     # cross-reference cursor-on-squiggle without re-running the linter.
     cache: dict[str, list] = getattr(server, "m_cli_last_diagnostics", None) or {}
@@ -761,9 +796,7 @@ def _read_token_ending_at(line: str, end: int) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-def document_highlights_at(
-    server, uri: str, position: Position
-) -> list[DocumentHighlight] | None:
+def document_highlights_at(server, uri: str, position: Position) -> list[DocumentHighlight] | None:
     """Highlight every occurrence of the identifier under the cursor
     inside the current document.
 
