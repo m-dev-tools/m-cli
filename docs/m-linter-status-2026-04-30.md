@@ -4,22 +4,22 @@
 **Audience:** M developers evaluating m-cli; m-cli contributors deciding what to fix before Phase 9.
 **Scope:** comprehensive audit of every shipped lint rule against a 4,215-routine non-VA M corpus, with field-tested findings and a prioritized fix list.
 
-> ## ✅ Update — same day (commit `cca0232`)
+> ## ✅ Update — same day, all audit items landed (commits `cca0232` + `2ee9d37`)
 >
-> All three prioritized fixes from §5.1–§5.3 have landed. Headline deltas on the modern corpus:
+> All three prioritized fixes (§5.1–§5.3) AND all five §10 follow-ups (items 4–8) shipped. Headline deltas on the modern corpus:
 >
-> | What | Before | After | Δ |
+> | What | Original | Post-P0/P1 (`cca0232`) | Final (`2ee9d37`) |
 > |---|---:|---:|---:|
-> | Tests passing | 935 | **958** | +23 (per-fix coverage) |
-> | `default` profile findings | 31,077 | **29,904** | −1,173 |
-> | `default` profile active rules | 31 | **28** | M-MOD-011/012/013 superseded |
-> | M-MOD-025 (LOCK leak) findings | 16 | **175** | +159 — now ≥ M-MOD-011's coverage |
-> | M-MOD-024 ($GET-suppressed) findings | 10,622 | **9,606** | −1,016 |
-> | `--rules=all` active rules | 77 | **67** | 9 legacy duplicates suppressed (3 M-MOD + 5 M-XINDX + 1 unique combo) |
+> | Tests passing | 935 | 958 | **969** |
+> | `default` profile findings | 31,077 | 29,904 | **29,429** |
+> | `default` profile active rules | 31 | 28 | **28** |
+> | M-MOD-025 (LOCK leak) findings | 16 | **175** | 175 |
+> | M-MOD-024 (read-of-undefined) findings | 10,622 | 9,606 | **9,139** (−14%) |
+> | `--rules=all` active rules | 77 | **67** | 67 |
 >
-> Each P0/P1 item below is now annotated **✅ FIXED** with the commit and the resulting metrics. The original audit text is preserved as the "before" snapshot. The recommended fix list (§9) and suggested ordering (§10) are updated. **Phase 9 is unblocked.**
+> Each P0/P1 item below is now annotated **✅ FIXED** with the commit and the resulting metrics. Original audit text is preserved as the "before" snapshot. The recommended fix list (§9) and suggested ordering (§10) reflect the landed state.
 >
-> One residual finding from §5.2: the `IF $G(X)="" SET X=...` idiom still produces M-MOD-024 hits because the analyzer can't yet model "test+default-set" as making X definitely defined afterward. This is a Phase 7+ refinement, not a regression.
+> **Phase 9 (taint analysis MVP / M-MOD-036) is the only remaining stretch goal.**
 
 ---
 
@@ -359,37 +359,40 @@ These observations should give M developers confidence the suite is well-built:
 
 ## 9. Recommended fix list (prioritized)
 
-| # | Issue | Effort | Severity | Status |
+| # | Issue | Effort (est.) | Severity | Status |
 |---|---|---|---|---|
 | 1 | M-MOD-025 — handle global-variable LOCK targets and indirection (§5.1) | 30 min | P0 | ✅ **DONE** in `cca0232`. M-MOD-025: 16 → 175 findings. |
 | 2 | M-MOD-024 — special-case `$GET()` / `$DATA()` (§5.2) | 1 hour | P1 | ✅ **DONE** in `cca0232`. M-MOD-024: 10,622 → 9,606. |
 | 3 | Resolver-level `replaces` suppression (§5.3) | 1 hour | P1 | ✅ **DONE** in `cca0232`. `--rules=all`: 9 legacy duplicates suppressed. |
-| 4 | Document `--target-engine` more loudly in README + `m lint --help` (§5.4) | 15 min | P2 | Pending. First-run UX. |
-| 5 | Add `tests/test_xindex_inactive.py` pinning the 5 never-fire rules (§5.5) | 15 min | P3 | Pending. Prevents silent regression. |
-| 6 | M-MOD-024 — investigate FOR + dot-block CFG (one of the spot-checked FPs) | 1–2 hours | P2 | Pending. Phase 7 follow-up. |
-| 7 | Globals/indirection extension in TSTART/$ETRAP analyzers (preventive) | 15 min | P3 | Pending. Defense in depth. |
-| **8 (new)** | M-MOD-024 — model the `IF $G(X)="" SET X=...` test+default-set idiom so X becomes definitely-defined afterward (§5.2 residual) | 2–3 hours | P2 | Pending. Would eliminate the largest remaining FP class. Needs reaching analyzer to recognize the IF-then-SET pattern; AST-level rather than CFG-level. |
+| 4 | Document `--target-engine` more loudly in README + `m lint --help` (§5.4) | 15 min | P2 | ✅ **DONE** in `2ee9d37`. CLI TIP block + README "Engine targeting" section + lint-summary nudge when ≥50 portability findings under `target_engine=any`. |
+| 5 | Add `tests/test_xindex_inactive.py` pinning the 5 never-fire rules (§5.5) | 15 min | P3 | ✅ **DONE** in `2ee9d37`. 3 tests: registered, `xindex`-tagged, silent-on-clean-fixture. |
+| 6 | M-MOD-024 — investigate FOR + dot-block CFG | 1–2 hours | P2 | ✅ **DONE** in `2ee9d37`. Argumentless `Q` inside a dot-block now falls through (was label-exit, killing every downstream IN set in multi-level dot-blocks under FOR). Reproducer (`utf8Encode` from EWD) goes from 3 spurious findings to 0. |
+| 7 | Globals/indirection extension in TSTART/$ETRAP analyzers (preventive) | 15 min | P3 | ✅ **REVIEWED** in `2ee9d37`. No code change needed — `transaction_state` tracks an integer counter (no names), `etrap_state`/`dollar_test` track booleans against fixed targets ($ETRAP / fixed setter keyword set). The blind-spot pattern from item 1 doesn't apply. |
+| 8 | M-MOD-024 — model the `IF $G(X)="" SET X=...` test+default-set idiom (§5.2 residual) | 2–3 hours | P2 | ✅ **DONE** in `2ee9d37`. New `_find_test_default_set_protections` helper detects `IF` + same-line `SET` pairs whose tested var matches the SET LHS; M-MOD-024 suppresses flags for `var` at lines `>` the protection line. Recognizes `$G`/`$GET`/`$D`/`$DATA` and the `'$D` negation. Net delta: M-MOD-024 9,495 → 9,139 (−356). |
 
-**Status: pre-Phase-9 cleanup complete.** Items 1–3 (P0/P1) all landed in commit `cca0232`. Items 4–8 are quality-of-life follow-ups; none block Phase 9.
+**Status: every audit follow-up has landed.** Total reduction from this audit:
+- M-MOD-024: 10,622 → 9,139 (−1,483, −14%)
+- M-MOD-025: 16 → 175 (+159, **the rule went from broken to working**)
+- `default` profile: 31,077 → 29,429 (−1,648)
+- `--rules=all`: 9 legacy duplicates suppressed
+- Test count: 935 → 969 (+34)
 
 ---
 
 ## 10. Suggested ordering
 
-~~Before opening any Phase 9 (taint analysis) work:~~ ✅ Items 1–3 complete.
+✅ **All eight items complete.** The original ordering is preserved below as a historical record:
 
-Recommended ordering for the remaining items, which can ride alongside Phase 9:
+1. ~~**Land item 1 (M-MOD-025 globals).**~~ ✅ `cca0232`
+2. ~~**Land item 2 (M-MOD-024 $GET).**~~ ✅ `cca0232`
+3. ~~**Land item 3 (resolver-level replaces).**~~ ✅ `cca0232`
+4. ~~**Update `scripts/lint_modern.baseline.json`** with the post-fix counts.~~ ✅ `cca0232` + refreshed in `2ee9d37`
+5. ~~**Re-run this audit** to confirm the deltas.~~ ✅ Updated inline (this report).
+6. ~~**Items 4 & 5** (target-engine docs, never-fire pin).~~ ✅ `2ee9d37`
+7. ~~**Item 8** (IF $G(X)="" test+default-set modeling).~~ ✅ `2ee9d37`
+8. ~~**Items 6 & 7** (FOR back-edge, TSTART/$ETRAP global handling).~~ ✅ `2ee9d37` (item 6 fixed; item 7 reviewed and confirmed n/a)
 
-1. ~~**Land item 1 (M-MOD-025 globals).**~~ ✅ Done.
-2. ~~**Land item 2 (M-MOD-024 $GET).**~~ ✅ Done — partial reduction; item 8 covers the residual idiom.
-3. ~~**Land item 3 (resolver-level replaces).**~~ ✅ Done.
-4. ~~**Update `scripts/lint_modern.baseline.json`** with the post-fix counts.~~ ✅ Done in same commit.
-5. ~~**Re-run this audit** to confirm the deltas.~~ ✅ Updated inline (this report). `docs/m-linting-implementation-plan.md` §0 is unaffected.
-6. **Items 4 & 5** (target-engine docs, never-fire pin) — 30 min combined. Trivial ride-along.
-7. **Item 8** (IF $G(X)="" test+default-set modeling) — biggest remaining noise reducer for M-MOD-024. Worth scheduling before declaring "M-MOD-024 stable."
-8. **Items 6 & 7** (FOR back-edge, TSTART/$ETRAP global handling) — defense-in-depth Phase 7 polish.
-
-**Phase 9 (taint analysis MVP / M-MOD-036) is unblocked.**
+**Phase 9 (taint analysis MVP / M-MOD-036) is the only remaining stretch goal.**
 
 ---
 
