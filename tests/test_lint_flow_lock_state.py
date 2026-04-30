@@ -197,3 +197,93 @@ def test_no_lock_no_held_at_exit() -> None:
     r = results[0]
     for bid in r:
         assert r[bid] == frozenset()
+
+
+# ---------------------------------------------------------------------------
+# Global-variable LOCK targets — the common case in real M code
+# ---------------------------------------------------------------------------
+
+
+def test_global_variable_lock_acquire_tracked() -> None:
+    """``L +^V(2)`` acquires a global; tracked under the base name ``^V``."""
+    src = b"LBL\n L +^V(2)\n Q\n"
+    results, cfgs = _analyze(src)
+    cfg = cfgs[0]
+    r = results[0]
+    assert r[cfg.exit().id] == frozenset({"^V"})
+
+
+def test_global_variable_lock_acquire_then_release() -> None:
+    src = b"LBL\n L +^V(2)\n L -^V(2)\n Q\n"
+    results, cfgs = _analyze(src)
+    cfg = cfgs[0]
+    r = results[0]
+    assert r[cfg.exit().id] == frozenset()
+
+
+def test_plain_global_lock_replace_form() -> None:
+    """``L ^A`` (no sign) clears held + sets {^A}."""
+    src = b"LBL\n L +^X\n L ^A\n Q\n"
+    results, cfgs = _analyze(src)
+    cfg = cfgs[0]
+    r = results[0]
+    assert r[cfg.exit().id] == frozenset({"^A"})
+
+
+def test_global_with_subscripts_tracked_by_base() -> None:
+    """``L +^%zewdSession("lock",sessid)`` tracked as ``^%zewdSession``.
+
+    Subscript-level lock tracking would need symbolic state; using
+    the base global name matches the existing M-MOD-011 model and
+    keeps the analyzer tractable. Acquires and releases of any
+    subscript of ^X are treated as touching ^X.
+    """
+    src = b'LBL\n L +^%zewdSession("lock",sessid)\n Q\n'
+    results, cfgs = _analyze(src)
+    cfg = cfgs[0]
+    r = results[0]
+    assert r[cfg.exit().id] == frozenset({"^%zewdSession"})
+
+
+def test_mixed_local_and_global_lock_targets() -> None:
+    """``L +X,+^A,-X`` — net: ^A held (local X balanced)."""
+    src = b"LBL\n L +X,+^A,-X\n Q\n"
+    results, cfgs = _analyze(src)
+    cfg = cfgs[0]
+    r = results[0]
+    assert r[cfg.exit().id] == frozenset({"^A"})
+
+
+# ---------------------------------------------------------------------------
+# Indirection — over-approximate as "some unknown lock"
+# ---------------------------------------------------------------------------
+
+
+def test_indirected_lock_uses_sentinel_name() -> None:
+    """``L +@gbl`` — target computed at runtime; tracked under the
+    sentinel ``@`` to stand in for "some unknown lock". An exit while
+    @ is held is a leak, even if we can't name what was leaked.
+    """
+    src = b"LBL\n L +@gbl\n Q\n"
+    results, cfgs = _analyze(src)
+    cfg = cfgs[0]
+    r = results[0]
+    assert "@" in r[cfg.exit().id]
+
+
+def test_indirected_lock_acquire_then_release() -> None:
+    """If the same sentinel is acquired and released, no leak."""
+    src = b"LBL\n L +@gbl\n L -@gbl\n Q\n"
+    results, cfgs = _analyze(src)
+    cfg = cfgs[0]
+    r = results[0]
+    assert r[cfg.exit().id] == frozenset()
+
+
+def test_argumentless_lock_clears_indirected_too() -> None:
+    """``L`` (release-all) clears the indirection sentinel as well."""
+    src = b"LBL\n L +@gbl\n L \n Q\n"
+    results, cfgs = _analyze(src)
+    cfg = cfgs[0]
+    r = results[0]
+    assert r[cfg.exit().id] == frozenset()

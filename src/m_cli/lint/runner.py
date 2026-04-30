@@ -38,6 +38,27 @@ def fixer_for(rule_id: str) -> str | None:
     return rule.fixer_id if rule is not None else None
 
 
+def _apply_replaces_suppression(rules: list[Rule]) -> list[Rule]:
+    """Drop any rule whose id is listed in another selected rule's
+    ``replaces``.
+
+    Rationale: if rule R declares ``replaces=("S",)`` and both R and S
+    end up in the selection (e.g. ``--rules=all``, ``xindex,modern``),
+    running both double-reports the same diagnostic under two ids.
+    The replacement is by definition the more accurate detector — it
+    wins. Users who need to compare can request the legacy rule
+    explicitly with ``--rules=M-XINDX-NN`` (alone, with no
+    replacement in the selection, suppression is a no-op).
+    """
+    selected_ids = {r.id for r in rules}
+    suppressed: set[str] = set()
+    for r in rules:
+        for replaced in r.replaces:
+            if replaced in selected_ids:
+                suppressed.add(replaced)
+    return [r for r in rules if r.id not in suppressed]
+
+
 def select_rules(rule_filter: str = DEFAULT_PROFILE) -> list[Rule]:
     """Resolve a rule filter to a concrete rule list.
 
@@ -62,6 +83,9 @@ def select_rules(rule_filter: str = DEFAULT_PROFILE) -> list[Rule]:
     profile nor a registered rule ID. The error message lists every
     registered profile so users can self-correct without reading the
     docs.
+
+    Post-resolution: rules listed in another selected rule's
+    ``replaces`` are dropped (see :func:`_apply_replaces_suppression`).
     """
     rule_filter = rule_filter.strip()
     # Single token, no comma, no `M-` prefix → must be a profile name.
@@ -71,7 +95,7 @@ def select_rules(rule_filter: str = DEFAULT_PROFILE) -> list[Rule]:
             raise ValueError(
                 f"unknown profile {rule_filter!r} (known profiles: {known})"
             )
-        return resolve_profile(rule_filter)
+        return _apply_replaces_suppression(resolve_profile(rule_filter))
 
     # Comma list (or a single literal rule ID): each token is either a
     # profile name or a rule ID.
@@ -94,7 +118,7 @@ def select_rules(rule_filter: str = DEFAULT_PROFILE) -> list[Rule]:
             f"unknown profile / rule id(s): {sorted(unknown)} "
             f"(known profiles: {known_profiles}; or use M-XINDX-NN / M-MOD-NN ids)"
         )
-    return [r for _, r in sorted(selected.items())]
+    return _apply_replaces_suppression([r for _, r in sorted(selected.items())])
 
 
 def lint_source(

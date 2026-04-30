@@ -194,6 +194,74 @@ def test_intrinsic_functions_are_ignored_in_uses() -> None:
 
 
 # ---------------------------------------------------------------------------
+# $GET / $DATA — defensive-read intrinsics
+# ---------------------------------------------------------------------------
+#
+# $GET(X) and $DATA(X) are M's safe-read primitives. They exist
+# specifically to inspect a local without erroring on an undefined
+# value. Treating their first argument as an unconditional use
+# generates noisy false positives in M-MOD-024 (read-of-undefined).
+# The first argument is suppressed; subsequent arguments (e.g. the
+# default value in $GET(X, default)) are normal uses.
+
+
+def test_dollar_get_first_arg_is_not_a_use() -> None:
+    """``$G(X)`` reads X defensively; X must NOT appear in uses."""
+    e = _ef(b" W $G(X)\n")
+    assert {u.name for u in e.uses} == set()
+
+
+def test_dollar_get_canonical_name_handled() -> None:
+    e = _ef(b" W $GET(X)\n")
+    assert {u.name for u in e.uses} == set()
+
+
+def test_dollar_data_first_arg_is_not_a_use() -> None:
+    e = _ef(b" W $D(X)\n")
+    assert {u.name for u in e.uses} == set()
+
+
+def test_dollar_data_canonical_handled() -> None:
+    e = _ef(b" W $DATA(X)\n")
+    assert {u.name for u in e.uses} == set()
+
+
+def test_dollar_get_second_arg_is_a_use() -> None:
+    """``$G(X, Y)`` — X is defensive, Y is the fallback (read normally)."""
+    e = _ef(b" W $G(X,Y)\n")
+    assert {u.name for u in e.uses} == {"Y"}
+
+
+def test_dollar_get_in_set_rhs_suppresses_only_first_arg() -> None:
+    """``S Z=$G(X, Y)`` defines Z, reads Y, ignores X (defensive)."""
+    e = _ef(b" S Z=$G(X,Y)\n")
+    assert e.defs == {"Z"}
+    assert {u.name for u in e.uses} == {"Y"}
+
+
+def test_dollar_get_subscripted_first_arg_skips_base_only() -> None:
+    """``$G(X(I))`` — X is defensive (skipped); but the subscript I
+    IS read (it's an expression, not a defensive lookup).
+    """
+    e = _ef(b" W $G(X(I))\n")
+    names = {u.name for u in e.uses}
+    assert "X" not in names
+    assert "I" in names
+
+
+def test_dollar_get_in_postcondition() -> None:
+    """``Q:$G(X)=""`` — postcondition reads $G(X); X must be skipped."""
+    e = _ef(b' Q:$G(X)=""\n')
+    assert {u.name for u in e.uses} == set()
+
+
+def test_other_intrinsics_unchanged() -> None:
+    """Sanity: $LENGTH still treats its argument as a use."""
+    e = _ef(b" W $L(X)\n")
+    assert {u.name for u in e.uses} == {"X"}
+
+
+# ---------------------------------------------------------------------------
 # Formal parameters — extracted from the label header
 # ---------------------------------------------------------------------------
 

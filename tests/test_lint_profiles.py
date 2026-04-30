@@ -427,9 +427,21 @@ class TestRegistration:
 class TestSelectRulesSurface:
     def test_default_arg_is_default_profile(self):
         # No arg → DEFAULT_PROFILE → some rules.
+        # ``select_rules`` applies replaces-suppression on top of the
+        # raw profile selector; the relationship is "subset-of",
+        # not strict equality.
         rules = select_rules()
         assert len(rules) > 0
-        assert rules == resolve_profile(DEFAULT_PROFILE)
+        raw = resolve_profile(DEFAULT_PROFILE)
+        rule_ids = {r.id for r in rules}
+        raw_ids = {r.id for r in raw}
+        assert rule_ids.issubset(raw_ids)
+        # The only entries dropped are those listed in another
+        # selected rule's ``replaces``.
+        dropped = raw_ids - rule_ids
+        if dropped:
+            replacements = {ref for r in rules for ref in r.replaces}
+            assert dropped <= replacements
 
     def test_xindex_profile_works(self):
         rules = select_rules("xindex")

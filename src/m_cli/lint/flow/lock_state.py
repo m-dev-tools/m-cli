@@ -77,11 +77,19 @@ def _lock_arg(arg: _Node, src: bytes) -> tuple[str, str]:
     """Decode one LOCK argument as ``(polarity, name)``.
 
     Polarity is ``"+"`` (acquire), ``"-"`` (release), or
-    ``"plain"`` (replace form). Name is the LOCK target's base
-    identifier — subscripts are tracked at the base name only.
+    ``"plain"`` (replace form). Name is the LOCK target's tracking
+    key:
 
-    Returns ``("", "")`` for malformed args (e.g. parse-error
-    nodes); the caller should treat that as a no-op.
+      - Local variable ``X``     → ``"X"``
+      - Global ``^V``            → ``"^V"`` (subscripts ignored —
+        tracked at the base global name only, since subscript-level
+        state would require symbolic reasoning)
+      - Indirection ``@expr``    → ``"@"`` (sentinel — over-
+        approximates "some unknown lock"; ensures the analyzer
+        flags the leak even when we can't name the target)
+
+    Returns ``("", "")`` for malformed args (parse-error nodes);
+    the caller treats that as a no-op.
     """
     polarity = "plain"
     payload = None
@@ -96,17 +104,27 @@ def _lock_arg(arg: _Node, src: bytes) -> tuple[str, str]:
                         polarity = "+"
                     elif op == "-":
                         polarity = "-"
-                if cc.type == "variable":
+                if cc.type in ("variable", "indirection"):
                     payload = cc
             break
-        if c.type == "variable":
+        if c.type in ("variable", "indirection"):
             payload = c
             break
     if payload is None:
         return "", ""
+    if payload.type == "indirection":
+        # ``@var`` / ``@expr`` — target computed at runtime; over-
+        # approximate as "some unknown lock" so a leak is still
+        # detectable even though we can't name the target.
+        return polarity, "@"
+    # ``variable`` wrapper — descend to the local_variable or
+    # global_variable child.
     for cc in payload.children:
         if cc.type == "local_variable":
             return polarity, _identifier_text(cc, src)
+        if cc.type == "global_variable":
+            # Tracked under the base global name (^V, not ^V(2)).
+            return polarity, "^" + _identifier_text(cc, src)
     return "", ""
 
 

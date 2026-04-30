@@ -123,6 +123,47 @@ def _has_subscripts(local_var: _Node) -> bool:
     return any(c.type == "subscripts" for c in local_var.children)
 
 
+# M's defensive-read intrinsics — designed to inspect a local
+# without erroring on undefined values. Their *first* argument is
+# a defensive read; we skip its local_variable to avoid false
+# positives in M-MOD-024 (read-of-undefined). Subscripts and
+# subsequent arguments are walked normally — they're real reads.
+_DEFENSIVE_INTRINSICS = frozenset({"$G", "$GET", "$D", "$DATA"})
+
+
+def _is_defensive_intrinsic(function_call_node: _Node) -> bool:
+    """True if ``function_call_node`` is ``$G`` / ``$GET`` /
+    ``$D`` / ``$DATA``."""
+    for c in function_call_node.children:
+        if c.type == "intrinsic_function_keyword":
+            text = c.text.decode("latin-1", errors="replace")
+            return text.upper() in _DEFENSIVE_INTRINSICS
+        # First non-keyword child means malformed — not defensive.
+        return False
+    return False
+
+
+def _defensive_call_children(function_call_node: _Node) -> Iterator[_Node]:
+    """Yield the children of a defensive ``function_call``, but for
+    the first ``variable`` child, yield only its ``subscripts``
+    grandchild (so the variable's own name is skipped while
+    expressions inside its subscripts are walked normally).
+    """
+    seen_first_var = False
+    for c in function_call_node.children:
+        if not seen_first_var and c.type == "variable":
+            seen_first_var = True
+            for cc in c.children:
+                if cc.type == "local_variable":
+                    for ccc in cc.children:
+                        if ccc.type == "subscripts":
+                            yield ccc
+                            break
+                    break
+            continue
+        yield c
+
+
 def _walk_local_vars(node: _Node) -> Iterator[_Node]:
     """Yield every ``local_variable`` node in ``node``'s subtree, in
     source order. Skips the contents of ``global_variable``. Walks
@@ -131,8 +172,16 @@ def _walk_local_vars(node: _Node) -> Iterator[_Node]:
     captured. When yielding a ``local_variable``, recurses only into
     its ``subscripts`` child (its ``identifier`` is the variable's
     name, not a separate use).
+
+    Defensive intrinsics (``$G(X)`` / ``$D(X)``) suppress the
+    first-argument variable so M-MOD-024 doesn't flag the very
+    pattern these intrinsics are designed to enable.
     """
     if node.type == "global_variable":
+        return
+    if node.type == "function_call" and _is_defensive_intrinsic(node):
+        for c in _defensive_call_children(node):
+            yield from _walk_local_vars(c)
         return
     if node.type == "local_variable":
         yield node
@@ -172,6 +221,10 @@ def _walk_set_like_arg(arg: _Node, src: bytes, out: Effects) -> None:
     def visit(node: _Node) -> None:
         if node.type == "global_variable":
             return
+        if node.type == "function_call" and _is_defensive_intrinsic(node):
+            for c in _defensive_call_children(node):
+                visit(c)
+            return
         if node.type == "by_reference":
             name = _identifier_text(node, src)
             if name:
@@ -206,6 +259,10 @@ def _walk_generic_arg(arg: _Node, src: bytes, out: Effects) -> None:
 
     def visit(node: _Node) -> None:
         if node.type == "global_variable":
+            return
+        if node.type == "function_call" and _is_defensive_intrinsic(node):
+            for c in _defensive_call_children(node):
+                visit(c)
             return
         if node.type == "by_reference":
             name = _identifier_text(node, src)
@@ -265,6 +322,10 @@ def _walk_call_arg(arg: _Node, src: bytes, out: Effects) -> None:
 
     def visit(node: _Node) -> None:
         if node.type == "global_variable":
+            return
+        if node.type == "function_call" and _is_defensive_intrinsic(node):
+            for c in _defensive_call_children(node):
+                visit(c)
             return
         if node.type == "by_reference":
             name = _identifier_text(node, src)

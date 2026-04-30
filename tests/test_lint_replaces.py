@@ -89,3 +89,80 @@ def test_mod_rules_dont_misuse_xindx_tag() -> None:
             f"{r.id} is M-MOD-NN but tagged `xindex`; xindex is a provenance "
             "tag for ports, not modernizations"
         )
+
+
+# ---------------------------------------------------------------------------
+# Resolver-level suppression of replaced rules
+# ---------------------------------------------------------------------------
+#
+# When a rule R declares ``replaces=("S",)`` and BOTH R and S are in a
+# resolved selection (e.g. ``--rules=all`` or ``--rules=xindex,modern``),
+# S is suppressed: running both would double-report the same finding
+# under different ids. Users who need to compare can select the
+# legacy rule explicitly with ``--rules=M-XINDX-NN``.
+
+
+class TestReplacesSuppression:
+    def test_all_profile_suppresses_legacy_when_modern_replaces_it(self) -> None:
+        from m_cli.lint.runner import select_rules
+
+        ids = {r.id for r in select_rules("all")}
+        # M-MOD-025 replaces M-MOD-011; under `all`, only M-MOD-025 should remain.
+        assert "M-MOD-025" in ids
+        assert "M-MOD-011" not in ids
+        # M-MOD-026 replaces M-MOD-012.
+        assert "M-MOD-026" in ids
+        assert "M-MOD-012" not in ids
+        # M-MOD-027 replaces M-MOD-013.
+        assert "M-MOD-027" in ids
+        assert "M-MOD-013" not in ids
+        # M-MOD-001 replaces M-XINDX-019.
+        assert "M-MOD-001" in ids
+        assert "M-XINDX-019" not in ids
+
+    def test_xindex_modern_combo_suppresses_replaced_legacy(self) -> None:
+        """``--rules=xindex,modern`` selects both profiles; the
+        modernized rules should suppress their XINDEX predecessors."""
+        from m_cli.lint.runner import select_rules
+
+        ids = {r.id for r in select_rules("xindex,modern")}
+        assert "M-MOD-001" in ids
+        assert "M-XINDX-019" not in ids
+        assert "M-MOD-021" in ids
+        assert "M-XINDX-002" not in ids
+
+    def test_modern_alone_keeps_modern_suppresses_intra_track(self) -> None:
+        """Within `modern`, M-MOD-025 replaces M-MOD-011. After
+        suppression, M-MOD-011 should be gone."""
+        from m_cli.lint.runner import select_rules
+
+        ids = {r.id for r in select_rules("modern")}
+        assert "M-MOD-025" in ids
+        assert "M-MOD-011" not in ids
+
+    def test_explicit_legacy_id_still_returns_it(self) -> None:
+        """Selecting *only* the legacy rule by id returns just that
+        rule — no replacement is in the selection, so no suppression
+        applies."""
+        from m_cli.lint.runner import select_rules
+
+        ids = {r.id for r in select_rules("M-MOD-011")}
+        assert ids == {"M-MOD-011"}
+
+    def test_explicit_pair_still_suppresses_legacy(self) -> None:
+        """Selecting both the legacy and the replacement explicitly
+        — the replacement wins; legacy is dropped. Users who truly
+        want to see both run two separate lint passes."""
+        from m_cli.lint.runner import select_rules
+
+        ids = {r.id for r in select_rules("M-MOD-011,M-MOD-025")}
+        assert ids == {"M-MOD-025"}
+
+    def test_xindex_alone_still_returns_xindex_rules(self) -> None:
+        """No M-MOD rules in the selection ⇒ no suppression. Legacy
+        XINDEX still works as a standalone profile."""
+        from m_cli.lint.runner import select_rules
+
+        ids = {r.id for r in select_rules("xindex")}
+        assert "M-XINDX-019" in ids
+        assert "M-XINDX-013" in ids
