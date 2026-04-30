@@ -26,15 +26,16 @@
         "M-MOD-031": 2718,
         "M-MOD-032": 1287,
         "M-MOD-034": 175,
-        "M-MOD-035": 5
+        "M-MOD-035": 5,
+        "M-MOD-036": 89
       },
       "by_severity": {
-        "error": 766,
+        "error": 855,
         "info": 908,
         "style": 5085,
         "warning": 1094
       },
-      "findings_total": 7853,
+      "findings_total": 7942,
       "routines_linted": 77,
       "routines_total": 86
     },
@@ -51,15 +52,16 @@
         "M-MOD-030": 1,
         "M-MOD-031": 364,
         "M-MOD-032": 551,
-        "M-MOD-034": 45
+        "M-MOD-034": 45,
+        "M-MOD-036": 8
       },
       "by_severity": {
-        "error": 150,
+        "error": 158,
         "info": 99,
         "style": 1040,
         "warning": 8
       },
-      "findings_total": 1297,
+      "findings_total": 1305,
       "routines_linted": 16,
       "routines_total": 23
     },
@@ -84,15 +86,16 @@
         "M-MOD-030": 1,
         "M-MOD-031": 390,
         "M-MOD-032": 882,
-        "M-MOD-034": 587
+        "M-MOD-034": 587,
+        "M-MOD-036": 4
       },
       "by_severity": {
-        "error": 850,
+        "error": 854,
         "info": 790,
         "style": 1604,
         "warning": 359
       },
-      "findings_total": 3603,
+      "findings_total": 3607,
       "routines_linted": 24,
       "routines_total": 36
     },
@@ -114,15 +117,16 @@
         "M-MOD-029": 5,
         "M-MOD-030": 1,
         "M-MOD-031": 24,
-        "M-MOD-032": 10
+        "M-MOD-032": 10,
+        "M-MOD-036": 4
       },
       "by_severity": {
-        "error": 7,
+        "error": 11,
         "info": 28,
         "style": 59,
         "warning": 47
       },
-      "findings_total": 141,
+      "findings_total": 145,
       "routines_linted": 17,
       "routines_total": 21
     },
@@ -159,15 +163,16 @@
         "M-MOD-032": 43674,
         "M-MOD-033": 131,
         "M-MOD-034": 2150,
-        "M-MOD-035": 119
+        "M-MOD-035": 119,
+        "M-MOD-036": 165
       },
       "by_severity": {
-        "error": 8077,
+        "error": 8242,
         "info": 18195,
         "style": 83028,
         "warning": 11006
       },
-      "findings_total": 120306,
+      "findings_total": 120471,
       "routines_linted": 3336,
       "routines_total": 4049
     }

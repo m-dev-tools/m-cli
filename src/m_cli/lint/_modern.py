@@ -3008,3 +3008,189 @@ register(
         replaces=(),
     )
 )
+
+
+# ===========================================================================
+# Phase 9 — Taint analysis MVP (M-MOD-036)
+# ===========================================================================
+#
+# The differentiating security feature of m-cli's lint suite. M's
+# indirection (@expr, S @x=..., D @routine) makes injection lethal:
+# any tainted value reaching such a sink is a remote-code-execution
+# vector. M-MOD-036 reads the per-label taint state from
+# m_cli.lint.flow.taint and flags any indirection or XECUTE site
+# whose argument expression contains a tainted local.
+
+
+# ---------------------------------------------------------------------------
+# M-MOD-036 — Untrusted data flows into an indirection sink
+# ---------------------------------------------------------------------------
+
+
+def _check_taint_to_indirection(
+    src: bytes, _tree, path: Path, index: NodeIndex, _ctx: LintContext
+) -> Iterator[Diagnostic]:
+    """M-MOD-036 — A tainted local variable reaches an indirection
+    or XECUTE sink.
+
+    Sources (this MVP, hardcoded — config in a follow-up):
+      * ``READ X`` taints X
+      * Public-label formal parameters are tainted at entry
+
+    Sinks:
+      * Any ``indirection`` AST node (``@expr`` in any context)
+      * ``XECUTE`` command's argument
+
+    Sanitizers:
+      * ``$L`` / ``$LENGTH`` / ``$A`` / ``$ASCII`` — output is a
+        number; treated as clean regardless of input taint
+
+    Reports one diagnostic per (label, tainted variable) pair —
+    long fan-outs of the same tainted value into many sinks
+    collapse to one finding.
+    """
+    from m_cli.lint.flow import build_cfgs
+    from m_cli.lint.flow.taint import (
+        TaintConfig,
+        analyze_taint,
+        expression_taints,
+    )
+    from m_cli.lint.flow.vars import (
+        argument_nodes,
+        command_keyword,
+    )
+
+    config = TaintConfig()
+    sanitizers = config.sanitizers
+
+    def _walk_indirections(node):
+        """Yield every ``indirection`` node in the subtree (so we
+        find ``@expr`` whether it appears at the top of a command,
+        inside an expression, or inside a subscript)."""
+        if node.type == "indirection":
+            yield node
+            return
+        for c in node.children:
+            yield from _walk_indirections(c)
+
+    cfgs = build_cfgs(src, index)
+    for cfg in cfgs:
+        taint_sets = analyze_taint(cfg, src, config=config)
+        reported_vars: set[str] = set()
+
+        def _flag_for_subtree(
+            subtree,
+            in_tainted,
+            sink_kind,
+            anchor_node,
+            reported_vars=reported_vars,
+            label_name=cfg.label_name,
+        ):
+            """If ``subtree`` references a tainted var, yield a
+            diagnostic naming the first such var. Returns the
+            diagnostic (or None) — caller handles the yield."""
+            if not expression_taints(
+                subtree, src, in_tainted, sanitizers
+            ):
+                return None
+            # Find the first tainted var name in the subtree (so the
+            # diagnostic message can name it concretely).
+            tainted_name = _first_tainted_name(
+                subtree, src, in_tainted, sanitizers
+            )
+            if tainted_name is None or tainted_name in reported_vars:
+                return None
+            reported_vars.add(tainted_name)
+            return Diagnostic(
+                rule_id="M-MOD-036",
+                severity=Severity.ERROR,
+                message=(
+                    f"Tainted local '{tainted_name}' flows into "
+                    f"{sink_kind} in {label_name} — possible "
+                    "code/SQL/path injection"
+                ),
+                path=path,
+                line=anchor_node.start_point[0] + 1,
+                column=anchor_node.start_point[1] + 1,
+                column_end=anchor_node.end_point[1] + 1,
+            )
+
+        for block in cfg.blocks:
+            if block.kind != "command":
+                continue
+            cmd = block.command
+            if cmd is None:
+                continue
+            in_tainted = taint_sets[block.id]
+            kw = command_keyword(cmd, src).upper()
+
+            # Sink 1: every ``indirection`` node anywhere inside
+            # the command (handles ``D @X``, ``S @X=v``, ``S Y=@X``,
+            # ``S Y=A_@X``, etc. uniformly).
+            for indir in _walk_indirections(cmd):
+                d = _flag_for_subtree(
+                    indir, in_tainted, "indirection (@…)", indir
+                )
+                if d is not None:
+                    yield d
+
+            # Sink 2: ``XECUTE`` argument — executes M code.
+            if kw in ("X", "XECUTE"):
+                for arg in argument_nodes(cmd):
+                    d = _flag_for_subtree(
+                        arg, in_tainted, "XECUTE argument", arg
+                    )
+                    if d is not None:
+                        yield d
+
+
+def _first_tainted_name(
+    node, src: bytes, tainted, sanitizers
+) -> str | None:
+    """Return the first ``local_variable`` name in ``node``'s
+    subtree that's in ``tainted``, walking the same way as
+    :func:`expression_taints` (skipping sanitizer subtrees)."""
+    from m_cli.lint.flow.taint import _identifier_text, _intrinsic_keyword
+
+    found: list[str | None] = [None]
+
+    def visit(n) -> None:
+        if found[0] is not None:
+            return
+        if n.type == "global_variable":
+            return
+        if n.type == "function_call":
+            kw = _intrinsic_keyword(n, src)
+            if kw in sanitizers:
+                return
+            for c in n.children:
+                visit(c)
+            return
+        if n.type == "local_variable":
+            name = _identifier_text(n, src)
+            if name in tainted:
+                found[0] = name
+                return
+            for c in n.children:
+                if c.type == "subscripts":
+                    visit(c)
+            return
+        for c in n.children:
+            visit(c)
+
+    visit(node)
+    return found[0]
+
+
+register(
+    Rule(
+        id="M-MOD-036",
+        severity=Severity.ERROR,
+        category=Category.SECURITY,
+        title="Untrusted data flows into an indirection sink",
+        tags=("modern",),
+        check=_check_taint_to_indirection,
+        needs_context=True,
+        replaces=(),
+    )
+)

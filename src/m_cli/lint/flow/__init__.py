@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from m_cli.lint.flow.cfg import CFG, Block, build_cfgs
 from m_cli.lint.flow.reaching import analyze
+from m_cli.lint.flow.taint import TaintConfig, analyze_taint, expression_taints
 from m_cli.lint.flow.vars import (
     Effects,
     VarUse,
@@ -25,11 +26,14 @@ __all__ = [
     "CFG",
     "Block",
     "Effects",
+    "TaintConfig",
     "VarUse",
     "analyze",
+    "analyze_taint",
     "build_cfgs",
     "effects",
     "effects_of_argument",
+    "expression_taints",
     "formal_params",
     "uses_in_subtree",
 ]

@@ -1272,6 +1272,80 @@ class TestReadOfUndefined:
 
 
 # ---------------------------------------------------------------------------
+# M-MOD-036 — Untrusted data flows into an indirection sink (taint MVP)
+# ---------------------------------------------------------------------------
+
+
+class TestTaintToIndirection:
+    def test_fires_on_read_directly_into_indirection(self):
+        """``READ X / DO @X`` — terminal input drives indirected call."""
+        src = b"LBL\n R X\n D @X\n Q\n"
+        diags = [d for d in _lint(src, "M-MOD-036", ctx=_ctx()) if d.rule_id == "M-MOD-036"]
+        assert len(diags) >= 1
+        assert any("X" in d.message for d in diags)
+
+    def test_fires_on_read_propagated_then_indirection(self):
+        """Taint flows: READ X → SET Y=X → DO @Y."""
+        src = b"LBL\n R X\n S Y=X\n D @Y\n Q\n"
+        diags = [d for d in _lint(src, "M-MOD-036", ctx=_ctx()) if d.rule_id == "M-MOD-036"]
+        assert len(diags) >= 1
+
+    def test_fires_on_set_indirection_lhs(self):
+        """``SET @X=value`` writes to an attacker-controlled location."""
+        src = b'LBL\n R X\n S @X="payload"\n Q\n'
+        diags = [d for d in _lint(src, "M-MOD-036", ctx=_ctx()) if d.rule_id == "M-MOD-036"]
+        assert len(diags) >= 1
+
+    def test_fires_on_xecute_with_tainted_arg(self):
+        """``XECUTE Y`` directly executes Y as M code."""
+        src = b"LBL\n R X\n S Y=X\n X Y\n Q\n"
+        diags = [d for d in _lint(src, "M-MOD-036", ctx=_ctx()) if d.rule_id == "M-MOD-036"]
+        assert len(diags) >= 1
+
+    def test_fires_on_goto_indirection(self):
+        src = b"LBL\n R X\n G @X\n Q\n"
+        diags = [d for d in _lint(src, "M-MOD-036", ctx=_ctx()) if d.rule_id == "M-MOD-036"]
+        assert len(diags) >= 1
+
+    def test_silent_when_constant_indirection(self):
+        """``D @"^MYROUTINE"`` — string literal indirection, no taint."""
+        src = b'LBL\n D @"^MYROUTINE"\n Q\n'
+        diags = [d for d in _lint(src, "M-MOD-036", ctx=_ctx()) if d.rule_id == "M-MOD-036"]
+        assert diags == []
+
+    def test_silent_when_tainted_var_used_safely(self):
+        """``READ X`` then ``W X`` — no sink, X just printed."""
+        src = b"LBL\n R X\n W X\n Q\n"
+        diags = [d for d in _lint(src, "M-MOD-036", ctx=_ctx()) if d.rule_id == "M-MOD-036"]
+        assert diags == []
+
+    def test_silent_after_sanitizer(self):
+        """``READ X / SET Y=$L(X) / DO @Y`` — Y holds a number; safe."""
+        src = b"LBL\n R X\n S Y=$L(X)\n D @Y\n Q\n"
+        diags = [d for d in _lint(src, "M-MOD-036", ctx=_ctx()) if d.rule_id == "M-MOD-036"]
+        assert diags == []
+
+    def test_silent_after_kill(self):
+        """``KILL X`` removes X from the tainted set."""
+        src = b"LBL\n R X\n S Y=X\n K Y\n S Y=42\n D @Y\n Q\n"
+        diags = [d for d in _lint(src, "M-MOD-036", ctx=_ctx()) if d.rule_id == "M-MOD-036"]
+        assert diags == []
+
+    def test_fires_on_formal_parameter_to_indirection(self):
+        """Public-label formals are tainted by default."""
+        src = b"LBL(routine)\n D @routine\n Q\n"
+        diags = [d for d in _lint(src, "M-MOD-036", ctx=_ctx()) if d.rule_id == "M-MOD-036"]
+        assert len(diags) >= 1
+
+    def test_dedup_per_label_var(self):
+        """Many sinks for the same tainted var → one diagnostic per
+        (label, var) to keep signal high."""
+        src = b"LBL\n R X\n D @X\n D @X\n D @X\n Q\n"
+        diags = [d for d in _lint(src, "M-MOD-036", ctx=_ctx()) if d.rule_id == "M-MOD-036"]
+        assert len(diags) == 1
+
+
+# ---------------------------------------------------------------------------
 # M-MOD-025 — LOCK leak across exit paths (path-sensitive)
 # ---------------------------------------------------------------------------
 
