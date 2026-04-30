@@ -1384,3 +1384,49 @@ class TestEtrapLeakPathSensitive:
         src = b'LBL\n N\n S $ETRAP="x"\n Q\n'
         diags = [d for d in _lint(src, "M-MOD-027", ctx=_ctx()) if d.rule_id == "M-MOD-027"]
         assert len(diags) == 1
+
+
+# ---------------------------------------------------------------------------
+# M-MOD-017 — $TEST stale read
+# ---------------------------------------------------------------------------
+
+
+class TestDollarTestStale:
+    def test_fires_on_test_read_without_setter(self):
+        """``IF $TEST`` at label entry, no prior $T-setter — stale."""
+        src = b"LBL\n IF $TEST WRITE 1\n Q\n"
+        diags = [d for d in _lint(src, "M-MOD-017", ctx=_ctx()) if d.rule_id == "M-MOD-017"]
+        assert len(diags) == 1
+        assert "$TEST" in diags[0].message
+
+    def test_silent_when_if_precedes(self):
+        """``IF cond`` then ``IF $TEST ...`` — IF set $T, fresh read."""
+        src = b"LBL\n IF X=1\n IF $TEST WRITE 2\n Q\n"
+        assert _lint(src, "M-MOD-017", ctx=_ctx()) == []
+
+    def test_silent_when_lock_with_timeout_precedes(self):
+        """``LOCK +X:5`` sets $T; subsequent read is fresh."""
+        src = b"LBL\n LOCK +X:5\n IF $TEST WRITE 1\n Q\n"
+        assert _lint(src, "M-MOD-017", ctx=_ctx()) == []
+
+    def test_fires_on_dollar_t_abbreviation(self):
+        """``$T`` is the abbreviation of ``$TEST``."""
+        src = b"LBL\n IF $T WRITE 1\n Q\n"
+        diags = [d for d in _lint(src, "M-MOD-017", ctx=_ctx()) if d.rule_id == "M-MOD-017"]
+        assert len(diags) == 1
+
+    def test_silent_on_no_test_reads(self):
+        src = b"LBL\n S X=1\n Q\n"
+        assert _lint(src, "M-MOD-017", ctx=_ctx()) == []
+
+    def test_dedup_per_line(self):
+        """Many $TEST reads on the same line collapse to one diagnostic."""
+        src = b"LBL\n W $TEST,$TEST,$TEST\n Q\n"
+        diags = [d for d in _lint(src, "M-MOD-017", ctx=_ctx()) if d.rule_id == "M-MOD-017"]
+        assert len(diags) == 1
+
+    def test_fires_on_test_read_in_postcondition(self):
+        """``Q:$TEST`` reads $TEST in a postcondition — also stale."""
+        src = b"LBL\n Q:$TEST\n Q\n"
+        diags = [d for d in _lint(src, "M-MOD-017", ctx=_ctx()) if d.rule_id == "M-MOD-017"]
+        assert len(diags) == 1

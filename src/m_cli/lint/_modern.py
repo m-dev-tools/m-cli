@@ -2807,3 +2807,91 @@ register(
         replaces=("M-MOD-013",),
     )
 )
+
+
+# ---------------------------------------------------------------------------
+# M-MOD-017 — Stale $TEST read
+# ---------------------------------------------------------------------------
+
+
+def _check_dollar_test_stale(
+    src: bytes, _tree, path: Path, index: NodeIndex, _ctx: LintContext
+) -> Iterator[Diagnostic]:
+    """M-MOD-017 — Reading ``$TEST`` without a $T-setting command on
+    every prior path.
+
+    Rounds out Phase 7. The last of the originally-deferred Phase 7
+    rules — needs forward MUST analysis ("has a $T-setter run on
+    every path?") which became available with the flow infrastructure.
+
+    A $T-read at block B is flagged when ``flow.dollar_test.analyze_test_freshness``
+    reports ``in_state[B] is False`` — there's at least one path
+    from label entry to B where no setter ran, so the value of
+    $TEST is whatever was left in the process from before this
+    label was entered (almost certainly stale).
+
+    Reports one diagnostic per (label, $TEST-read site) — many
+    consecutive stale reads in a row would be over-noisy without
+    the dedup.
+    """
+    from m_cli.lint.flow import build_cfgs
+    from m_cli.lint.flow.dollar_test import analyze_test_freshness
+
+    _DOLLAR_TEST_NAMES = frozenset({"$TEST", "$T"})
+
+    def _walk_test_reads(node):
+        """Yield every $TEST / $T special_variable node in the subtree."""
+        if node.type == "special_variable":
+            text = src[node.start_byte : node.end_byte].decode(
+                "latin-1", errors="replace"
+            ).upper()
+            if text in _DOLLAR_TEST_NAMES:
+                yield node
+            return
+        for c in node.children:
+            yield from _walk_test_reads(c)
+
+    cfgs = build_cfgs(src, index)
+    for cfg in cfgs:
+        freshness = analyze_test_freshness(cfg, src)
+        reported_lines: set[int] = set()
+        for block in cfg.blocks:
+            if block.kind != "command":
+                continue
+            cmd = block.command
+            if cmd is None:
+                continue
+            if freshness[block.id]:
+                continue
+            for tnode in _walk_test_reads(cmd):
+                line = tnode.start_point[0] + 1
+                if line in reported_lines:
+                    continue
+                reported_lines.add(line)
+                yield Diagnostic(
+                    rule_id="M-MOD-017",
+                    severity=Severity.WARNING,
+                    message=(
+                        f"$TEST read in {cfg.label_name} without a "
+                        "$T-setting command on every prior path — "
+                        "value may be stale from a much earlier command"
+                    ),
+                    path=path,
+                    line=line,
+                    column=tnode.start_point[1] + 1,
+                    column_end=tnode.end_point[1] + 1,
+                )
+
+
+register(
+    Rule(
+        id="M-MOD-017",
+        severity=Severity.WARNING,
+        category=Category.BUG,
+        title="$TEST read without preceding $T-setter (stale read)",
+        tags=("modern",),
+        check=_check_dollar_test_stale,
+        needs_context=True,
+        replaces=(),
+    )
+)
