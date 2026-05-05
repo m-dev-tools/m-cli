@@ -1,4 +1,4 @@
-.PHONY: install test test-lf watch lint format mypy cov check vista vista-canonical lint-vista lint-modern lint-modern-baseline lint-modern-setup push pull hooks
+.PHONY: install test test-lf watch lint format mypy cov check vista vista-canonical lint-vista lint-modern lint-modern-baseline lint-modern-setup push pull hooks seed unseed test-vista
 
 PYTHON := .venv/bin/python
 PYTEST := .venv/bin/pytest
@@ -6,6 +6,14 @@ PTW    := .venv/bin/ptw
 RUFF   := .venv/bin/ruff
 MYPY   := .venv/bin/mypy
 PRECOMMIT := .venv/bin/pre-commit
+
+# vista-meta client wiring — see ~/claude/templates/m-vista-client/
+VISTA_CONN := $(HOME)/data/vista-meta/conn.env
+ifneq ($(wildcard $(VISTA_CONN)),)
+include $(VISTA_CONN)
+export VISTA_HOST VISTA_SSH_PORT VISTA_SSH_USER
+export VISTA_HTTP_RPC_PORT VISTA_HTTP_FMQL_PORT VISTA_HTTP_ROCTO_PORT VISTA_HTTP_YDBGUI_PORT
+endif
 
 install:
 	uv sync --extra dev
@@ -69,3 +77,14 @@ pull:
 
 push: check
 	git push origin main
+
+# ── Shared vista-meta engine (see vista-meta/Makefile reseed-all) ───
+seed:
+	@./scripts/seed-vista.sh
+
+unseed:
+	@./scripts/unseed-vista.sh
+
+test-vista: seed
+	@$(PYTEST) -m vista || (rc=$$?; $(MAKE) unseed; exit $$rc)
+	@$(MAKE) unseed

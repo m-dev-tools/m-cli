@@ -21,7 +21,10 @@ from m_cli.coverage.runner import (
     discover_routines_and_suites,
     run_coverage,
 )
+from m_cli.engine import Connection
 from m_cli.test.discovery import discover
+
+FAKE_CONN = Connection(host="vm-host", ssh_port=2222, ssh_user="vehu")
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -219,7 +222,7 @@ def test_run_coverage_marks_each_label_covered_or_not(tmp_path: Path) -> None:
         captured["stdin"] = stdin_text
         return canned, 0
 
-    result = run_coverage(routines, suites, runner=fake_runner)
+    result = run_coverage(routines, suites, runner=fake_runner, conn=FAKE_CONN)
 
     assert result.returncode == 0
     by_label = {(lab.routine, lab.label): lab.covered for lab in result.labels}
@@ -246,7 +249,7 @@ def test_run_coverage_populates_line_data(tmp_path: Path) -> None:
     def fake_runner(cmd, stdin_text, env):
         return canned, 0
 
-    result = run_coverage(routines, suites, runner=fake_runner)
+    result = run_coverage(routines, suites, runner=fake_runner, conn=FAKE_CONN)
 
     by_pos = {(lc.routine, lc.line): lc.hit_count for lc in result.lines}
     # GREET line 4 hit twice, line 5 hit thrice (offset-decoded).
@@ -270,7 +273,7 @@ def test_run_coverage_computes_label_and_line_percent(tmp_path: Path) -> None:
     def fake_runner(cmd, stdin_text, env):
         return canned, 0
 
-    result = run_coverage(routines, suites, runner=fake_runner)
+    result = run_coverage(routines, suites, runner=fake_runner, conn=FAKE_CONN)
 
     # 3 non-entry labels: GREET, SHOUT, ADD. 1 covered (GREET — any
     # of its lines hit ⇒ covered).
@@ -292,7 +295,7 @@ def test_run_coverage_passes_script_to_runner_via_stdin(tmp_path: Path) -> None:
         captured["stdin"] = stdin_text
         return "", 0
 
-    run_coverage(routines, suites, runner=fake_runner)
+    run_coverage(routines, suites, runner=fake_runner, conn=FAKE_CONN)
 
     stdin = captured["stdin"]
     assert 'view "TRACE":1:"^ycov":""' in stdin
@@ -306,7 +309,9 @@ def test_run_coverage_suite_filter_restricts_run(tmp_path: Path) -> None:
         assert "do ^HELLOTST" not in stdin_text
         return "", 0
 
-    result = run_coverage(routines, suites, runner=fake_runner, suite_filter=["NONEXIST"])
+    result = run_coverage(
+        routines, suites, runner=fake_runner, conn=FAKE_CONN, suite_filter=["NONEXIST"]
+    )
     assert result.suites_run == []
 
 
@@ -317,7 +322,7 @@ def test_run_coverage_returns_empty_when_no_routines(tmp_path: Path) -> None:
     def fake_runner(cmd, stdin_text, env):
         raise AssertionError("runner should not be called with no routines")
 
-    result = run_coverage([], suites, runner=fake_runner)
+    result = run_coverage([], suites, runner=fake_runner, conn=FAKE_CONN)
     assert result.total == 0
     assert result.percent == 0.0
 

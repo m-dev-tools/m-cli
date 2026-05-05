@@ -16,18 +16,24 @@ def write_output(
     fmt: str = "text",
     uncovered_only: bool = False,
     show_lines: bool = False,
+    show_branches: bool = False,
 ) -> None:
     if fmt == "json":
-        _write_json(result)
+        _write_json(result, show_branches=show_branches)
     elif fmt == "lcov":
-        _write_lcov(result)
+        _write_lcov(result, show_branches=show_branches)
     elif fmt == "text":
-        _write_text(result, uncovered_only=uncovered_only, show_lines=show_lines)
+        _write_text(
+            result,
+            uncovered_only=uncovered_only,
+            show_lines=show_lines,
+            show_branches=show_branches,
+        )
     else:
         raise ValueError(f"unknown coverage output format: {fmt!r}")
 
 
-def _write_json(result: CoverageResult) -> None:
+def _write_json(result: CoverageResult, *, show_branches: bool = False) -> None:
     payload = {
         "total": result.total,
         "covered": result.covered,
@@ -67,20 +73,42 @@ def _write_json(result: CoverageResult) -> None:
             for ln in result.lines
         ],
     }
+    if show_branches and result.branches is not None:
+        payload["total_branches"] = result.total_branches
+        payload["reached_branches"] = result.reached_branches
+        payload["branch_percent"] = round(result.branch_percent, 1)
+        payload["branches"] = [
+            {
+                "routine": bc.point.routine,
+                "label": bc.point.label,
+                "path": str(bc.point.path),
+                "line": bc.point.line,
+                "column": bc.point.column,
+                "kind": bc.point.kind,
+                "reached": bc.reached,
+            }
+            for bc in result.branches
+        ]
     sys.stdout.write(json.dumps(payload, indent=2) + "\n")
 
 
-def _write_lcov(result: CoverageResult) -> None:
+def _write_lcov(result: CoverageResult, *, show_branches: bool = False) -> None:
     """Emit LCOV tracefile records.
 
     One ``SF:..`` block per source file, with a ``DA:line,count`` per
-    executable line and ``LF:`` / ``LH:`` totals. Standard format
-    consumed by genhtml, Codecov, Coveralls, and most CI badges. We
-    don't emit FN / BRDA records — m-cli doesn't (yet) track function
-    or branch coverage at the level LCOV expects."""
+    executable line, ``LF:`` / ``LH:`` totals, and — when branch data
+    was collected — one ``BRDA:line,block,branch,taken`` per branch
+    point plus ``BRF:`` / ``BRH:`` totals. We use a single block id
+    (0) and a per-line counter for ``branch`` since M's same-line
+    gating doesn't expose multiple LLVM-style basic-block boundaries.
+    """
     by_path: dict[Path, list[LineCoverage]] = defaultdict(list)
     for line in result.lines:
         by_path[line.path].append(line)
+    branches_by_path: dict[Path, list] = defaultdict(list)
+    if show_branches and result.branches is not None:
+        for bc in result.branches:
+            branches_by_path[bc.point.path].append(bc)
     out = sys.stdout
     out.write("TN:\n")
     for path in sorted(by_path):
@@ -91,13 +119,33 @@ def _write_lcov(result: CoverageResult) -> None:
             out.write(f"DA:{lc.line},{lc.hit_count}\n")
             if lc.hit_count > 0:
                 hit_count += 1
+        if show_branches:
+            file_branches = sorted(
+                branches_by_path.get(path, []),
+                key=lambda bc: (bc.point.line, bc.point.column),
+            )
+            per_line_counter: dict[int, int] = {}
+            br_hit = 0
+            for bc in file_branches:
+                idx = per_line_counter.get(bc.point.line, 0)
+                per_line_counter[bc.point.line] = idx + 1
+                taken = "1" if bc.reached else "-"
+                out.write(f"BRDA:{bc.point.line},0,{idx},{taken}\n")
+                if bc.reached:
+                    br_hit += 1
+            out.write(f"BRF:{len(file_branches)}\n")
+            out.write(f"BRH:{br_hit}\n")
         out.write(f"LF:{len(lines)}\n")
         out.write(f"LH:{hit_count}\n")
         out.write("end_of_record\n")
 
 
 def _write_text(
-    result: CoverageResult, *, uncovered_only: bool, show_lines: bool
+    result: CoverageResult,
+    *,
+    uncovered_only: bool,
+    show_lines: bool,
+    show_branches: bool = False,
 ) -> None:
     if uncovered_only:
         uncovered_labels = [lab for lab in result.labels if not lab.covered]
@@ -149,6 +197,11 @@ def _write_text(
     sys.stdout.write(
         f"{'Total':<20} {result.covered:>9} {result.total:>9} {result.percent:>8.1f}%\n"
     )
+    if show_branches and result.branches is not None:
+        sys.stdout.write(
+            f"\nBranches: {result.reached_branches}/{result.total_branches} "
+            f"reached ({result.branch_percent:.1f}%)\n"
+        )
 
 
 def _line_totals_by_routine(result: CoverageResult) -> dict[str, tuple[int, int]]:

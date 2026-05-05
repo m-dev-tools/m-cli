@@ -1,9 +1,10 @@
-"""Output formatters for `m test`: text, TAP, and JSON."""
+"""Output formatters for `m test`: text, TAP, JSON, and JUnit XML."""
 
 from __future__ import annotations
 
 import json
 import sys
+import xml.etree.ElementTree as ET
 from collections.abc import Iterable
 
 from m_cli.test.runner import Outcome, RunResult
@@ -15,6 +16,8 @@ def write_output(results: Iterable[RunResult], fmt: str) -> None:
         _write_tap(results)
     elif fmt == "json":
         _write_json(results)
+    elif fmt == "junit":
+        _write_junit(results)
     else:
         _write_text(results)
 
@@ -62,6 +65,73 @@ def _write_tap(results: list[RunResult]) -> None:
                 if a.actual is not None:
                     print(f"  actual:   {a.actual}")
                 print("  ...")
+
+
+def _write_junit(results: list[RunResult]) -> None:
+    """Emit Jenkins-style JUnit XML.
+
+    Granularity mirrors TAP: one ``<testcase>`` per parsed assertion. If
+    a suite emitted no assertion lines, fall back to a single
+    ``<testcase>`` named after the suite so totals are non-zero.
+    """
+    root = ET.Element("testsuites", {"name": "m test"})
+    total_tests = 0
+    total_failures = 0
+    for r in results:
+        suite_el = ET.SubElement(root, "testsuite")
+        suite_label = r.suite if r.label is None else f"{r.suite}::{r.label}"
+        suite_tests = 0
+        suite_failures = 0
+        if r.summary.assertions:
+            for a in r.summary.assertions:
+                case_el = ET.SubElement(
+                    suite_el,
+                    "testcase",
+                    {"classname": r.suite, "name": a.description},
+                )
+                suite_tests += 1
+                if a.outcome != Outcome.PASS:
+                    suite_failures += 1
+                    body_lines = []
+                    if a.expected is not None:
+                        body_lines.append(f"expected: {a.expected}")
+                    if a.actual is not None:
+                        body_lines.append(f"actual:   {a.actual}")
+                    failure_el = ET.SubElement(
+                        case_el,
+                        "failure",
+                        {"message": "assertion failed"},
+                    )
+                    failure_el.text = "\n".join(body_lines) or "assertion failed"
+        else:
+            case_el = ET.SubElement(
+                suite_el,
+                "testcase",
+                {"classname": r.suite, "name": suite_label},
+            )
+            suite_tests = 1
+            if not r.ok:
+                suite_failures = 1
+                ET.SubElement(
+                    case_el,
+                    "failure",
+                    {"message": "suite failed"},
+                ).text = r.stdout or "suite failed with no output"
+        suite_el.set("name", r.suite)
+        suite_el.set("tests", str(suite_tests))
+        suite_el.set("failures", str(suite_failures))
+        suite_el.set("errors", "0")
+        suite_el.set("time", "0")
+        total_tests += suite_tests
+        total_failures += suite_failures
+    root.set("tests", str(total_tests))
+    root.set("failures", str(total_failures))
+    root.set("errors", "0")
+    root.set("time", "0")
+    ET.indent(root, space="  ")
+    sys.stdout.write('<?xml version="1.0" encoding="utf-8"?>\n')
+    sys.stdout.write(ET.tostring(root, encoding="unicode"))
+    sys.stdout.write("\n")
 
 
 def _write_json(results: list[RunResult]) -> None:

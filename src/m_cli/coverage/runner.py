@@ -36,11 +36,22 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from m_cli.coverage.branches import (
+    BranchCoverage,
+    extract_branch_points,
+    join_branch_coverage,
+)
+from m_cli.engine import (
+    Connection,
+    build_direct_ssh_cmd,
+    read_connection,
+    remote_stage,
+)
 from m_cli.test.discovery import TestSuite, is_suite_file
-from m_cli.test.runner import _build_env, _ydb_path
 from m_cli.workspace import LabelLocation, WorkspaceIndex
 
-# (cmd, stdin_text, env) -> (stdout, returncode)
+# (cmd, stdin_text, env) -> (stdout, returncode). ``env`` retained for
+# signature stability but unused (env is set inside the remote shell).
 RunnerFn = Callable[[list[str], str, "dict[str, str] | None"], "tuple[str, int]"]
 
 
@@ -76,9 +87,9 @@ class LineCoverage:
 class CoverageResult:
     """Aggregate result of a coverage run.
 
-    Carries both label-level (back-compat) and line-level data. The
-    label-level summary is derived from the line-level data — there's
-    a single source of truth from the YDB trace global.
+    Carries label-level and line-level data, and — when the caller
+    opts in via ``with_branches=True`` — branch-level data. Default is
+    ``branches=None`` so existing call sites keep their payload shape.
     """
 
     labels: list[LabelCoverage]
@@ -88,6 +99,7 @@ class CoverageResult:
     stdout: str
     by_routine: dict[str, tuple[int, int]] = field(default_factory=dict)
     # by_routine[routine] = (covered_count, total_count)  — label-level
+    branches: list[BranchCoverage] | None = None
 
     @property
     def total(self) -> int:
@@ -112,6 +124,22 @@ class CoverageResult:
     @property
     def line_percent(self) -> float:
         return 100.0 * self.covered_lines / self.total_lines if self.total_lines else 0.0
+
+    @property
+    def total_branches(self) -> int:
+        return len(self.branches) if self.branches else 0
+
+    @property
+    def reached_branches(self) -> int:
+        return sum(1 for bc in self.branches or [] if bc.reached)
+
+    @property
+    def branch_percent(self) -> float:
+        return (
+            100.0 * self.reached_branches / self.total_branches
+            if self.total_branches
+            else 0.0
+        )
 
 
 def discover_routines_and_suites(
@@ -159,13 +187,20 @@ def run_coverage(
     suites: list[TestSuite],
     *,
     runner: RunnerFn | None = None,
-    env: dict[str, str] | None = None,
+    conn: Connection | None = None,
     suite_filter: list[str] | None = None,
+    with_branches: bool = False,
 ) -> CoverageResult:
     """Run coverage over ``routine_paths`` driven by ``suites``.
 
     ``suite_filter``, when given, restricts execution to suites whose
     name is in the list — useful for ``m coverage --suites X,Y``.
+
+    ``with_branches`` opts into branch-coverage extraction. When set,
+    the returned ``CoverageResult.branches`` is a list of
+    ``BranchCoverage`` records, one per static branch point in the
+    production routines. When unset, ``branches`` stays ``None`` so
+    existing payloads don't change.
     """
     selected_suites = (
         [s for s in suites if s.name in suite_filter] if suite_filter else list(suites)
@@ -179,18 +214,21 @@ def run_coverage(
             suites_run=[s.name for s in selected_suites],
             returncode=0,
             stdout="",
+            branches=[] if with_branches else None,
         )
 
     script = _build_script(selected_suites)
-    cmd = [_ydb_path(), "-direct"]
     runner = runner or _default_runner
 
-    # Compose env. Reuse `_build_env` from the test runner so suite +
-    # routines paths line up the same way `m test` does — the user has
-    # one mental model for "where does ydb find the .m files."
-    env_seed = selected_suites[0].path if selected_suites else routine_paths[0]
-    full_env = _build_env(env_seed, env)
-    stdout, rc = runner(cmd, script, full_env)
+    # Build the SSH cmd targeting vista-meta. The remote stage dir is
+    # derived from the project root of the first suite (or first
+    # routine, if no suites) — every project's .m files share one
+    # stage dir so a single ydb_routines value works for all.
+    seed = selected_suites[0].path if selected_suites else routine_paths[0]
+    conn = conn or read_connection()
+    stage = remote_stage(seed)
+    cmd = build_direct_ssh_cmd(conn, stage)
+    stdout, rc = runner(cmd, script, None)
 
     hit_lines = _parse_line_hits(stdout)
 
@@ -233,6 +271,11 @@ def run_coverage(
     for lab in label_cov:
         cov, total = by_routine.get(lab.routine, (0, 0))
         by_routine[lab.routine] = (cov + (1 if lab.covered else 0), total + 1)
+
+    branches: list[BranchCoverage] | None = None
+    if with_branches:
+        branches = _collect_branches(routine_paths, label_locs, hit_lines)
+
     return CoverageResult(
         labels=label_cov,
         lines=lines,
@@ -240,7 +283,66 @@ def run_coverage(
         returncode=rc,
         stdout=stdout,
         by_routine=by_routine,
+        branches=branches,
     )
+
+
+def _collect_branches(
+    routine_paths: list[Path],
+    label_locs: list[LabelLocation],
+    hits: dict[tuple[str, str, int], int],
+) -> list[BranchCoverage]:
+    """Walk every production routine for branch points and join them
+    against the per-line hit map.
+
+    Includes routine-entry labels in ``label_lines`` even though they
+    don't appear in ``label_locs`` (the entry label is excluded from
+    label coverage but is still a valid owner for branches on the
+    routine's first body lines).
+    """
+    label_lines: dict[tuple[str, str], int] = {
+        (loc.routine, loc.label.upper()): loc.line for loc in label_locs
+    }
+    points = []
+    paths_seen: set[Path] = set()
+    for path in routine_paths:
+        resolved = path.resolve()
+        if resolved in paths_seen:
+            continue
+        paths_seen.add(resolved)
+        try:
+            src = path.read_bytes()
+        except OSError:
+            continue
+        # Re-walk for entry-label lines so branches on the routine
+        # body line(s) before any non-entry label still join correctly.
+        for entry_label, entry_line in _entry_label_lines(path, src):
+            label_lines.setdefault((path.stem.upper(), entry_label.upper()), entry_line)
+        points.extend(extract_branch_points(path, src))
+    return join_branch_coverage(points, hits, label_lines)
+
+
+def _entry_label_lines(path: Path, src: bytes) -> list[tuple[str, int]]:
+    """Return ``(label_name, line)`` pairs for every label in ``path``.
+
+    Used to seed the label_lines map so branches inside routine-entry
+    labels can resolve their offset.
+    """
+    from m_cli.parser import parse
+
+    out: list[tuple[str, int]] = []
+    tree = parse(src)
+    for line_node in tree.root_node.children:
+        if line_node.type != "line":
+            continue
+        for child in line_node.children:
+            if child.type == "label":
+                name = src[child.start_byte : child.end_byte].decode(
+                    "latin-1", errors="replace"
+                )
+                out.append((name, line_node.start_point[0] + 1))
+                break
+    return out
 
 
 @dataclass(frozen=True)
@@ -411,6 +513,7 @@ def _default_runner(
 
 
 __all__ = [
+    "BranchCoverage",
     "CoverageResult",
     "LabelCoverage",
     "LineCoverage",

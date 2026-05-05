@@ -174,6 +174,25 @@ def test_json_format(
     assert payload["suites"][0]["name"] == "HELLOTST"
 
 
+def test_junit_format(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    _write_suite(tmp_path)
+    from m_cli.test import runner as runner_mod
+
+    def fake(cmd, env=None):
+        return ALL_PASS_OUTPUT, 0
+
+    monkeypatch.setattr(runner_mod, "_default_runner", fake)
+    rc = main(["test", "--format", "junit", str(tmp_path)])
+    assert rc == 0
+    import xml.etree.ElementTree as ET
+
+    out = capsys.readouterr().out
+    root = ET.fromstring(out)
+    assert root.tag == "testsuites"
+
+
 def test_no_paths_uses_routines_tests_if_present(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -211,6 +211,53 @@ def test_TestCase_dataclass_constructable() -> None:
     assert c.label == "tFoo"
 
 
+# ---------------------------------------------------------------------------
+# Protocol detection (C1) — ^TESTRUN vs ^STDASSERT vs other
+# ---------------------------------------------------------------------------
+
+
+STDASSERT_TST_SRC = dedent("""\
+    STDFOOTST ; Test suite for STDFOO via STDASSERT.
+            new pass,fail
+            do start^STDASSERT(.pass,.fail)
+            do tEncode(.pass,.fail)
+            do report^STDASSERT(pass,fail)
+            quit
+            ;
+    tEncode(pass,fail)
+            do eq^STDASSERT(.pass,.fail,"x","x","trivial")
+            quit
+""").encode("ascii")
+
+
+def test_TestCase_protocol_defaults_to_TESTRUN() -> None:
+    c = TestCase(suite="X", label="tFoo", description=None, path=Path("X.m"), line=1)
+    assert c.protocol == "TESTRUN"
+
+
+def test_find_test_cases_detects_TESTRUN_protocol() -> None:
+    cases = find_test_cases(Path("HELLOTST.m"), HELLOTST_SRC)
+    assert all(c.protocol == "TESTRUN" for c in cases)
+
+
+def test_find_test_cases_detects_STDASSERT_protocol() -> None:
+    cases = find_test_cases(Path("STDFOOTST.m"), STDASSERT_TST_SRC)
+    assert len(cases) >= 1
+    assert all(c.protocol == "STDASSERT" for c in cases)
+
+
+def test_find_test_cases_protocol_falls_back_to_TESTRUN_when_no_start_call() -> None:
+    src = dedent("""\
+        HELLOTST
+                quit
+                ;
+        tFoo(pass,fail)
+                quit
+    """).encode("ascii")
+    cases = find_test_cases(Path("HELLOTST.m"), src)
+    assert cases and cases[0].protocol == "TESTRUN"
+
+
 def test_discover_dedups_overlapping_paths(tmp_path: Path) -> None:
     # When the user passes both a parent and its child, each suite must
     # appear exactly once.

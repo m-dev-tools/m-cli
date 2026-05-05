@@ -19,9 +19,11 @@ Pick up from this list. Top section is "next session" — concrete, ordered. Low
 **Next session — pick from:**
 
 1. **Inline disable comments + LSP rule-hover + 2 more rules — DONE.** `; m-lint: disable=RULE` (same-line / disable-next-line / disable-file / `*` wildcard); LSP hover on a diagnostic squiggle shows rule id + title + severity; M-XINDX-009 (dead-code-after-QUIT) and M-XINDX-051 (empty IF/ELSE) added.
-2. **More data-flow rules.** Remaining ~24 deferred XINDEX rules — uninitialized variable read, naked references, kill of read-only var, etc. Each is now far easier to add: workspace context is wired through `lint_source`; inline-disable lets users tame noisy rules without a config file.
-3. **Tier 3.** Documentation generator, dependency management, complexity metrics. The `WorkspaceIndex` is the foundation for several of these.
-4. **Publish to PyPI.** Unblocks `language: repo` pre-commit and downstream `pip install m-cli`.
+2. **C4 — `m coverage --branch` — DONE.** AST-driven branch-point identification (IF/ELSE/FOR command keywords, `postconditional`, `argument_postconditional`); branch reach derived from line-level `view "TRACE"` hits. Output formats: text summary line, JSON keys (`total_branches`, `reached_branches`, `branch_percent`, `branches`), LCOV `BRDA` / `BRF` / `BRH` records. Branches collected only when the caller opts in (`with_branches=True` / `--branch`) so existing payloads stay byte-stable. Follow-up: true/false outcome split would need ZBREAK-style per-command instrumentation that `view "TRACE"` doesn't provide.
+3. **C5 — `m test --changed` — DONE.** Filters discovered suites to those affine with git-modified `.m` files via `git status --porcelain` (default) or `git diff --name-only <REV>` (`--changed-base REV`). Reuses `m_cli.watch.affinity.resolve_affinity` so source→suite mapping matches `m watch`. Untracked `.m` files included; deleted files dropped. Empty result exits 0 with a hint.
+4. **More data-flow rules.** Remaining ~24 deferred XINDEX rules — uninitialized variable read, naked references, kill of read-only var, etc. Each is now far easier to add: workspace context is wired through `lint_source`; inline-disable lets users tame noisy rules without a config file.
+5. **Tier 3.** Documentation generator, dependency management, complexity metrics. The `WorkspaceIndex` is the foundation for several of these.
+6. **Publish to PyPI.** Unblocks `language: repo` pre-commit and downstream `pip install m-cli`.
 
 ---
 

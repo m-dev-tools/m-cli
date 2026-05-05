@@ -34,6 +34,10 @@ class TestCase:
     description: str | None
     path: Path
     line: int
+    # Routine that hosts ``start(p,f)`` / ``report(p,f)`` for this suite.
+    # Detected by ``find_test_cases`` from the suite's entry block; defaults
+    # to ``"TESTRUN"`` for backwards compatibility with m-tools / VistA suites.
+    protocol: str = "TESTRUN"
 
 
 @dataclass(frozen=True)
@@ -50,6 +54,12 @@ class TestSuite:
 _SUITE_NAME_RE = re.compile(r"^[A-Z][A-Z0-9]*TST$")
 _TEST_LABEL_RE = re.compile(r"^t[A-Z][A-Za-z0-9]*$")
 _TEST_DESC_RE = re.compile(r';@TEST\s+"([^"]*)"')
+# ``do start^XYZ(.pass,.fail)`` — abbreviated ``d`` and case-insensitive ``do``
+# both qualify; whitespace varies across formatters. The captured group is
+# the routine name hosting the start/report protocol (TESTRUN, STDASSERT, ...).
+_PROTOCOL_RE = re.compile(
+    r"\b[Dd][Oo]?\s+start\^([A-Z][A-Z0-9]*)\s*\(\s*\.pass\s*,\s*\.fail\s*\)"
+)
 
 
 def is_suite_file(path: Path) -> bool:
@@ -71,6 +81,7 @@ def find_test_cases(path: Path, src: bytes) -> list[TestCase]:
     """
     tree = parse(src)
     suite = path.stem
+    protocol = detect_protocol(src)
     cases: list[TestCase] = []
     seen_first_label = False
     line_nodes = [c for c in tree.root_node.children if c.type == "line"]
@@ -99,9 +110,22 @@ def find_test_cases(path: Path, src: bytes) -> list[TestCase]:
                 description=description,
                 path=path,
                 line=line,
+                protocol=protocol,
             )
         )
     return cases
+
+
+def detect_protocol(src: bytes) -> str:
+    """Return the routine that hosts ``start(p,f)`` / ``report(p,f)`` for ``src``.
+
+    Scans the suite body for the first ``do start^XYZ(.pass,.fail)`` call and
+    returns ``XYZ``. Falls back to ``"TESTRUN"`` when no such call is found,
+    preserving the m-tools convention for legacy suites.
+    """
+    text = src.decode("latin-1", errors="replace")
+    m = _PROTOCOL_RE.search(text)
+    return m.group(1) if m else "TESTRUN"
 
 
 def discover(paths: Iterable[Path]) -> list[TestSuite]:

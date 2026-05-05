@@ -20,6 +20,7 @@ from m_cli.coverage.runner import (
     discover_routines_and_suites,
     run_coverage,
 )
+from m_cli.engine import EngineNotConfigured, read_connection, seed_for_paths
 
 
 def coverage_command(args: argparse.Namespace) -> int:
@@ -46,12 +47,27 @@ def coverage_command(args: argparse.Namespace) -> int:
             )
             return 2
 
-    result = run_coverage(routines, suites, suite_filter=suite_filter)
+    try:
+        conn = read_connection()
+        seed_for_paths(routines + [s.path for s in suites], conn)
+    except EngineNotConfigured as e:
+        print(f"m coverage: {e}", file=sys.stderr)
+        return 2
+
+    branch = getattr(args, "branch", False)
+    result = run_coverage(
+        routines,
+        suites,
+        suite_filter=suite_filter,
+        conn=conn,
+        with_branches=branch,
+    )
     write_output(
         result,
         fmt=args.format,
         uncovered_only=args.uncovered,
         show_lines=args.lines,
+        show_branches=branch,
     )
 
     if not args.quiet:
@@ -160,6 +176,14 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         "--uncovered",
         action="store_true",
         help="Print only uncovered labels (text format only)",
+    )
+    parser.add_argument(
+        "--branch",
+        action="store_true",
+        help=(
+            "Collect branch coverage: identify IF/ELSE/FOR/postconditional "
+            "decisions and report which were reached during the run."
+        ),
     )
     parser.add_argument(
         "--min-percent",
