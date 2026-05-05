@@ -258,7 +258,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     test_parser.add_argument(
         "--format",
-        choices=("text", "tap", "json"),
+        choices=("text", "tap", "json", "junit"),
         default="text",
         help="Output format (default: text)",
     )
@@ -267,6 +267,45 @@ def main(argv: list[str] | None = None) -> int:
         "--quiet",
         action="store_true",
         help="Suppress summary output",
+    )
+    test_parser.add_argument(
+        "--changed",
+        action="store_true",
+        help=(
+            "Run only suites whose source has changed in git "
+            "(working tree + index + untracked). Combine with "
+            "--changed-base to diff against a specific revision."
+        ),
+    )
+    test_parser.add_argument(
+        "--changed-base",
+        default=None,
+        metavar="REV",
+        help=(
+            "With --changed: diff against revision REV (e.g. main) "
+            "instead of the working tree."
+        ),
+    )
+    test_parser.add_argument(
+        "--no-isolation",
+        action="store_true",
+        help=(
+            "Skip the per-test STDFIX transactional wrapper. Use for "
+            "legacy ^TESTRUN-style suites that don't want a TSTART / "
+            "TROLLBACK around each test (default: isolation on)."
+        ),
+    )
+    test_parser.add_argument(
+        "--seed",
+        action="append",
+        default=[],
+        metavar="PATH",
+        dest="seeds",
+        help=(
+            "Load a STDSEED TSV manifest before running each test "
+            "(`do load^STDSEED(\"PATH\")`). Repeat for multiple seeds; "
+            "order is preserved."
+        ),
     )
     test_parser.set_defaults(func=test_command)
 

@@ -16,6 +16,8 @@ import argparse
 import sys
 from pathlib import Path
 
+from m_cli.engine import EngineNotConfigured, read_connection, seed_for_paths
+from m_cli.test.changed import changed_to_suites, find_changed_m_files
 from m_cli.test.discovery import TestSuite, discover, find_test_cases, is_suite_file
 from m_cli.test.output import write_output
 from m_cli.test.runner import RunResult, run_case, run_suite
@@ -50,13 +52,32 @@ def test_command(args: argparse.Namespace) -> int:
         print("m test: no test suites discovered", file=sys.stderr)
         return 2
 
+    if getattr(args, "changed", False):
+        base = getattr(args, "changed_base", None)
+        changed_files = find_changed_m_files(Path.cwd(), base=base)
+        suites = changed_to_suites(changed_files, suites)
+        if not suites:
+            print(
+                "m test: no changed .m files affect any discovered suite",
+                file=sys.stderr,
+            )
+            return 0
+
     if args.list:
         _list_suites(suites)
         return 0
 
+    try:
+        conn = read_connection()
+        seed_for_paths([s.path for s in suites], conn)
+    except EngineNotConfigured as e:
+        print(f"m test: {e}", file=sys.stderr)
+        return 2
+
+    seeds = list(getattr(args, "seeds", []) or [])
     results: list[RunResult] = []
     for suite in suites:
-        results.append(run_suite(suite))
+        results.append(run_suite(suite, conn=conn, seeds=seeds))
 
     write_output(results, fmt=args.format)
     if not args.quiet:
@@ -124,7 +145,15 @@ def _run_single_case(selector: tuple[Path, str], args: argparse.Namespace) -> in
     if args.list:
         _list_suites([TestSuite(name=case.suite, path=suite_path, cases=[case])])
         return 0
-    result = run_case(case)
+    try:
+        conn = read_connection()
+        seed_for_paths([case.path], conn)
+    except EngineNotConfigured as e:
+        print(f"m test: {e}", file=sys.stderr)
+        return 2
+    isolation = not getattr(args, "no_isolation", False)
+    seeds = list(getattr(args, "seeds", []) or [])
+    result = run_case(case, conn=conn, isolation=isolation, seeds=seeds)
     write_output([result], fmt=args.format)
     if not args.quiet:
         _print_summary([result])

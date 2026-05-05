@@ -1,34 +1,34 @@
-"""Run M test suites against a YottaDB interpreter.
+"""Run M test suites against the vista-meta YottaDB engine.
 
-The runner shells out to ``ydb`` (configurable via ``$YDB`` / discovered
-via ``ydb_dist``) and parses its stdout. Output is the mini-protocol
-emitted by m-tools' ``^TESTRUN`` assertion library:
-
-    ``  PASS  <description>``
-    ``  FAIL  <description>``
-    ``         expected: <expected>``
-    ``         actual:   <actual>``
-    ...
-    ``Results: <total> tests  <passed> passed  <failed> failed``
-    ``All tests passed.``  *or*  ``<n> test(s) FAILED.``
+The runner builds an ``ssh`` argv that invokes ``mumps`` remotely on
+vista-meta; output parsing follows the TESTRUN protocol unchanged
+(``  PASS  ...`` / ``  FAIL  ...`` / ``Results: N tests ...``).
 
 The subprocess invocation is injectable (``runner=`` kwarg) so unit
-tests don't require a live ydb installation.
+tests don't need a live container — pass a fake that returns canned
+``(stdout, returncode)`` and a fake :class:`~m_cli.engine.Connection`.
 """
 
 from __future__ import annotations
 
-import os
 import re
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from pathlib import Path
 
+from m_cli.engine import (
+    Connection,
+    build_suite_ssh_cmd,
+    build_xcmd_ssh_cmd,
+    read_connection,
+    remote_stage,
+)
 from m_cli.test.discovery import TestCase, TestSuite
 
-# (cmd, env) -> (stdout, returncode)
+# (cmd, env) -> (stdout, returncode). ``env`` is unused for the SSH
+# transport (env vars are set inside the remote shell command), but
+# the parameter is kept so the existing RunnerFn signature is stable.
 RunnerFn = Callable[[list[str], "dict[str, str] | None"], "tuple[str, int]"]
 
 
@@ -92,7 +92,6 @@ def parse_suite_output(stdout: str) -> Summary:
     elif _PASS_BANNER_RE.search(stdout):
         ok = True
     elif total and failed == 0:
-        # No banner but counters look healthy
         ok = True
     else:
         ok = False
@@ -135,17 +134,61 @@ def parse_suite_output(stdout: str) -> Summary:
     )
 
 
+def _escape_m_string(s: str) -> str:
+    """Escape a Python string for embedding inside an M ``"..."`` literal.
+
+    Doubles every embedded ``"`` per M string-literal escaping rules
+    so callers can build xcmds containing arbitrary path / label text
+    without breaking the parse.
+    """
+    return s.replace('"', '""')
+
+
+def _seed_prelude(seeds: list[str]) -> str:
+    """Build the ``do load^STDSEED("...")`` sequence for ``--seed PATH``.
+
+    Returns an empty string when ``seeds`` is empty so callers can
+    splice it unconditionally without leaving stray double-spaces.
+    """
+    if not seeds:
+        return ""
+    return (
+        "  ".join(f'do load^STDSEED("{_escape_m_string(p)}")' for p in seeds) + "  "
+    )
+
+
 def run_suite(
     suite: TestSuite,
     *,
     runner: RunnerFn | None = None,
-    env: dict[str, str] | None = None,
+    conn: Connection | None = None,
+    seeds: list[str] | None = None,
 ) -> RunResult:
-    """Execute a whole test suite via ``ydb -run ^SUITE``."""
-    cmd = [_ydb_path(), "-run", f"^{suite.name}"]
+    """Execute a whole suite on vista-meta.
+
+    Without ``seeds``: invokes ``mumps -run ^SUITE`` directly (no
+    ``%XCMD`` indirection). With ``seeds``: switches to
+    ``mumps -run %XCMD 'do load^STDSEED(...) do ^SUITE'`` so each
+    ``--seed PATH`` (track Y) is loaded before the suite runs.
+
+    Per-test concerns (track X — STDMOCK registry, track W — STDFIX
+    rollback) are handled in :func:`run_case` rather than at suite
+    launch: each ``mumps`` invocation is a fresh process with a clean
+    ``^STDLIB($JOB,...)`` tree, so the registry is empty by
+    construction; the suite's own routine drives the per-test loop
+    and is the right place to add ``with^STDFIX`` if the author wants
+    per-test rollback.
+    """
+    conn = conn or read_connection()
+    stage = remote_stage(suite.path)
+    seeds = seeds or []
+    if seeds:
+        xcmd = _seed_prelude(seeds) + f"do ^{suite.name}"
+        cmd = build_xcmd_ssh_cmd(conn, xcmd, stage)
+    else:
+        cmd = build_suite_ssh_cmd(conn, suite.name, stage)
     runner = runner or _default_runner
-    full_env = _build_env(suite.path, env)
-    stdout, rc = runner(cmd, full_env)
+    stdout, rc = runner(cmd, None)
     summary = parse_suite_output(stdout)
     ok = summary.ok and rc == 0
     return RunResult(
@@ -162,19 +205,46 @@ def run_case(
     case: TestCase,
     *,
     runner: RunnerFn | None = None,
-    env: dict[str, str] | None = None,
+    conn: Connection | None = None,
+    isolation: bool = True,
+    seeds: list[str] | None = None,
 ) -> RunResult:
-    """Execute a single labeled test via ``%XCMD``."""
+    """Execute a single labeled test via ``mumps -run %XCMD`` on vista-meta.
+
+    The xcmd prelude clears the STDMOCK registry (track X) and loads
+    each ``--seed PATH`` (track Y) before invoking the test. When
+    ``isolation`` is true (default), the test invocation is wrapped
+    in inline ``tstart`` / ``trollback`` so per-test global mutations
+    roll back at the end of the test (track W). Pass
+    ``isolation=False`` to opt out for legacy ^TESTRUN-style suites
+    or suites that manage their own transactions.
+
+    Why inline rather than ``with^STDFIX``: STDFIX runs ``xecute code``
+    inside its own stack frame, where the xcmd-level ``pass`` /
+    ``fail`` locals aren't reachable. STDFIX stays the right API for
+    application code that wants tag bookkeeping and an error-trap
+    re-raise; the runner only needs the rollback.
+    """
+    conn = conn or read_connection()
+    stage = remote_stage(case.path)
+    protocol = case.protocol
+    invoke_test = f"do {case.label}^{case.suite}(.pass,.fail)"
+    if isolation:
+        # Inline transaction scope at the xcmd frame so .pass / .fail
+        # remain visible to the test invocation.
+        invoke_test = f"tstart  {invoke_test}  trollback"
     xcmd = (
         "new pass,fail  "
-        "do start^TESTRUN(.pass,.fail)  "
-        f"do {case.label}^{case.suite}(.pass,.fail)  "
-        "do report^TESTRUN(pass,fail)"
+        "do clear^STDMOCK  "
+        + _seed_prelude(seeds or [])
+        + f"do start^{protocol}(.pass,.fail)  "
+        + invoke_test
+        + "  "
+        + f"do report^{protocol}(pass,fail)"
     )
-    cmd = [_ydb_path(), "-run", "%XCMD", xcmd]
+    cmd = build_xcmd_ssh_cmd(conn, xcmd, stage)
     runner = runner or _default_runner
-    full_env = _build_env(case.path, env)
-    stdout, rc = runner(cmd, full_env)
+    stdout, rc = runner(cmd, None)
     summary = parse_suite_output(stdout)
     ok = summary.ok and rc == 0
     return RunResult(
@@ -187,11 +257,6 @@ def run_case(
     )
 
 
-# ---------------------------------------------------------------------------
-# Subprocess plumbing
-# ---------------------------------------------------------------------------
-
-
 def _default_runner(cmd: list[str], env: dict[str, str] | None) -> tuple[str, int]:
     """Run ``cmd`` and return (stdout-with-stderr, returncode)."""
     proc = subprocess.run(
@@ -202,49 +267,3 @@ def _default_runner(cmd: list[str], env: dict[str, str] | None) -> tuple[str, in
         check=False,
     )
     return proc.stdout.decode("latin-1", errors="replace"), proc.returncode
-
-
-def _ydb_path() -> str:
-    """Locate the ``ydb`` binary.
-
-    Resolution order: ``$YDB``, then ``$ydb_dist/ydb``, then plain ``ydb``
-    (lets the user's PATH find it).
-    """
-    if explicit := os.environ.get("YDB"):
-        return explicit
-    if dist := os.environ.get("ydb_dist"):
-        candidate = Path(dist) / "ydb"
-        if candidate.exists():
-            return str(candidate)
-    return "ydb"
-
-
-def _build_env(suite_path: Path, override: dict[str, str] | None) -> dict[str, str]:
-    """Compose the environment passed to ydb.
-
-    If the caller already exported ``ydb_routines``, we honor it. Otherwise
-    we derive a sensible default from the suite's parent directory: the
-    suite folder plus a sibling ``routines/`` if one exists.
-    """
-    env = os.environ.copy()
-    if override:
-        env.update(override)
-    if "ydb_routines" not in env:
-        derived = _derive_ydb_routines(suite_path)
-        if derived:
-            env["ydb_routines"] = derived
-    return env
-
-
-def _derive_ydb_routines(suite_path: Path) -> str | None:
-    parts: list[str] = []
-    suite_dir = suite_path.parent
-    if suite_dir.is_dir():
-        parts.append(str(suite_dir.resolve()))
-    # If suite lives at <project>/routines/tests/, add <project>/routines too.
-    routines_sibling = suite_dir.parent
-    if routines_sibling.name == "routines" and routines_sibling.is_dir():
-        parts.insert(0, str(routines_sibling.resolve()))
-    if dist := os.environ.get("ydb_dist"):
-        parts.append(dist)
-    return " ".join(parts) if parts else None
