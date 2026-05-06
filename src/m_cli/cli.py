@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 from m_cli import __version__
+from m_cli.ci import ci_command
 from m_cli.coverage.cli import add_arguments as add_coverage_arguments
 from m_cli.doctor import doctor_command
 from m_cli.fmt import fmt_command
@@ -473,6 +474,41 @@ def main(argv: list[str] | None = None) -> int:
         help="Suppress per-file progress output",
     )
     new_parser.set_defaults(func=new_command)
+
+    # `m ci` (with sub-action `init`)
+    ci_parser = subparsers.add_parser(
+        "ci",
+        help="CI scaffolding (subcommand: `init`)",
+        description=(
+            "Scaffold CI configuration. Currently supports a single "
+            "action: `m ci init` writes `.github/workflows/m-ci.yml` "
+            "running m fmt --check + m lint --error-on=fatal + m test + "
+            "m coverage --format=lcov on every push and pull request."
+        ),
+    )
+    ci_actions = ci_parser.add_subparsers(dest="ci_action", required=True)
+    ci_init_parser = ci_actions.add_parser(
+        "init",
+        help="Write .github/workflows/m-ci.yml",
+    )
+    ci_init_parser.add_argument(
+        "--path",
+        type=Path,
+        default=None,
+        help="Project root (default: current directory)",
+    )
+    ci_init_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite an existing workflow file",
+    )
+    ci_init_parser.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="Suppress per-file progress output",
+    )
+    ci_init_parser.set_defaults(func=ci_command)
 
     args = parser.parse_args(argv)
     return args.func(args)
