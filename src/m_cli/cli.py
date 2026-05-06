@@ -16,6 +16,7 @@ from m_cli.doctor import doctor_command
 from m_cli.fmt import fmt_command
 from m_cli.lint import lint_command
 from m_cli.lsp import lsp_command
+from m_cli.new import new_command
 from m_cli.test import test_command
 from m_cli.watch import watch_command
 
@@ -434,6 +435,44 @@ def main(argv: list[str] | None = None) -> int:
         help="Output format (default: text)",
     )
     doctor_parser.set_defaults(func=doctor_command)
+
+    # `m new`
+    new_parser = subparsers.add_parser(
+        "new",
+        help="Scaffold a new M project",
+        description=(
+            "Create a self-contained M project that passes `m fmt --check`, "
+            "`m lint`, and `m test` on a clean clone. Generates "
+            "routines/<NAME>.m, routines/<NAME>ASRT.m (a tiny in-tree "
+            "assertion helper so the project has zero external M deps), "
+            "tests/<NAME>TST.m, .m-cli.toml (pythonic-lower style), "
+            ".gitignore, Makefile, and README.md. The routine name is "
+            "derived from the project name (uppercased, alphanumeric only, "
+            "≤ 8 chars per the M routine-name limit)."
+        ),
+    )
+    new_parser.add_argument(
+        "name",
+        help="Project name (also drives the M routine name)",
+    )
+    new_parser.add_argument(
+        "--path",
+        type=Path,
+        default=None,
+        help="Target directory (default: ./<name>/)",
+    )
+    new_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Scaffold even if the target directory exists and is non-empty",
+    )
+    new_parser.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="Suppress per-file progress output",
+    )
+    new_parser.set_defaults(func=new_command)
 
     args = parser.parse_args(argv)
     return args.func(args)
