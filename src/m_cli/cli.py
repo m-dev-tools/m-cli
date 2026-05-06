@@ -14,6 +14,7 @@ from m_cli import __version__
 from m_cli.build import build_command
 from m_cli.ci import ci_command
 from m_cli.coverage.cli import add_arguments as add_coverage_arguments
+from m_cli.doc import doc_command
 from m_cli.doctor import doctor_command
 from m_cli.fmt import fmt_command
 from m_cli.lint import lint_command
@@ -587,6 +588,40 @@ def main(argv: list[str] | None = None) -> int:
         help="Suppress per-file `ok` lines and the final summary",
     )
     build_parser.set_defaults(func=build_command)
+
+    # `m doc`
+    doc_parser = subparsers.add_parser(
+        "doc",
+        help="Extract M docstrings to Markdown / HTML",
+        description=(
+            "Walk the given paths for `.m` files and render their "
+            "`@summary` annotations and label signatures into a single "
+            "document. Recognises the modern `LABEL ; @summary <text>` "
+            "convention (M-MOD-028) and the VistA version stub on line "
+            "2. Output: Markdown by default, HTML with --format=html. "
+            "Writes to stdout, or to --output PATH."
+        ),
+    )
+    doc_parser.add_argument(
+        "paths",
+        nargs="*",
+        type=Path,
+        help="Files or directories to scan (default: current directory)",
+    )
+    doc_parser.add_argument(
+        "--format",
+        choices=("markdown", "html"),
+        default="markdown",
+        help="Output format (default: markdown)",
+    )
+    doc_parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help="Write to PATH instead of stdout",
+    )
+    doc_parser.set_defaults(func=doc_command)
 
     args = parser.parse_args(argv)
     return args.func(args)
