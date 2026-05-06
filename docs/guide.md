@@ -39,6 +39,12 @@
   - [6.4 `m coverage`](#64-m-coverage)
   - [6.5 `m watch`](#65-m-watch)
   - [6.6 `m lsp`](#66-m-lsp)
+  - [6.7 `m doctor`](#67-m-doctor)
+  - [6.8 `m new`](#68-m-new)
+  - [6.9 `m ci init`](#69-m-ci-init)
+  - [6.10 `m run`](#610-m-run)
+  - [6.11 `m build`](#611-m-build)
+  - [6.12 `m doc`](#612-m-doc)
 - [7. Project configuration](#7-project-configuration)
 - [8. Editor integration (VS Code)](#8-editor-integration-vs-code)
 - [9. Library API for downstream tools](#9-library-api-for-downstream-tools)
@@ -62,6 +68,12 @@ m test      — discover and run M test suites against YottaDB
 m coverage  — line- and label-level coverage reports
 m watch     — auto-rerun affected suites on file save
 m lsp       — Language Server (stdio) for editor integration
+m doctor    — diagnose the M development environment
+m new       — scaffold a new M project (zero-deps starter)
+m ci init   — emit a GitHub Actions workflow running the four gates
+m run       — thin `ydb -run ENTRYREF` wrapper
+m build     — warm-compile a directory of M routines
+m doc       — extract `@summary` annotations into Markdown / HTML
 ```
 
 `m-cli` is the canonical implementation of the **Tier 1 deliverable** described in [m-tooling-tier1.md](../../m-tools/docs/m-tooling-tier1.md), now extended with the Tier 2 quality-gate features (`m coverage`, pre-commit hooks, style linting) and an opinionated modernization track (the M-MOD-NN rule family — 35 rules covering complexity, concurrency, transaction integrity, engine portability, code-style, and security/taint). It is the active replacement for the legacy `y*` shell scripts in `~/projects/m-tools/bin/` (kept only as references).
@@ -148,18 +160,18 @@ The table below mirrors the categories in [§7 of m-tool-gap-analysis.md](../../
 | 3 | 1 | Formatter | MAJOR | ✅ Done | [`m fmt`](#61-m-fmt) | Identity formatter round-trips 99.04% of VistA byte-for-byte. `--rules=canonical` adds two hygiene transformations (trim trailing whitespace, uppercase command keywords). `--rules=pythonic` and `--rules=compact` translate between VistA-compact (`S X=1 W $L(X),$T`) and canonical-name (`SET X=1 WRITE $LENGTH(X),$TEST`) forms via 6 case-preserving translation rules. Idempotent + AST-preserving over 38,954 routines. |
 | 4 | 1 | Single-test selection | MAJOR | ✅ Done | `m test FILE.m::tLabel` | Folded into Step 3. |
 | 5 | 1 | Test watcher | MAJOR | ✅ Done | [`m watch`](#64-m-watch) | Polling-based (no inotify dependency). Source-to-suite affinity: `foo.m` → `FOOTST.m`. |
-| 6 | 2 | CI script | PARTIAL | 🟡 Partial | Project Makefile + pre-commit hooks | `m-cli` is dogfooded in its own CI (`make check`). Downstream M projects get a CI starter via [pre-commit hooks](#10-pre-commit-integration). A dedicated `m ci` orchestrator is not yet in the roadmap. |
+| 6 | 2 | CI script | PARTIAL | ✅ Done | [`m ci init`](#69-m-ci-init) | Phase 3a: emits `.github/workflows/m-ci.yml` running `m fmt --check` + `m lint --error-on=fatal` + `m test` + `m coverage --format=lcov` against the published YottaDB base image. Downstream M projects also get a pre-commit hook scaffold via [.pre-commit-hooks.yaml](#10-pre-commit-integration). |
 | 7 | 2 | Coverage | MAJOR | ✅ Done | `m coverage` (Phase C) | Runner uses YDB's `view "TRACE"`; offset semantics decoded — third subscript N from a label maps to absolute line `label_decl_line + N`. Label-level 85/123 = 69.1% on m-tools (byte-identical to `ycover`); line-level 340/637 = 53.4%. Output: `text` (default), `text --lines`, `json`, `lcov` (genhtml / Codecov / Coveralls). |
 | 8 | 2 | Linter (style) | MAJOR | ✅ Done | `m lint --rules=sac` | Style rules ride alongside logic rules. Severity-tagged (FATAL / STANDARD / WARNING / INFO) so projects can gate selectively via `--error-on=...` or [`[lint.severity]` config overrides](#7-project-configuration). |
 | 9 | 2 | Pre-commit hooks | MAJOR | ✅ Done | [`.pre-commit-hooks.yaml`](#10-pre-commit-integration) | Three hooks: `m-fmt-check`, `m-fmt`, `m-lint`. Schema gated by `tests/test_pre_commit_hooks.py`. |
 | 10 | 2 | Debugger | PARTIAL | ⏸️ Deferred | (none) | DAP-based debug adapter would be a separate, large engineering effort. Both engines ship `ZBREAK` at the engine level (Basic). Not on the near-term roadmap. |
-| 11 | 3 | Documentation generator | MAJOR | ⏸️ Deferred | (none) | Tier 3. |
+| 11 | 3 | Documentation generator | MAJOR | ✅ Done | [`m doc`](#612-m-doc) | Phase 3a: extracts `LABEL ; @summary <text>` (M-MOD-028) and the VistA version stub (line 2 `;;<v>;<pkg>;;<date>;<build>`) into Markdown or HTML. Reuses `tree-sitter-m`'s label discovery; one entry per routine + per labeled extrinsic / subroutine. |
 | 12 | 3 | Dependency management | MAJOR | ⏸️ Deferred | (none) | Tier 3. Blocked on a manifest-format design in `m-standard`. |
 | 13 | 3 | Dead-code detection | MAJOR | ✅ Done | `m lint` | M-XINDX-049 (unused-label) cross-routine via the workspace symbol index. M-XINDX-009 (dead-code-after-QUIT) intra-routine. M-MOD-024 (read of local before any SET on every prior path) via Phase 7 definite-assignment. |
 | 14 | 3 | Complexity metrics | MAJOR | ✅ Done | `m lint --rules=modern` | M-MOD-005 (cyclomatic), M-MOD-006 (cognitive), M-MOD-007 (dot-block depth), M-MOD-008 (argument count), M-MOD-009 (commands-per-line), all per-label. Configurable thresholds. |
 | 15 | 3 | Fixture management | MAJOR | ⏸️ Deferred | (TESTRUN library in m-tools) | The TESTRUN assertion library in `m-tools/routines/tests/TESTRUN.m` covers basic test-runner fixtures. A deeper fixture system is out of scope for `m-cli`. |
 | 16 | 4 | Snapshot testing | MAJOR | ⏸️ Deferred | (none) | Tier 4. |
-| 17 | 4 | Build / tasks | PARTIAL | ⏸️ Deferred | (project Makefile) | Both engines have *Basic* coverage via Makefile; no dedicated `m build` is planned. |
+| 17 | 4 | Build / tasks | PARTIAL | ✅ Done | [`m build`](#611-m-build) | Phase 3a: walks `.m` files and runs `ydb <file>` on each — the engine compiles routines to sibling `.o` files. `--check` mode cleans up the `.o` byproducts so CI gates that just want a "does this compile?" check don't pollute the working tree. |
 | 18 | 4 | Runtime / REPL | PARTIAL | ➖ Out of scope | (engine concern) | Engine-shipped (`ydb`, `iris terminal`); not a source-level concern. |
 | 19 | 4 | Syntax check | PARTIAL | ✅ Done (implicit) | tree-sitter parse + M-XINDX-021 | Parse errors surface as `m lint` diagnostics; the parser is the syntax check. |
 | 20 | 4 | Profiling | ENGINE-SPECIFIC | ➖ Out of scope | (engine concern) | IRIS-only (`^%SYS.MONLBL`); YDB lacks it. Not source-level. |
@@ -178,6 +190,9 @@ The table below mirrors the categories in [§7 of m-tool-gap-analysis.md](../../
 | VS Code extension wiring | ✅ Done | [`tree-sitter-m-vscode`](https://github.com/rafael5/tree-sitter-m-vscode) sibling repo; spawns `m lsp` on activation |
 | Project configuration (`.m-cli.toml` / `[tool.m-cli]`) | ✅ Done | [`m_cli.config`](#7-project-configuration) |
 | Workspace symbol index | ✅ Done | [`m_cli.workspace`](#5-architecture) — backs go-to-definition, find-references, workspace symbol search; refreshes via `didChangeWatchedFiles` and `didSave` |
+| Environment diagnostics (Phase 3a) | ✅ Done | [`m doctor`](#67-m-doctor) — `$ydb_dist`, `$ydb_routines`, parser, m-standard TSVs, `ydb` binary; OK / WARN / FAIL with actionable hints |
+| Project scaffolder (Phase 3a) | ✅ Done | [`m new`](#68-m-new) — produces a self-contained project that passes `m fmt --check && m lint && m test && m coverage` on a clean clone |
+| Run wrapper (Phase 3a) | ✅ Done | [`m run`](#610-m-run) — thin `ydb -run ENTRYREF` invocation with `$ydb_routines` composition and rc passthrough |
 
 ---
 
@@ -621,6 +636,163 @@ The server is invoked by editors (VS Code, Vim/Neovim with LSP, Emacs eglot/lsp-
 
 ---
 
+### 6.7 `m doctor`
+
+Diagnose the M development environment. Useful as the first command to run on a new shell or in CI.
+
+```bash
+m doctor                  # human-readable report
+m doctor --format json    # machine-readable for CI dashboards
+```
+
+Five checks run in order; each carries a status + a one-line message + an optional hint on failure:
+
+| Check | OK when | WARN when | FAIL when |
+|---|---|---|---|
+| `ydb_dist` | env var set, directory exists, `ydb` binary inside | unset, or directory exists but no binary | path missing, or not a directory |
+| `ydb_routines` | env var set | unset | (never; downstream tools will surface the real error) |
+| `parser` | `tree-sitter-m` parses a trivial routine | — | parser fails to load or returns no root |
+| `keywords` | m-standard TSVs load with > 0 records | — | loader raises, or 0 records |
+| `ydb_binary` | resolved via `$YDB`, `$ydb_dist/ydb`, or PATH | no binary found anywhere | `$YDB` points at a non-executable path |
+
+Exit codes: `0` if no FAIL, `1` if any FAIL. **WARN does not fail the run** — many checks are recoverable for non-runtime workflows (e.g. `m fmt`/`m lint`/`m doc` need the parser and keywords but not `ydb_dist`).
+
+---
+
+### 6.8 `m new`
+
+Scaffold a self-contained M project that passes the four gates on a clean clone.
+
+```bash
+m new hello                     # creates ./hello/
+m new myapp --path /work/myapp  # explicit target dir
+m new myapp --force             # scaffold even into a non-empty dir
+```
+
+Generated layout:
+
+```
+<name>/
+├── routines/<NAME>.m         starter routine (pythonic-lower style)
+├── routines/<NAME>ASRT.m     in-tree assertion helper (no m-stdlib dependency)
+├── tests/<NAME>TST.m         starter test suite
+├── .m-cli.toml               [fmt] pythonic-lower / [lint] default
+├── .gitignore                .venv, *.o, coverage.lcov, ...
+├── Makefile                  fmt / fmt-check / lint / test / coverage / check
+└── README.md                 layout + quick-start
+```
+
+**Routine name derivation.** The project name is uppercased and stripped of non-alphanumeric characters, then truncated to 8 chars per the M routine-name limit (`my-app-v2` → `MYAPPV2`; `supercalifragilistic` → `SUPERCAL`). Names that start with a digit or strip to empty are rejected with a usage error.
+
+**Why an in-tree assertion helper?** `<NAME>ASRT.m` is a tiny ~25-line wrapper exposing `start` / `eq` / `report` labels that emit the same `  PASS  desc` / `  FAIL  desc` / `Results: N tests P passed F failed` wire protocol that `m test`'s parser expects. New projects therefore have **zero external M dependencies** at startup. When the project later adopts [`m-stdlib`](https://github.com/rafael5/m-stdlib), each call to `^<NAME>ASRT` swaps to the equivalent on `^STDASSERT` (same API).
+
+**Generated content is verified at build time.** Unit tests apply `format_source(rules=select_fmt_rules('pythonic-lower'))` and `lint_source(rules=select_rules('default'))` to the rendered routine, helper, and test — no shipped scaffold ships with lint errors.
+
+---
+
+### 6.9 `m ci init`
+
+Emit a GitHub Actions workflow that runs the four project gates on every push and pull request.
+
+```bash
+m ci init                  # writes .github/workflows/m-ci.yml in cwd
+m ci init --path /repo     # write into a different project root
+m ci init --force          # overwrite an existing workflow
+```
+
+The generated `m-ci.yml` runs against the published `yottadb/yottadb-base:latest-master` container so test/coverage actually have a YDB engine, installs `m-cli` + `tree-sitter-m` via pip into a venv, sources `ydb_env_set`, then walks:
+
+1. `m doctor` — sanity check before doing anything destructive
+2. `m fmt --check routines tests`
+3. `m lint --error-on=fatal routines tests`
+4. `m test tests`
+5. `m coverage --format=lcov --routines routines --tests tests > coverage.lcov`
+6. `actions/upload-artifact@v4` — saves `coverage.lcov` for downstream upload to Codecov / Coveralls / etc.
+
+The workflow is a **starter, not a vendor lock.** Common customizations: pin a specific YottaDB tag, add `codecov/codecov-action@v4` to push coverage, swap m-cli's pip source to a private index. `m ci init` reuses the template-emitter pattern introduced for `m new`.
+
+---
+
+### 6.10 `m run`
+
+Thin wrapper around `ydb -run ENTRYREF`.
+
+```bash
+m run HELLO                            # → ydb -run ^HELLO
+m run EN^HELLO                         # → ydb -run EN^HELLO
+m run --routines ./routines HELLO      # prepend ./routines onto $ydb_routines
+m run --routines ./routines --routines ./third_party HELLO   # repeatable
+m run HELLO -- arg1 arg2               # extra args flow through to $ZCMDLINE
+```
+
+**Resolution order for the ydb binary.** `$YDB` (explicit, useful in CI) → `$ydb_dist/ydb` (canonical YDB install layout) → `ydb` on `$PATH`. `m run` exits 2 if no binary is found.
+
+**Entryref normalization.** Routine name uppercased and truncated to 8 chars (M's routine-name limit). Label name uppercased but kept full-length (ydb itself is permissive). Bare-routine form (`HELLO`) becomes `^HELLO`; labelled form (`EN^HELLO`) is passed through.
+
+**Exit-code passthrough.** The subprocess `returncode` is returned directly so M's `HALT`/`$ECODE`-driven exit codes flow back to the caller. Stdout and stderr are inherited (not captured), so `m run` is safe in pipelines and interactive sessions alike.
+
+---
+
+### 6.11 `m build`
+
+Warm-compile a directory of M routines via `ydb <file>` (which YottaDB invokes as the routine compiler).
+
+```bash
+m build                            # walk ./ for *.m and compile each
+m build routines tests             # explicit roots
+m build --check routines           # compile + clean up .o byproducts (CI)
+m build --quiet routines           # suppress per-file `ok` lines
+```
+
+Discovery is recursive; explicit `.m` files are accepted alongside directories; results are deduped by resolved path and sorted by filename.
+
+**Output format.**
+
+```
+routines/HELLO.m: ok
+routines/BAD.m: compile failed (rc=1)
+  %YDB-E-LABELMISSING, Label EN referenced but not defined in HELLO
+  %YDB-E-ZLINKFILE, Error while zlinking "BAD.m"
+
+5 compiled, 1 failed
+```
+
+Exits `0` if every file compiled, `1` if any failed, `2` on usage error (no ydb binary, or no `.m` files in the given paths).
+
+**`--check` mode** identifies any `.o` files this run created and removes them at the end. CI gates that just want to know "does this compile?" use `--check` to avoid polluting the working tree. Files that already had an `.o` sibling at start-time are preserved.
+
+The compiler subprocess is injectable (`runner=...` kwarg on `build_command`) so unit tests cover discovery, error aggregation, and the `--check` cleanup contract without needing real ydb.
+
+---
+
+### 6.12 `m doc`
+
+Extract `@summary` docstrings from M source into Markdown or HTML.
+
+```bash
+m doc                              # walk ./ for *.m, write Markdown to stdout
+m doc routines                     # explicit roots
+m doc routines --output API.md     # write to a file instead of stdout
+m doc routines --format html       # HTML output (inline stylesheet, no external assets)
+```
+
+The extractor pulls four pieces of structure from each routine:
+
+1. **Routine name** — file stem, uppercased (matches the M convention).
+2. **Routine summary** — text after the first `;` on line 1, with a leading `@summary` annotation stripped.
+3. **Version stub** — line 2 if it matches `;;<version>;<package>;;<date>;<build>`. Surfaced as the per-routine `version` and `package` metadata.
+4. **Per-label entries** — one for each labelled definition discovered by `tree-sitter-m`. Each carries `name`, `formals` (`"(a,b)"` or `""`), and the `@summary` text from the label's line.
+
+Double-semicolon lines (`;;<directive>`) are excluded from human-prose extraction — they're either version stubs or structured directives, not documentation.
+
+**Markdown output** — one `## ROUTINE` heading per routine with a `_version · package · source_` italic metadata line, then a `### Labels` bullet list of `` `name(formals)` — summary `` entries.
+
+**HTML output** — same structure wrapped in a `<!doctype html>` document with a tiny inline stylesheet. Renders cleanly without external assets, suitable for emailing or hosting on a static site.
+
+**Reuses the parser.** `m_cli.lsp.structure.find_labels` does the AST walk; `m_cli.build.runner.discover_files` does the file walk. New code in `m_cli.doc` is purely the docstring-extraction + render layer.
+
+---
+
 ## 7. Project configuration
 
 `m fmt`, `m lint`, and `m lsp` all read project config on startup. Discovery walks up from the working directory looking for:
@@ -756,6 +928,7 @@ Strategic phases beyond Tier 1 (in dependency order):
 | **D** | M-MOD modernization track, Phases 1–8 (35 rules) | ✅ Done | Profiles, two-axis severity, configurable thresholds, modern-corpus regression gate. |
 | **Phase 7** | Data-flow infrastructure + path-sensitive rules (M-MOD-024/025/026/027/017) | ✅ Done | Per-label CFG, definite-assignment, lock/transaction/etrap/dollar_test analyzers. |
 | **Phase 9 (MVP)** | Taint analysis (M-MOD-036) | 🟡 MVP shipped | `READ` + formals as sources; `@expr` / `XECUTE` sinks; `$L`/`$A` sanitizers; `[lint.taint]` config schema; by-reference DO/JOB call modeling. |
+| **Phase 3a** | Quick-win subcommands per [language-cli-survey.md §6.2](language-cli-survey.md): `m doctor`, `m new`, `m ci init`, `m run`, `m build`, `m doc` | ✅ Done | Six independent items closing §4.1 ranks 8, 2, 12, 11, 9, 4. Each ships with tests, dispatcher wiring, and §6 reference docs. `m new` projects pass `m fmt --check && m lint && m test && m coverage` on a clean clone (the §6.2 exit criterion). |
 
 ### What's still open
 
@@ -786,4 +959,4 @@ Drawn from [§3.1 of m-tooling-tier1.md](../../m-tools/docs/m-tooling-tier1.md#3
 
 ---
 
-*This guide tracks the state of `m-cli` as of 2026-04-30 (after Phase 9 step 3). For the per-session changelog, see `git log`. For the comprehensive lint reference (rule-by-rule, with worked examples), see [docs/m-linting-user-guide.md](m-linting-user-guide.md). For strategic context, the canonical references are [m-tool-gap-analysis.md](../../m-tools/docs/m-tool-gap-analysis.md) and [m-tooling-tier1.md](../../m-tools/docs/m-tooling-tier1.md).*
+*This guide tracks the state of `m-cli` as of 2026-05-06 (after Phase 3a — `m doctor`, `m new`, `m ci init`, `m run`, `m build`, `m doc`). For the per-session changelog, see `git log`. For the comprehensive lint reference (rule-by-rule, with worked examples), see [docs/m-linting-user-guide.md](m-linting-user-guide.md). For strategic context, the canonical references are [m-tool-gap-analysis.md](../../m-tools/docs/m-tool-gap-analysis.md), [m-tooling-tier1.md](../../m-tools/docs/m-tooling-tier1.md), and [language-cli-survey.md](language-cli-survey.md).*
