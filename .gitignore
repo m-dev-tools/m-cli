@@ -6,8 +6,8 @@ __pycache__/
 .env
 !.env.example
 *.log
-dist/
-build/
+/dist/
+/build/
 *.egg-info/
 .mypy_cache/
 .DS_Store
