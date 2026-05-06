@@ -12,6 +12,7 @@ from pathlib import Path
 
 from m_cli import __version__
 from m_cli.coverage.cli import add_arguments as add_coverage_arguments
+from m_cli.doctor import doctor_command
 from m_cli.fmt import fmt_command
 from m_cli.lint import lint_command
 from m_cli.lsp import lsp_command
@@ -107,7 +108,7 @@ def main(argv: list[str] | None = None) -> int:
             "(M-MOD-021/022/023) flag $Z* tokens as non-portable under the "
             "default --target-engine=any, generating thousands of findings "
             "on engine-specific code. Set in .m-cli.toml as `[lint] "
-            "target_engine = \"yottadb\"` to make it permanent."
+            'target_engine = "yottadb"` to make it permanent.'
         ),
     )
     lint_parser.add_argument(
@@ -281,10 +282,7 @@ def main(argv: list[str] | None = None) -> int:
         "--changed-base",
         default=None,
         metavar="REV",
-        help=(
-            "With --changed: diff against revision REV (e.g. main) "
-            "instead of the working tree."
-        ),
+        help=("With --changed: diff against revision REV (e.g. main) instead of the working tree."),
     )
     test_parser.add_argument(
         "--no-isolation",
@@ -303,7 +301,7 @@ def main(argv: list[str] | None = None) -> int:
         dest="seeds",
         help=(
             "Load a STDSEED TSV manifest before running each test "
-            "(`do load^STDSEED(\"PATH\")`). Repeat for multiple seeds; "
+            '(`do load^STDSEED("PATH")`). Repeat for multiple seeds; '
             "order is preserved."
         ),
     )
@@ -416,6 +414,26 @@ def main(argv: list[str] | None = None) -> int:
         help=argparse.SUPPRESS,
     )
     lsp_parser.set_defaults(func=lsp_command)
+
+    # `m doctor`
+    doctor_parser = subparsers.add_parser(
+        "doctor",
+        help="Diagnose the M development environment",
+        description=(
+            "Run a sequence of environment-health checks: $ydb_dist, "
+            "$ydb_routines, the tree-sitter-m parser, m-standard "
+            "keyword TSVs, and the `ydb` binary. Each check reports "
+            "OK / WARN / FAIL with an actionable hint on failure. "
+            "Exits 1 if any check is FAIL (WARN does not fail the run)."
+        ),
+    )
+    doctor_parser.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+        help="Output format (default: text)",
+    )
+    doctor_parser.set_defaults(func=doctor_command)
 
     args = parser.parse_args(argv)
     return args.func(args)
