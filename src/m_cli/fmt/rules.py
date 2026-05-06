@@ -89,6 +89,8 @@ def select_fmt_rules(spec: str) -> list[FmtRule]:
       - ``"pythonic-lower"`` — expand abbreviations, but lowercase output
         (``set X=1 write $length(X)``)
       - ``"compact"`` — compact canonical names to abbreviations
+      - ``"sac"`` — VistA SAC compact form (uppercase + compact + trim);
+        bidirectional partner of ``pythonic-lower``
       - ``"all"`` — every registered rule (mostly useful for diagnostics;
         do NOT use as a formatter pipeline because expand-* and
         compact-* would race)
@@ -105,6 +107,8 @@ def select_fmt_rules(spec: str) -> list[FmtRule]:
         return pythonic_lower_rules()
     if spec == "compact":
         return compact_rules()
+    if spec == "sac":
+        return sac_rules()
     if spec == "all":
         return all_rules()
     requested = {s.strip() for s in spec.split(",") if s.strip()}
@@ -276,6 +280,30 @@ _register(
 )
 
 
+def uppercase_intrinsic_functions(src: bytes) -> bytes:
+    """Rewrite every ``intrinsic_function_keyword`` AST node to upper-case.
+
+    Mirror of :func:`lowercase_intrinsic_functions`. Used by the ``sac``
+    preset to force VistA-style upper-case (``$L``, ``$LENGTH``)
+    regardless of input case.
+    """
+    return _rewrite_node_case(src, "intrinsic_function_keyword", bytes.upper)
+
+
+_register(
+    FmtRule(
+        id="uppercase-intrinsic-functions",
+        title="Uppercase intrinsic functions ($length → $LENGTH)",
+        description=(
+            "Rewrites every intrinsic-function keyword ($length, $extract, "
+            "$zdate, …) and its abbreviations to upper-case ASCII. Mirror "
+            "of lowercase-intrinsic-functions. Used by the `sac` preset."
+        ),
+        apply=uppercase_intrinsic_functions,
+    )
+)
+
+
 def lowercase_special_variables(src: bytes) -> bytes:
     """Rewrite every ``special_variable_keyword`` AST node to lower-case."""
     return _rewrite_node_case(src, "special_variable_keyword", bytes.lower)
@@ -291,6 +319,31 @@ _register(
             "ASCII. Used by the `pythonic-lower` preset."
         ),
         apply=lowercase_special_variables,
+    )
+)
+
+
+def uppercase_special_variables(src: bytes) -> bytes:
+    """Rewrite every ``special_variable_keyword`` AST node to upper-case.
+
+    Mirror of :func:`lowercase_special_variables`. Used by the ``sac``
+    preset to force VistA-style upper-case (``$T``, ``$HOROLOG``)
+    regardless of input case.
+    """
+    return _rewrite_node_case(src, "special_variable_keyword", bytes.upper)
+
+
+_register(
+    FmtRule(
+        id="uppercase-special-variables",
+        title="Uppercase special variables ($test → $TEST)",
+        description=(
+            "Rewrites every intrinsic special-variable keyword ($test, "
+            "$horolog, $job, …) and its abbreviations to upper-case "
+            "ASCII. Mirror of lowercase-special-variables. Used by the "
+            "`sac` preset."
+        ),
+        apply=uppercase_special_variables,
     )
 )
 
@@ -673,6 +726,39 @@ def pythonic_lower_rules() -> list[FmtRule]:
         "expand-command-keywords",
         "expand-intrinsic-functions",
         "expand-special-variables",
+        "trim-trailing-whitespace",
+    )
+    return [r for r in (rule_by_id(rid) for rid in rule_ids) if r is not None]
+
+
+def sac_rules() -> list[FmtRule]:
+    """The ``sac`` translation preset — VistA SAC-compliant compact form.
+
+    Bidirectional partner of :func:`pythonic_lower_rules`. Produces
+    upper-case compact code (``S X=1 W $L(X),$T``) — the form mandated
+    by VA SAC §3.3 (uppercase command keywords) and §3.4 (standard
+    abbreviations). Pipeline order: uppercase-* runs *before* compact-*
+    so the compact rules' case-preserving output ends up upper-case
+    regardless of input case.
+
+    SAC's *structural* rules — line length ≤ 245, label naming ≤ 8
+    chars, ``;;`` data-line discipline, ``$TEXT(+N)`` line-relative
+    addressing — are **not** fmt rules. Line-wrapping creates new AST
+    nodes (violating the AST-shape-preservation contract) and label
+    renames are cross-routine-unsafe. Those checks live in
+    ``m lint --rules=sac`` and surface as diagnostics, not auto-fixes.
+
+    Round-trip is *normalizing*, not invertible:
+    ``sac(pythonic-lower(sac(src))) == sac(src)`` on already-normalized
+    input; mixed-form input collapses to one canonical form.
+    """
+    rule_ids = (
+        "uppercase-command-keywords",
+        "uppercase-intrinsic-functions",
+        "uppercase-special-variables",
+        "compact-command-keywords",
+        "compact-intrinsic-functions",
+        "compact-special-variables",
         "trim-trailing-whitespace",
     )
     return [r for r in (rule_by_id(rid) for rid in rule_ids) if r is not None]

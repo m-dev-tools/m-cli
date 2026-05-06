@@ -35,6 +35,7 @@ from m_cli.fmt.rules import (
     pythonic_lower_rules,
     pythonic_rules,
     rule_by_id,
+    sac_rules,
     select_fmt_rules,
 )
 
@@ -46,6 +47,7 @@ __all__ = [
     "pythonic_rules",
     "pythonic_lower_rules",
     "compact_rules",
+    "sac_rules",
     "select_fmt_rules",
     "all_rules",
     "rule_by_id",

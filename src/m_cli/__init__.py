@@ -30,6 +30,7 @@ from m_cli.fmt import (
     format_source,
     pythonic_lower_rules,
     pythonic_rules,
+    sac_rules,
     select_fmt_rules,
 )
 from m_cli.lint import (
@@ -54,6 +55,7 @@ __all__ = [
     "pythonic_rules",
     "pythonic_lower_rules",
     "compact_rules",
+    "sac_rules",
     "select_fmt_rules",
     "FmtRule",
     "ParseError",
