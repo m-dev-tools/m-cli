@@ -18,6 +18,7 @@ from m_cli.fmt import fmt_command
 from m_cli.lint import lint_command
 from m_cli.lsp import lsp_command
 from m_cli.new import new_command
+from m_cli.run import run_command
 from m_cli.test import test_command
 from m_cli.watch import watch_command
 
@@ -509,6 +510,46 @@ def main(argv: list[str] | None = None) -> int:
         help="Suppress per-file progress output",
     )
     ci_init_parser.set_defaults(func=ci_command)
+
+    # `m run`
+    run_parser = subparsers.add_parser(
+        "run",
+        help="Run an M routine via `ydb -run ENTRYREF`",
+        description=(
+            "Thin wrapper around `ydb -run`. Resolves the ydb binary "
+            "(via $YDB, $ydb_dist/ydb, or PATH) and execs it with the "
+            "given entryref. Pass `--routines PATH` (repeatable) to "
+            "prepend project paths onto $ydb_routines. Extra arguments "
+            "after `--` flow through to the M program via $ZCMDLINE. "
+            "The subprocess returncode is returned directly."
+        ),
+    )
+    run_parser.add_argument(
+        "entryref",
+        help="ROUTINE or LABEL^ROUTINE to invoke (case-insensitive)",
+    )
+    run_parser.add_argument(
+        "--routines",
+        action="append",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Path to prepend to $ydb_routines (repeatable). When unset, "
+            "the parent env's $ydb_routines is used unchanged."
+        ),
+    )
+    run_parser.add_argument(
+        "args",
+        nargs=argparse.REMAINDER,
+        help="Extra arguments passed to the M program via $ZCMDLINE",
+    )
+    run_parser.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="Suppress the `m run: ydb -run ENTRYREF` banner",
+    )
+    run_parser.set_defaults(func=run_command)
 
     args = parser.parse_args(argv)
     return args.func(args)
