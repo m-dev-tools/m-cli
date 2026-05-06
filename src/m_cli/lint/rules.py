@@ -246,6 +246,32 @@ def _walk(node) -> Iterator:
         yield from _walk(child)
 
 
+# Tokens that signal a routine reaches labels through runtime
+# introspection / indirection, beyond what static analysis can
+# follow. Used by M-XINDX-049 to skip files where any label may
+# be reachable via a string lookup.
+_RUNTIME_LABEL_LOOKUP_MARKERS: tuple[bytes, ...] = (
+    b"$TEXT(",
+    b"$T(",
+    b" @",
+    b"\t@",
+    b"^DD(",
+    b"^DIC(",
+    b"^XOBV",
+    b"^ORD(",
+)
+
+
+def _routine_uses_runtime_label_lookup(src: bytes) -> bool:
+    """True iff the routine source contains a marker indicating
+    runtime label dispatch — `$TEXT(LABEL+0)`, `D @var`, `^DD(` or
+    `^DIC(` xref tables, etc. A coarse but conservative heuristic:
+    we'd rather under-report the rule than emit thousands of false
+    positives on routines whose label graph is dynamic.
+    """
+    return any(marker in src for marker in _RUNTIME_LABEL_LOOKUP_MARKERS)
+
+
 # ---------------------------------------------------------------------------
 # Text-based rules (don't need the AST)
 # ---------------------------------------------------------------------------
@@ -1813,12 +1839,30 @@ def _check_cross_routine_missing_routine(
     workspace = ctx.workspace
     if workspace is None:
         return
+
+    # VistA trusted-routines allowlist. Universally-present FileMan /
+    # Kernel / MailMan APIs (^%DT, ^DIR, ^XLFDT, ^XMD, ...) live
+    # outside any source-controlled VistA package and would otherwise
+    # produce thousands of false-positive errors. Active only when
+    # the project opts in via `[lint.vista] trusted_routines`.
+    from m_cli.lint._vista_trusted import TRUSTED_ROUTINES
+    trusted: frozenset[str] = frozenset()
+    cfg_obj = ctx.config if ctx is not None else None
+    if cfg_obj is not None:
+        opt = cfg_obj.lint_vista_trusted_routines
+        if opt == ("default",):
+            trusted = frozenset(name.upper().lstrip("^") for name in TRUSTED_ROUTINES)
+        elif opt:
+            trusted = frozenset(name.upper().lstrip("^") for name in opt)
+
     refs = workspace.refs_from(path)
     for ref in refs:
         if ref.target_routine.upper() == path.stem.upper():
             # Intra-routine — covered by single-file rules; skip here.
             continue
         if workspace.has_routine(ref.target_routine):
+            continue
+        if ref.target_routine.upper().lstrip("^") in trusted:
             continue
         yield Diagnostic(
             rule_id="M-XINDX-007",
@@ -1906,7 +1950,18 @@ def _check_label_never_referenced(
     name equals the routine name) is never flagged — it's the
     file's load-on-do entry, conventionally callable as ``D ^ROUTINE``
     even when no other site references it explicitly.
+
+    Routines that perform runtime introspection (``$TEXT(LABEL+0)``,
+    ``$T(LABEL+0)``, ``DO @var``, ``GOTO @var``, or VistA xref-table
+    dispatch via ``^DD`` / ``^DIC`` / ``^XOBV``) reach labels through
+    paths static analysis can't follow. In those routines, every
+    label may be reachable via a runtime lookup — so the rule
+    skips this file entirely. This closes the dominant
+    false-positive class on the VistA corpus (``$T``-driven
+    dispatch tables, ``^DD``-stored protocol routines).
     """
+    if _routine_uses_runtime_label_lookup(src):
+        return
     workspace = ctx.workspace
     if workspace is None:
         return

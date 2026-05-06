@@ -85,6 +85,14 @@ class Config:
     # treated as untrusted attack surface).
     lint_taint_formals_tainted: bool | None = None
     lint_taint_extra_sanitizers: tuple[str, ...] = ()
+    # [lint.vista] — VistA-specific allowlists for rules that
+    # otherwise produce false positives on Kernel-aware code.
+    # ``("default",)`` opts in to the built-in
+    # m_cli.lint._vista_kernel.KERNEL_AUTO_DEFINED list; an explicit
+    # tuple of names overrides it; ``()`` (default) keeps the
+    # rules strict — appropriate for non-VistA code.
+    lint_vista_kernel_locals: tuple[str, ...] = ()
+    lint_vista_trusted_routines: tuple[str, ...] = ()
     fmt_rules: str | None = None
     source_path: Path | None = None  # where this Config was loaded from, if any
 
@@ -251,6 +259,53 @@ def _from_dict(section: dict, *, source: Path) -> Config:
         str(item).strip().upper() for item in extra_san_raw if item
     )
 
+    # [lint.vista] — VistA-specific allowlists for Kernel-aware rules.
+    # `kernel_locals = "default"` opts in to the built-in list;
+    # `kernel_locals = ["U", "DT"]` overrides; absent or empty keeps
+    # rules strict.
+    vista_raw = lint.get("vista", {}) or {}
+    if not isinstance(vista_raw, dict):
+        raise ValueError(
+            f"{source}: [lint.vista] must be a table, got "
+            f"{type(vista_raw).__name__}"
+        )
+    kl_raw = vista_raw.get("kernel_locals", ())
+    if isinstance(kl_raw, str):
+        if kl_raw.strip().lower() == "default":
+            vista_kernel_locals: tuple[str, ...] = ("default",)
+        else:
+            raise ValueError(
+                f"{source}: [lint.vista] kernel_locals string must be "
+                f"\"default\", got {kl_raw!r}"
+            )
+    elif isinstance(kl_raw, list):
+        vista_kernel_locals = tuple(str(item) for item in kl_raw if item)
+    elif not kl_raw:
+        vista_kernel_locals = ()
+    else:
+        raise ValueError(
+            f"{source}: [lint.vista] kernel_locals must be \"default\" "
+            f"or a list of names, got {type(kl_raw).__name__}"
+        )
+    tr_raw = vista_raw.get("trusted_routines", ())
+    if isinstance(tr_raw, str):
+        if tr_raw.strip().lower() == "default":
+            vista_trusted_routines: tuple[str, ...] = ("default",)
+        else:
+            raise ValueError(
+                f"{source}: [lint.vista] trusted_routines string must be "
+                f"\"default\", got {tr_raw!r}"
+            )
+    elif isinstance(tr_raw, list):
+        vista_trusted_routines = tuple(str(item) for item in tr_raw if item)
+    elif not tr_raw:
+        vista_trusted_routines = ()
+    else:
+        raise ValueError(
+            f"{source}: [lint.vista] trusted_routines must be \"default\" "
+            f"or a list of names, got {type(tr_raw).__name__}"
+        )
+
     return Config(
         lint_rules=lint_rules,
         lint_disable=disable,
@@ -259,6 +314,8 @@ def _from_dict(section: dict, *, source: Path) -> Config:
         lint_thresholds=thresholds,
         lint_taint_formals_tainted=taint_formals_tainted,
         lint_taint_extra_sanitizers=taint_extra_sanitizers,
+        lint_vista_kernel_locals=vista_kernel_locals,
+        lint_vista_trusted_routines=vista_trusted_routines,
         fmt_rules=fmt_rules,
         source_path=source,
     )

@@ -1190,6 +1190,52 @@ class TestReadOfUndefined:
         src = b"LBL\n S X=0\n S X=X+1\n Q\n"
         assert _lint(src, "M-MOD-024", ctx=_ctx()) == []
 
+    def test_vista_kernel_locals_default_suppresses_U(self):
+        """``[lint.vista] kernel_locals = "default"`` opts in to the
+        built-in Kernel-auto-defined list — reads of ``U``, ``DT``,
+        ``DUZ``, ``%UCI``, ``IO`` etc. are no longer flagged."""
+        from m_cli.config import Config
+
+        cfg = Config(lint_vista_kernel_locals=("default",))
+        ctx = LintContext(thresholds=validate_thresholds({}), config=cfg)
+        src = b"LBL\n W U\n W DT,DUZ\n Q\n"
+        assert _lint(src, "M-MOD-024", ctx=ctx) == []
+
+    def test_vista_kernel_locals_default_still_fires_on_user_locals(self):
+        """The allowlist must not suppress reads of unrelated user
+        locals — ``X`` (truly user-set) is not in the Kernel list."""
+        from m_cli.config import Config
+
+        cfg = Config(lint_vista_kernel_locals=("default",))
+        ctx = LintContext(thresholds=validate_thresholds({}), config=cfg)
+        src = b"LBL\n W X\n Q\n"
+        diags = [d for d in _lint(src, "M-MOD-024", ctx=ctx) if d.rule_id == "M-MOD-024"]
+        assert len(diags) == 1
+        assert "X" in diags[0].message
+
+    def test_vista_kernel_locals_explicit_list_overrides_default(self):
+        """A user-provided list overrides the built-in defaults entirely
+        — only the listed names are suppressed."""
+        from m_cli.config import Config
+
+        cfg = Config(lint_vista_kernel_locals=("CUSTOM",))
+        ctx = LintContext(thresholds=validate_thresholds({}), config=cfg)
+        # CUSTOM is suppressed; U is not (because the user list replaces
+        # the default — explicit list semantics).
+        src_custom = b"LBL\n W CUSTOM\n Q\n"
+        src_u = b"LBL\n W U\n Q\n"
+        assert _lint(src_custom, "M-MOD-024", ctx=ctx) == []
+        diags = [d for d in _lint(src_u, "M-MOD-024", ctx=ctx) if d.rule_id == "M-MOD-024"]
+        assert len(diags) == 1
+
+    def test_vista_kernel_locals_default_off_keeps_strict(self):
+        """No config = no allowlist = strict M-MOD-024. Default is
+        non-VistA-friendly; users opt in explicitly."""
+        src = b"LBL\n W U\n Q\n"
+        diags = [d for d in _lint(src, "M-MOD-024", ctx=_ctx()) if d.rule_id == "M-MOD-024"]
+        assert len(diags) == 1
+        assert "U" in diags[0].message
+
     def test_fires_on_set_x_reads_x_without_prior_initialization(self):
         """Same ``S X=X+1`` pattern, but X was never previously set —
         the RHS read of X is uninitialized."""

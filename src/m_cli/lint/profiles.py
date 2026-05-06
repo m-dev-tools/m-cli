@@ -280,6 +280,59 @@ register_profile(
     )
 )
 
+# `vista-full` — the canonical comprehensive lint pass for VistA.
+# Combines XINDEX (engine-neutral VA legacy port), `vista` (VA Kernel
+# banner + API-substitute mandates), and `sac` (VA SAC portable
+# subset). About 50 unique rules. Recommended invocation:
+#
+#   m lint --rules=vista-full --target-engine=yottadb \
+#          --error-on=error \
+#          Packages/<Pkg>/Routines/
+#
+# pairs naturally with `[lint.vista] kernel_locals = "default"` and
+# `[lint.vista] trusted_routines = "default"` in `.m-cli.toml` to
+# turn off the M-MOD-024 / M-XINDX-007 false positives the VistA
+# corpus pass surfaced (see m-stdlib/docs/vista-corpus-lint-results.md).
+def _vista_full() -> list[Rule]:
+    seen: set[str] = set()
+    out: list[Rule] = []
+    for tag in ("xindex", "vista", "sac"):
+        for r in rules_by_tag(tag):
+            if r.id not in seen:
+                seen.add(r.id)
+                out.append(r)
+    return out
+
+
+register_profile(
+    Profile(
+        name="vista-full",
+        description=(
+            "Canonical VistA-comprehensive lint pass: XINDEX (engine-"
+            "neutral VA port) + vista (VA Kernel banner-format + API-"
+            "substitute mandates) + sac (VA SAC portable subset). About "
+            "50 unique rules. Recommended with --target-engine=yottadb "
+            "and `[lint.vista] kernel_locals = \"default\"` + "
+            "`[lint.vista] trusted_routines = \"default\"` in .m-cli.toml "
+            "to turn off the M-MOD-024 / M-XINDX-007 false positives the "
+            "VistA corpus pass surfaced. Loosened thresholds for VistA "
+            "legacy: line_length=132, label_lines=50, argument_count=8."
+        ),
+        selector=_vista_full,
+        default_thresholds=MappingProxyType(
+            {
+                # Legacy VistA terminal width (80-col is too tight)
+                "line_length": 132,
+                # Kernel-pattern labels run long
+                "label_lines": 50,
+                # Kernel APIs take many args
+                "argument_count": 8,
+            }
+        ),
+    )
+)
+
+
 register_profile(
     Profile(
         name="all",

@@ -2612,7 +2612,7 @@ def _find_test_default_set_protections(cfg, src: bytes) -> dict[str, int]:
 
 
 def _check_read_of_undefined(
-    src: bytes, _tree, path: Path, index: NodeIndex, _ctx: LintContext
+    src: bytes, _tree, path: Path, index: NodeIndex, ctx: LintContext
 ) -> Iterator[Diagnostic]:
     """M-MOD-024 — Read of a local variable that may not have been
     SET on every path from the label entry.
@@ -2629,6 +2629,14 @@ def _check_read_of_undefined(
     same uninitialized read collapse to one finding to keep signal
     high.
 
+    VistA Kernel auto-defined locals (``U`` / ``IO`` / ``DT`` /
+    ``DUZ`` / ``%UCI`` etc.) are excluded from reporting when the
+    config opts in via ``[lint.vista] kernel_locals = "default"`` or
+    a custom list. The defaults live in
+    :mod:`m_cli.lint._vista_kernel`. Without the opt-in the rule
+    keeps its strict semantics — modern non-VA code shouldn't get
+    a free pass on those names.
+
     Deliberate limitations (Phase 7+ follow-ups):
 
       - GOTO targets within the routine are over-approximated as exits;
@@ -2638,6 +2646,7 @@ def _check_read_of_undefined(
       - YDB device parameters (``OPEN file:(newversion)``) parse as
         local variables and may produce false positives on I/O code.
     """
+    from m_cli.lint._vista_kernel import KERNEL_AUTO_DEFINED
     from m_cli.lint.flow import analyze, build_cfgs, formal_params
     from m_cli.lint.flow.vars import (
         argument_nodes,
@@ -2646,6 +2655,17 @@ def _check_read_of_undefined(
         postcond_node,
         uses_in_subtree,
     )
+
+    # VistA Kernel-locals allowlist. Only active when the project
+    # opts in via [lint.vista] kernel_locals — default keeps strict.
+    kernel_locals: frozenset[str] = frozenset()
+    cfg_obj = ctx.config if ctx is not None else None
+    if cfg_obj is not None:
+        opt = cfg_obj.lint_vista_kernel_locals
+        if opt == ("default",):
+            kernel_locals = frozenset(KERNEL_AUTO_DEFINED)
+        elif opt:
+            kernel_locals = frozenset(opt)
 
     cfgs = build_cfgs(src, index)
     for cfg in cfgs:
@@ -2661,6 +2681,8 @@ def _check_read_of_undefined(
 
         def _flag(use, reported=reported, label_name=cfg.label_name):
             if use.name in reported:
+                return None
+            if use.name in kernel_locals:
                 return None
             if (
                 use.name in protections

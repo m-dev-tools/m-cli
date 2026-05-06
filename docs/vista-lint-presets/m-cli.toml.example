@@ -1,0 +1,64 @@
+# Recommended .m-cli.toml for linting a VistA package or the
+# canonical VistA corpus. Drop this into the project root (or its
+# parent — m-cli walks up looking for `.m-cli.toml`) before running
+# `m lint`.
+#
+# Background:
+#   docs/vista-lint-presets/README.md (this directory)
+#   m-stdlib/docs/vista-corpus-lint-results.md (data behind the
+#   recommended choices)
+
+[lint]
+# `vista-full` = xindex + vista + sac, ~42 rules. Combined with the
+# allowlists below, it produces actionable findings on a VistA
+# corpus instead of the ~957K false-positive flood that the
+# `default` profile produces unmodified.
+rules = "vista-full"
+
+# VistA targets YottaDB; the YDB engine-aware allowlists save ~9.5K
+# warnings vs. the default `--target-engine=any`.
+target_engine = "yottadb"
+
+[lint.vista]
+# "default" opts in to the built-in Kernel-locals list:
+#   U, IO, IOM, IOSL, IOST, IOF, IOXY, IOBS, IOTM, IOTBL, IOSC,
+#   DT, DTIME, DUZ, %UCI, %H, %XQDIC, %ZIS, %ZTOS, %ZTSCH, %ZTLOAD,
+#   ZTQUEUED, ZTSK, ZTREQ, ZTSTOP, ZTIO, ZTDESC, ZTDTH, ZTRTN, ZTSAVE,
+#   ZTUCI, ZTVOL, XQXFLG, XQY, XQY0, XQT0, XQT1, XQOPTKEY, XQOPT,
+#   XMC, XMINSTR, XMDUZ, XMSUB, XMTEXT, XMY, XMZ
+# Reads of these names no longer produce M-MOD-024 false-positive
+# errors. Per the corpus measurement: closes ~487K findings on
+# the full VistA corpus.
+kernel_locals = "default"
+
+# "default" opts in to the built-in trusted-routines list:
+#   FileMan: %DT %DTC DI* DIA DIB DIC DIE DIK DIQ DIR DIWP …
+#   Kernel:  %ZIS %ZISC %ZTLOAD %ZTSCH %ZOSV …
+#   XLF:     XLFDT XLFSTR XLFNAME XLFNUM XLFCRC …
+#   XU/XPD:  XUS XUSER XUSCLEAN XPDIQ XPDUTL …
+#   XQ/XM:   XQAL XQDIC XMD XMA XMS …
+# Calls to these from anywhere in the package no longer produce
+# M-XINDX-007 "call to undefined routine" errors. Per the corpus
+# measurement: closes ~16K errors on the full VistA corpus.
+trusted_routines = "default"
+
+# To extend the lists with site-specific Kernel patches, replace
+# "default" with an explicit list:
+#   kernel_locals = ["U", "IO", "DT", "DUZ", "MY-SITE-LOCAL"]
+# An explicit list overrides the built-in defaults entirely.
+
+# Optional: tighter thresholds for new VistA code (tighter than the
+# `vista-full` defaults). Leave commented to inherit `vista-full`'s
+# legacy-tolerant defaults: line_length=132, label_lines=50,
+# argument_count=8.
+#
+# [lint.thresholds]
+# line_length = 100
+# label_lines = 30
+
+# Optional: per-rule severity overrides. VistA review pipelines
+# often want to see XINDX-049 findings (declared-but-unreferenced
+# labels) but not gate on them — drop to info:
+#
+# [lint.severity]
+# "M-XINDX-049" = "info"
