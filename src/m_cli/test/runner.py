@@ -56,6 +56,13 @@ class Summary:
     assertions: list[Assertion] = field(default_factory=list)
 
 
+# Sentinel returncode used by _default_runner when subprocess.TimeoutExpired
+# fires. Out of any real returncode range (signal-killed processes return
+# -1..-128, normal exits return 0..255), so callers can branch on it without
+# colliding with a real mumps exit.
+TIMEOUT_RC = -65535
+
+
 @dataclass(frozen=True)
 class RunResult:
     suite: str
@@ -64,6 +71,10 @@ class RunResult:
     ok: bool
     stdout: str
     returncode: int
+    # True when the subprocess was killed because it ran past the per-suite
+    # timeout. Distinguishes a hard timeout from a real 0/0 failure caused
+    # by parser issues or zero-assertion suites.
+    timed_out: bool = False
 
 
 _RESULTS_RE = re.compile(
@@ -163,6 +174,7 @@ def run_suite(
     runner: RunnerFn | None = None,
     conn: Connection | None = None,
     seeds: list[str] | None = None,
+    timeout: float | None = None,
 ) -> RunResult:
     """Execute a whole suite on vista-meta.
 
@@ -187,9 +199,10 @@ def run_suite(
         cmd = build_xcmd_ssh_cmd(conn, xcmd, stage)
     else:
         cmd = build_suite_ssh_cmd(conn, suite.name, stage)
-    runner = runner or _default_runner
+    runner = runner or _make_default_runner(timeout)
     stdout, rc = runner(cmd, None)
     summary = parse_suite_output(stdout)
+    timed_out = rc == TIMEOUT_RC
     ok = summary.ok and rc == 0
     return RunResult(
         suite=suite.name,
@@ -198,6 +211,7 @@ def run_suite(
         ok=ok,
         stdout=stdout,
         returncode=rc,
+        timed_out=timed_out,
     )
 
 
@@ -208,6 +222,7 @@ def run_case(
     conn: Connection | None = None,
     isolation: bool = True,
     seeds: list[str] | None = None,
+    timeout: float | None = None,
 ) -> RunResult:
     """Execute a single labeled test via ``mumps -run %XCMD`` on vista-meta.
 
@@ -243,9 +258,10 @@ def run_case(
         + f"do report^{protocol}(pass,fail)"
     )
     cmd = build_xcmd_ssh_cmd(conn, xcmd, stage)
-    runner = runner or _default_runner
+    runner = runner or _make_default_runner(timeout)
     stdout, rc = runner(cmd, None)
     summary = parse_suite_output(stdout)
+    timed_out = rc == TIMEOUT_RC
     ok = summary.ok and rc == 0
     return RunResult(
         suite=case.suite,
@@ -254,16 +270,49 @@ def run_case(
         ok=ok,
         stdout=stdout,
         returncode=rc,
+        timed_out=timed_out,
     )
 
 
-def _default_runner(cmd: list[str], env: dict[str, str] | None) -> tuple[str, int]:
-    """Run ``cmd`` and return (stdout-with-stderr, returncode)."""
-    proc = subprocess.run(
-        cmd,
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        check=False,
-    )
+def _make_default_runner(timeout: float | None):
+    """Build a runner closure that captures the per-suite timeout.
+
+    Lets ``run_suite`` / ``run_case`` thread a timeout through to
+    ``_default_runner`` while keeping the public ``RunnerFn`` shape
+    (``cmd, env -> stdout, rc``) stable for test fakes.
+    """
+
+    def runner(cmd: list[str], env: dict[str, str] | None) -> tuple[str, int]:
+        return _default_runner(cmd, env, timeout=timeout)
+
+    return runner
+
+
+def _default_runner(
+    cmd: list[str],
+    env: dict[str, str] | None,
+    *,
+    timeout: float | None = None,
+) -> tuple[str, int]:
+    """Run ``cmd`` and return (stdout-with-stderr, returncode).
+
+    When ``timeout`` is set and the subprocess does not exit before
+    the deadline, the runner captures whatever output it produced,
+    appends a ``[m-cli: timed out after Ns]`` marker, and returns
+    :data:`TIMEOUT_RC`. Callers branch on that to surface the timeout
+    distinctly from a real ``0/0`` parse — see ``RunResult.timed_out``.
+    """
+    try:
+        proc = subprocess.run(
+            cmd,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        partial = (exc.stdout or b"").decode("latin-1", errors="replace")
+        marker = f"\n[m-cli: timed out after {timeout}s; subprocess killed]\n"
+        return partial + marker, TIMEOUT_RC
     return proc.stdout.decode("latin-1", errors="replace"), proc.returncode

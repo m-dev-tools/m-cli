@@ -75,9 +75,10 @@ def test_command(args: argparse.Namespace) -> int:
         return 2
 
     seeds = list(getattr(args, "seeds", []) or [])
+    timeout = _resolve_timeout(args)
     results: list[RunResult] = []
     for suite in suites:
-        results.append(run_suite(suite, conn=conn, seeds=seeds))
+        results.append(run_suite(suite, conn=conn, seeds=seeds, timeout=timeout))
 
     write_output(results, fmt=args.format)
     if not args.quiet:
@@ -153,7 +154,8 @@ def _run_single_case(selector: tuple[Path, str], args: argparse.Namespace) -> in
         return 2
     isolation = not getattr(args, "no_isolation", False)
     seeds = list(getattr(args, "seeds", []) or [])
-    result = run_case(case, conn=conn, isolation=isolation, seeds=seeds)
+    timeout = _resolve_timeout(args)
+    result = run_case(case, conn=conn, isolation=isolation, seeds=seeds, timeout=timeout)
     write_output([result], fmt=args.format)
     if not args.quiet:
         _print_summary([result])
@@ -168,9 +170,22 @@ def _list_suites(suites: list[TestSuite]) -> None:
             print(f"  {c.label}{desc}")
 
 
+def _resolve_timeout(args: argparse.Namespace) -> float | None:
+    """Resolve the --timeout flag to the value the runner expects.
+
+    The CLI exposes ``0`` as "no timeout"; the runner's contract uses
+    ``None`` for that. Anything else passes through as-is.
+    """
+    raw = getattr(args, "timeout", None)
+    if raw is None or raw <= 0:
+        return None
+    return float(raw)
+
+
 def _print_summary(results: list[RunResult]) -> None:
     n_suites = len(results)
     n_pass = sum(1 for r in results if r.ok)
+    n_timeout = sum(1 for r in results if r.timed_out)
     n_fail = n_suites - n_pass
     total_pass = sum(r.summary.passed for r in results)
     total_fail = sum(r.summary.failed for r in results)
@@ -181,6 +196,8 @@ def _print_summary(results: list[RunResult]) -> None:
     ]
     if n_fail:
         parts.append(f"{n_fail} failed")
+    if n_timeout:
+        parts.append(f"{n_timeout} timed out")
     parts.append(f"{total_pass}/{total} assertions passed")
     if total_fail:
         parts.append(f"{total_fail} failed")

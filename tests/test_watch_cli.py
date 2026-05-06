@@ -36,7 +36,7 @@ def test_once_runs_initial_pass(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
 
     invocations: list[list[str]] = []
 
-    def fake(cmd, env=None):
+    def fake(cmd, env=None, **kwargs):
         invocations.append(cmd)
         return ALL_PASS_OUTPUT, 0
 
@@ -58,7 +58,7 @@ def test_once_returns_1_when_initial_run_fails(
         "\nResults: 1 tests  0 passed  1 failed\n1 test(s) FAILED.\n"
     )
 
-    def fake(cmd, env=None):
+    def fake(cmd, env=None, **kwargs):
         return fail_out, 0
 
     monkeypatch.setattr(runner_mod, "_default_runner", fake)
@@ -80,7 +80,7 @@ def test_filter_limits_initial_run(tmp_path: Path, monkeypatch: pytest.MonkeyPat
 
     invocations: list[list[str]] = []
 
-    def fake(cmd, env=None):
+    def fake(cmd, env=None, **kwargs):
         invocations.append(cmd)
         return ALL_PASS_OUTPUT, 0
 

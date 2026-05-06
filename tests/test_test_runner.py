@@ -125,6 +125,59 @@ def test_run_suite_handles_nonzero_exit(tmp_path: Path) -> None:
     assert result.ok is False
 
 
+def test_run_suite_marks_timed_out_when_runner_returns_sentinel(
+    tmp_path: Path,
+) -> None:
+    """A runner that signals TIMEOUT_RC must surface as RunResult.timed_out.
+
+    The point of this is the bug we're fixing: a timed-out subprocess
+    used to look identical to a real 0/0 parse, so failures got
+    silently masked. With the sentinel returncode, the Result carries
+    timed_out=True and consumers (text/tap/json/junit) report it
+    distinctly.
+    """
+    from m_cli.test.runner import TIMEOUT_RC
+
+    suite = TestSuite(name="STDJSONTST", path=tmp_path / "STDJSONTST.m", cases=[])
+    partial = (
+        "  PASS  parse(empty object)\n"
+        "  PASS  parse(empty array)\n"
+        "[m-cli: timed out after 600s; subprocess killed]\n"
+    )
+    fake = _fake_runner(partial, returncode=TIMEOUT_RC)
+    result = run_suite(suite, runner=fake, conn=FAKE_CONN)
+    assert result.timed_out is True
+    assert result.ok is False
+    # Per-assertion lines printed before the kill are still parsed so
+    # the user can see how far the suite got before the subprocess was
+    # killed. The summary's `passed` counter uses the `Results: N tests`
+    # banner which the timed-out subprocess never emitted, so it stays
+    # zero — the per-assertion list is the canonical evidence here.
+    assert len(result.summary.assertions) == 2
+    assert "[m-cli: timed out" in result.stdout
+
+
+def test_run_suite_default_timed_out_false_for_normal_runs(tmp_path: Path) -> None:
+    """A clean suite must NOT have timed_out set."""
+    suite = TestSuite(name="HELLOTST", path=tmp_path / "HELLOTST.m", cases=[])
+    fake = _fake_runner(ALL_PASS)
+    result = run_suite(suite, runner=fake, conn=FAKE_CONN)
+    assert result.timed_out is False
+    assert result.ok is True
+
+
+def test_default_runner_returns_timeout_sentinel_on_subprocess_timeout() -> None:
+    """End-to-end: _default_runner must catch TimeoutExpired and return
+    (partial-with-marker, TIMEOUT_RC) rather than letting the exception
+    bubble up. Uses ``sleep`` so the test costs ~0.2s of real time.
+    """
+    from m_cli.test.runner import TIMEOUT_RC, _default_runner
+
+    stdout, rc = _default_runner(["sleep", "5"], None, timeout=0.2)
+    assert rc == TIMEOUT_RC
+    assert "timed out after 0.2s" in stdout
+
+
 # ---------------------------------------------------------------------------
 # run_case — single-test invocation via %XCMD
 # ---------------------------------------------------------------------------

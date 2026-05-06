@@ -25,6 +25,12 @@ def write_output(results: Iterable[RunResult], fmt: str) -> None:
 def _write_text(results: list[RunResult]) -> None:
     for r in results:
         header = r.suite if r.label is None else f"{r.suite}::{r.label}"
+        if r.timed_out:
+            print(
+                f"TIMEOUT  {header}  "
+                f"({r.summary.passed}/{r.summary.total} parsed before timeout)"
+            )
+            continue
         status = "ok" if r.ok else "FAIL"
         print(f"{status}  {header}  ({r.summary.passed}/{r.summary.total} passed)")
         if not r.ok:
@@ -47,6 +53,12 @@ def _write_tap(results: list[RunResult]) -> None:
         print(f"1..{n}")
         for i, r in enumerate(results, start=1):
             header = r.suite if r.label is None else f"{r.suite}::{r.label}"
+            if r.timed_out:
+                print(f"not ok {i} - {header}: TIMEOUT")
+                print("  ---")
+                print("  reason: subprocess killed after timeout")
+                print("  ...")
+                continue
             ok = "ok" if r.ok else "not ok"
             print(f"{ok} {i} - {header}")
         return
@@ -54,6 +66,13 @@ def _write_tap(results: list[RunResult]) -> None:
     i = 0
     for r in results:
         suite_label = r.suite if r.label is None else f"{r.suite}::{r.label}"
+        if r.timed_out and not r.summary.assertions:
+            i += 1
+            print(f"not ok {i} - {suite_label}: TIMEOUT")
+            print("  ---")
+            print("  reason: subprocess killed after timeout")
+            print("  ...")
+            continue
         for a in r.summary.assertions:
             i += 1
             ok = "ok" if a.outcome == Outcome.PASS else "not ok"
@@ -77,12 +96,27 @@ def _write_junit(results: list[RunResult]) -> None:
     root = ET.Element("testsuites", {"name": "m test"})
     total_tests = 0
     total_failures = 0
+    total_errors = 0
     for r in results:
         suite_el = ET.SubElement(root, "testsuite")
         suite_label = r.suite if r.label is None else f"{r.suite}::{r.label}"
         suite_tests = 0
         suite_failures = 0
-        if r.summary.assertions:
+        suite_errors = 0
+        if r.timed_out and not r.summary.assertions:
+            case_el = ET.SubElement(
+                suite_el,
+                "testcase",
+                {"classname": r.suite, "name": suite_label},
+            )
+            suite_tests = 1
+            suite_errors = 1
+            ET.SubElement(
+                case_el,
+                "error",
+                {"message": "subprocess killed after timeout"},
+            ).text = r.stdout or "subprocess killed after timeout"
+        elif r.summary.assertions:
             for a in r.summary.assertions:
                 case_el = ET.SubElement(
                     suite_el,
@@ -120,13 +154,14 @@ def _write_junit(results: list[RunResult]) -> None:
         suite_el.set("name", r.suite)
         suite_el.set("tests", str(suite_tests))
         suite_el.set("failures", str(suite_failures))
-        suite_el.set("errors", "0")
+        suite_el.set("errors", str(suite_errors))
         suite_el.set("time", "0")
         total_tests += suite_tests
         total_failures += suite_failures
+        total_errors += suite_errors
     root.set("tests", str(total_tests))
     root.set("failures", str(total_failures))
-    root.set("errors", "0")
+    root.set("errors", str(total_errors))
     root.set("time", "0")
     ET.indent(root, space="  ")
     sys.stdout.write('<?xml version="1.0" encoding="utf-8"?>\n')
@@ -142,6 +177,7 @@ def _write_json(results: list[RunResult]) -> None:
                 "name": r.suite,
                 "label": r.label,
                 "ok": r.ok,
+                "timed_out": r.timed_out,
                 "passed": r.summary.passed,
                 "failed": r.summary.failed,
                 "total": r.summary.total,

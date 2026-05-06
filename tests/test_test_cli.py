@@ -62,7 +62,7 @@ def test_run_with_fake_ydb_pass(
     _write_suite(tmp_path)
     from m_cli.test import runner as runner_mod
 
-    def fake(cmd, env=None):
+    def fake(cmd, env=None, **kwargs):
         return ALL_PASS_OUTPUT, 0
 
     monkeypatch.setattr(runner_mod, "_default_runner", fake)
@@ -79,7 +79,7 @@ def test_run_with_fake_ydb_fail_exit_1(tmp_path: Path, monkeypatch: pytest.Monke
         "\nResults: 1 tests  0 passed  1 failed\n1 test(s) FAILED.\n"
     )
 
-    def fake(cmd, env=None):
+    def fake(cmd, env=None, **kwargs):
         return fail_out, 0
 
     monkeypatch.setattr(runner_mod, "_default_runner", fake)
@@ -94,7 +94,7 @@ def test_filter_runs_only_matching(tmp_path: Path, monkeypatch: pytest.MonkeyPat
 
     invocations: list[list[str]] = []
 
-    def fake(cmd, env=None):
+    def fake(cmd, env=None, **kwargs):
         invocations.append(cmd)
         return ALL_PASS_OUTPUT, 0
 
@@ -114,7 +114,7 @@ def test_single_case_selector_runs_one_label(
 
     invocations: list[list[str]] = []
 
-    def fake(cmd, env=None):
+    def fake(cmd, env=None, **kwargs):
         invocations.append(cmd)
         return ALL_PASS_OUTPUT, 0
 
@@ -144,7 +144,7 @@ def test_tap_format(
     _write_suite(tmp_path)
     from m_cli.test import runner as runner_mod
 
-    def fake(cmd, env=None):
+    def fake(cmd, env=None, **kwargs):
         return ALL_PASS_OUTPUT, 0
 
     monkeypatch.setattr(runner_mod, "_default_runner", fake)
@@ -161,7 +161,7 @@ def test_json_format(
     _write_suite(tmp_path)
     from m_cli.test import runner as runner_mod
 
-    def fake(cmd, env=None):
+    def fake(cmd, env=None, **kwargs):
         return ALL_PASS_OUTPUT, 0
 
     monkeypatch.setattr(runner_mod, "_default_runner", fake)
@@ -180,7 +180,7 @@ def test_junit_format(
     _write_suite(tmp_path)
     from m_cli.test import runner as runner_mod
 
-    def fake(cmd, env=None):
+    def fake(cmd, env=None, **kwargs):
         return ALL_PASS_OUTPUT, 0
 
     monkeypatch.setattr(runner_mod, "_default_runner", fake)
@@ -206,7 +206,7 @@ def test_no_paths_uses_routines_tests_if_present(
 
     invocations: list[list[str]] = []
 
-    def fake(cmd, env=None):
+    def fake(cmd, env=None, **kwargs):
         invocations.append(cmd)
         return ALL_PASS_OUTPUT, 0
 

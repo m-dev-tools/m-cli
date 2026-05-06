@@ -86,6 +86,65 @@ def test_tap_output_emits_failure_yaml_block(
     assert "actual:   =2" in out
 
 
+def _make_timeout_result(stdout: str = "[m-cli: timed out after 600s]\n") -> RunResult:
+    """A RunResult shaped like a timeout: no parsed assertions, sentinel rc."""
+    summary = Summary(passed=0, failed=0, total=0, ok=False, assertions=[])
+    from m_cli.test.runner import TIMEOUT_RC
+
+    return RunResult(
+        suite="STDJSONTST",
+        label=None,
+        summary=summary,
+        ok=False,
+        stdout=stdout,
+        returncode=TIMEOUT_RC,
+        timed_out=True,
+    )
+
+
+def test_text_output_distinguishes_timeout_from_fail(
+    capsys: pytest.CaptureFixture,
+) -> None:
+    write_output([_make_timeout_result()], fmt="text")
+    out = capsys.readouterr().out
+    assert "TIMEOUT" in out
+    assert "FAIL" not in out
+    assert "STDJSONTST" in out
+    assert "parsed before timeout" in out
+
+
+def test_tap_output_emits_explicit_timeout_diagnostic(
+    capsys: pytest.CaptureFixture,
+) -> None:
+    write_output([_make_timeout_result()], fmt="tap")
+    out = capsys.readouterr().out
+    assert "not ok 1" in out
+    assert "TIMEOUT" in out
+    assert "subprocess killed after timeout" in out
+
+
+def test_json_output_includes_timed_out_flag(
+    capsys: pytest.CaptureFixture,
+) -> None:
+    import json
+
+    write_output([_make_timeout_result()], fmt="json")
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["suites"][0]["timed_out"] is True
+    assert payload["suites"][0]["ok"] is False
+
+
+def test_junit_output_uses_error_element_for_timeout(
+    capsys: pytest.CaptureFixture,
+) -> None:
+    write_output([_make_timeout_result()], fmt="junit")
+    out = capsys.readouterr().out
+    # JUnit canonical: <error> = unexpected runtime, <failure> = bad assertion.
+    assert "<error" in out
+    assert "<failure" not in out
+    assert 'errors="1"' in out
+
+
 # ---------------------------------------------------------------------------
 # CLI error paths
 # ---------------------------------------------------------------------------

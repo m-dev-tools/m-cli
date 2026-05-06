@@ -43,7 +43,7 @@ def _patch_runner(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
     invocations: list[list[str]] = []
     from m_cli.test import runner as runner_mod
 
-    def fake(cmd, env=None):
+    def fake(cmd, env=None, **kwargs):
         invocations.append(cmd)
         return ALL_PASS_OUTPUT, 0
 

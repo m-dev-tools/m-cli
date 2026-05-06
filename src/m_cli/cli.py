@@ -307,6 +307,19 @@ def main(argv: list[str] | None = None) -> int:
             "order is preserved."
         ),
     )
+    test_parser.add_argument(
+        "--timeout",
+        type=float,
+        default=600.0,
+        metavar="SECONDS",
+        help=(
+            "Per-suite (or per-test, in single-test mode) timeout in "
+            "seconds. The subprocess is killed if it runs past the "
+            "deadline; the suite is reported as TIMEOUT, distinct "
+            "from FAIL/0/0 caused by a parse-level zero-assertion "
+            "result. Pass 0 to disable. Default: 600."
+        ),
+    )
     test_parser.set_defaults(func=test_command)
 
     # `m watch`
