@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pytest *)",
+      "Bash(ruff check *)",
+      "Bash(awk *)",
+      "Bash(make check)",
+      "Bash(make docs-check)",
+      "Bash(make lint-vista)",
+      "Bash(make lint-modern)",
+      "Bash(claude-status *)",
+      "Bash(vista list *)",
+      "Bash(vista routine *)",
+      "Bash(journalctl *)",
+      "Bash(m lint *)"
+    ]
+  }
+}
