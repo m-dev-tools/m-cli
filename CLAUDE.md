@@ -1,3 +1,71 @@
+---
+# Machine-readable project descriptor — schema v1 (2026-05-05).
+name: m-cli
+kind: [cli, lsp, lint, formatter, test-runner]
+status: active                             # Tier 1 + Tier 2 done; Phase 9 in progress
+languages: [python]
+
+runtime:
+  needs:
+    - python>=3.10
+    - "tree-sitter-m (parser; loaded as a Python binding)"
+    - "m-standard TSVs (commands/ISVs/functions tables)"
+    - "vista-meta running (~/data/vista-meta/conn.env) — for `m test` / `m coverage` / `m trace`"
+  optional:
+    - "iris (engine-targetable via --target-engine=iris; source-only, no live engine)"
+  excludes: []
+
+distribution:
+  pypi: null
+  github: rafael5/m-cli
+
+location: ~/projects/m-cli
+
+exposes:
+  cli:
+    - m fmt                                # canonical formatter; 9 case-preserving rules + 3 presets
+    - m lint                               # 7 profiles (default/modern/pedantic/xindex/vista/sac/all); 77 rules total
+    - m test                               # parser-aware discovery; ydb runner; text/TAP/JSON
+    - m watch                              # polling file watcher
+    - m coverage                           # YDB `view "TRACE"`-based; text/json/lcov
+    - m lsp                                # LSP server: diagnostics, formatting, hover, completion, etc.
+  pre_commit_hooks: [m-fmt-check, m-fmt, m-lint]
+  rule_packs:
+    - "M-MOD modernization rules (35 shipped, M-MOD-001..036)"
+    - "XINDEX-derived rules (42, vista profile)"
+    - "SAC profile (23 rules)"
+
+consumes:
+  formats: [".m"]
+  services: []                             # most operations source-only; runtime tools require ydb when invoked
+  upstream_data:
+    - "m-standard TSVs (loaded by src/m_cli/lint/_keywords.py)"
+    - "tree-sitter-m grammar"
+
+companions:
+  - project: m-standard
+    relation: "input — m-cli loads commands/ISVs/functions tables from m-standard's integrated TSVs"
+  - project: tree-sitter-m
+    relation: "input — parser used for AST-level lint and fmt round-trip checks"
+  - project: m-stdlib
+    relation: "architectural priority — m-cli should consume m-stdlib utilities when implementing new functionality"
+  - project: m-tools
+    relation: "predecessor — m-tools' legacy `y*` shell scripts are kept as references; m-cli replaces them"
+  - project: vista-meta
+    relation: "validation gate — `make lint-vista` / `make vista` runs against ~/vista-meta/vista/vista-m-host/Packages (39,330 routines)"
+  - project: m-modern-corpus
+    relation: "non-VistA validation gate — confirms rules don't false-positive on modern OSS M code"
+
+incompatibilities:
+  - "Dialect awareness via `--target-engine=any|yottadb|iris`. GT.M deliberately excluded — won't be added."
+  - "DAP debugger integration deferred (Tier 2 #10) — both engines provide ZBREAK at the engine level."
+
+docs:
+  primary: README.md
+  guide: docs/guide.md
+  implementation_plan: docs/m-linting-implementation-plan.md
+---
+
 # m-cli — Claude Project Context
 
 ## What this project is
