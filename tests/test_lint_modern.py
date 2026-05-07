@@ -1632,3 +1632,55 @@ class TestDollarTestStale:
         src = b"LBL\n Q:$TEST\n Q\n"
         diags = [d for d in _lint(src, "M-MOD-017", ctx=_ctx()) if d.rule_id == "M-MOD-017"]
         assert len(diags) == 1
+
+
+# ---------------------------------------------------------------------------
+# M-MOD-037 — `.x(SUBS)` invalid YDB syntax
+# ---------------------------------------------------------------------------
+
+
+class TestSubscriptedByref:
+    def test_fires_on_proc_call_with_subscripted_byref(self):
+        """``do f(.x(1),.out)`` — .x(1) is the invalid form."""
+        src = b'LBL(x)\n D F(.x(1),.out)\n Q\n'
+        diags = [d for d in _lint(src, "M-MOD-037", ctx=_ctx()) if d.rule_id == "M-MOD-037"]
+        assert len(diags) == 1
+        assert "invalid YDB syntax" in diags[0].message
+        assert diags[0].severity.name == "ERROR"
+
+    def test_fires_on_extrinsic_call_with_subscripted_byref(self):
+        """``set r=$$f(.x(\"k\"))`` — same pattern in extrinsic form."""
+        src = b'LBL\n S R=$$F(.x("k"))\n Q\n'
+        diags = [d for d in _lint(src, "M-MOD-037", ctx=_ctx()) if d.rule_id == "M-MOD-037"]
+        assert len(diags) == 1
+
+    def test_fires_on_multi_level_subscript(self):
+        """``do f(.tree(\"xs\",4))`` — multi-level subscript still by-ref."""
+        src = b'LBL\n D F(.tree("xs",4))\n Q\n'
+        diags = [d for d in _lint(src, "M-MOD-037", ctx=_ctx()) if d.rule_id == "M-MOD-037"]
+        assert len(diags) == 1
+
+    def test_silent_on_whole_local_byref(self):
+        """``do f(.x)`` — whole-local by-ref is the legal form."""
+        src = b'LBL\n D F(.x)\n Q\n'
+        diags = [d for d in _lint(src, "M-MOD-037", ctx=_ctx()) if d.rule_id == "M-MOD-037"]
+        assert len(diags) == 0
+
+    def test_silent_on_subscripted_value_arg(self):
+        """``do f(x(1))`` — passes the value at x(1), not by-ref. Legal."""
+        src = b'LBL\n D F(x(1))\n Q\n'
+        diags = [d for d in _lint(src, "M-MOD-037", ctx=_ctx()) if d.rule_id == "M-MOD-037"]
+        assert len(diags) == 0
+
+    def test_silent_on_decimal_literal(self):
+        """``set x=.5`` — `.5` is a decimal number, not a by-ref."""
+        src = b'LBL\n S X=.5\n Q\n'
+        diags = [d for d in _lint(src, "M-MOD-037", ctx=_ctx()) if d.rule_id == "M-MOD-037"]
+        assert len(diags) == 0
+
+    def test_message_quotes_offending_text(self):
+        """Diagnostic message includes the offending `.x(SUBS)` text."""
+        src = b'LBL\n D F(.tree("level"))\n Q\n'
+        diags = [d for d in _lint(src, "M-MOD-037", ctx=_ctx()) if d.rule_id == "M-MOD-037"]
+        assert len(diags) == 1
+        assert '.tree("level")' in diags[0].message

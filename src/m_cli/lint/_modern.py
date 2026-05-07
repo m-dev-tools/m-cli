@@ -3234,3 +3234,89 @@ register(
         replaces=(),
     )
 )
+
+
+# ---------------------------------------------------------------------------
+# M-MOD-037 — `.x(SUBS)` is invalid YDB syntax; pass `.x` and use
+#             subscripts inside the callee, OR merge-then-pass.
+# ---------------------------------------------------------------------------
+
+
+def _check_subscripted_byref(
+    src: bytes, _tree, path: Path, index: NodeIndex, _ctx: LintContext
+) -> Iterator[Diagnostic]:
+    """M-MOD-037 — passing a subscripted local by reference (`.x(SUBS)`).
+
+    The grammar accepts `.<identifier>(<subscripts>)` because some
+    dialects (older GT.M, hypothetical pure-ANSI extensions) once had
+    semantic intent for subscript-pass-by-ref. YottaDB r2.02 / GT.M
+    V7.0+ reject the form at compile time:
+
+        %YDB-E-COMMAORRPAREXP, Comma or right parenthesis expected
+            do procEcho(.x(1),.out)
+                          ^-----
+
+    Standard ANSI M permits passing only whole locals (`.x`). The
+    compile error fires per-line, but in practice the failure surfaces
+    much later — a routine using the construct compiles fine until the
+    affected line is actually executed, at which point the error
+    bubbles up through any enclosing $ETRAP and is easily mis-attributed
+    to unrelated runtime issues. Diagnosed-and-misattributed multiple
+    times in the m-stdlib STDJSON refactor (see the project's
+    TOOLCHAIN-FINDINGS row 2026-05-06).
+
+    Two canonical workarounds, both AST-preserving:
+
+    1. **Pass the whole local**, callee uses subscripts internally:
+           do f(.x)              ; instead of f(.x(SUBS))
+       In the callee: `s("foo")` reads what would have been `x("foo")`
+       at the caller. Best when the callee's contract is a tree.
+
+    2. **Merge-then-pass** when only a subtree should be visible:
+           kill tmp  merge tmp=x(SUBS)  do f(.tmp)        ; read-only
+           kill tmp  do f(.tmp)  merge x(SUBS)=tmp        ; write-back
+       Best when only one branch matters and the callee shouldn't see
+       siblings.
+    """
+    for ref in index.of("by_reference"):
+        # by_reference -> seq('.', identifier|indirection, optional(subscripts))
+        # If a child is a `subscripts` node, the form is .x(SUBS).
+        has_subscripts = any(
+            child.type == "subscripts" for child in ref.named_children
+        )
+        if not has_subscripts:
+            continue
+        line, column = _node_line_col(ref, src)
+        text = _node_text(ref, src)
+        # 1-based row from start_point[0]+1 already; protect against EOF.
+        all_lines = src.splitlines()
+        line_text = _decode_line(all_lines[line - 1] if 0 <= line - 1 < len(all_lines) else b"")
+        yield Diagnostic(
+            rule_id="M-MOD-037",
+            severity=Severity.ERROR,
+            message=(
+                f"`{text}` — subscripted-by-reference param is invalid "
+                "YDB syntax. Pass the whole local (`.x`) and use subscripts "
+                "inside the callee, OR `kill tmp  merge tmp=x(SUBS)  do "
+                "f(.tmp)` to pass just the subtree."
+            ),
+            path=path,
+            line=line,
+            column=column,
+            column_end=column + (ref.end_byte - ref.start_byte),
+            line_text=line_text,
+        )
+
+
+register(
+    Rule(
+        id="M-MOD-037",
+        severity=Severity.ERROR,
+        category=Category.PORTABILITY,
+        title="Subscripted-by-reference parameter is invalid YDB syntax",
+        tags=("modern",),
+        check=_check_subscripted_byref,
+        needs_context=True,
+        replaces=(),
+    )
+)
