@@ -18,17 +18,23 @@ _THIS = Path(__file__).resolve()
 
 
 def _find_m_standard() -> Path | None:
-    """Find the m-standard repo on disk, if available."""
-    # Try ../../../../m-standard (when m-cli and m-standard are siblings under projects/)
-    candidates = [
+    """Find the m-standard repo on disk, if available.
+
+    Returns a path ``P`` such that ``P / "integrated" / *.tsv`` resolves
+    to the integrated TSV files. m-standard's layout has shifted between
+    a flat ``integrated/`` at the repo root and a nested ``docs/integrated/``;
+    we accept either.
+    """
+    repo_candidates = [
         _THIS.parent.parent.parent.parent.parent / "m-standard",
         _THIS.parent.parent.parent.parent / "m-standard",
         Path.home() / "projects" / "m-standard",
     ]
-    for cand in candidates:
-        integrated = cand / "integrated"
-        if integrated.exists():
-            return cand
+    for repo in repo_candidates:
+        for sub in ("", "docs"):
+            cand = repo / sub if sub else repo
+            if (cand / "integrated").exists():
+                return cand
     return None
 
 
