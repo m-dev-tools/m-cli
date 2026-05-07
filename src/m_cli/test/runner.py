@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
@@ -75,6 +76,10 @@ class RunResult:
     # timeout. Distinguishes a hard timeout from a real 0/0 failure caused
     # by parser issues or zero-assertion suites.
     timed_out: bool = False
+    # Wall-clock duration of the subprocess invocation, in milliseconds.
+    # Surfaced by `m test --timings`. Zero when the runner did not measure
+    # (legacy callers, fakes that bypass _make_default_runner).
+    elapsed_ms: float = 0.0
 
 
 _RESULTS_RE = re.compile(
@@ -168,20 +173,60 @@ def _seed_prelude(seeds: list[str]) -> str:
     )
 
 
+def _env_prelude(env_files: list[str]) -> str:
+    """Build the ``.env``-load sequence for ``--env PATH``.
+
+    Each path is parsed via ``$$parseFile^STDENV(path,.envtmp)`` and the
+    populated tree is merged into ``^STDLIB($JOB,"env")``. Test code reads
+    via ``$get(^STDLIB($JOB,"env","KEY"))`` (or imports the global subtree
+    into a local and uses ``$$get^STDENV(.local,"KEY",default)``).
+
+    Returns an empty string when ``env_files`` is empty so callers can
+    splice unconditionally.
+    """
+    if not env_files:
+        return ""
+    parts: list[str] = ['kill ^STDLIB($JOB,"env")']
+    parts.extend(
+        f'new envtmp  do parseFile^STDENV("{_escape_m_string(p)}",.envtmp)  '
+        f'merge ^STDLIB($JOB,"env")=envtmp'
+        for p in env_files
+    )
+    return "  ".join(parts) + "  "
+
+
+def _snap_update_prelude(update_snapshots: bool) -> str:
+    """Set the STDSNAP update-mode sentinel for ``--update-snapshots``.
+
+    When set, ``asserts^STDSNAP`` rewrites the snapshot file instead of
+    comparing against it (and records PASS). Used to regenerate baselines
+    after an intentional change in test output.
+    """
+    if not update_snapshots:
+        return ""
+    return 'set ^STDLIB($JOB,"stdsnap","update")=1  '
+
+
 def run_suite(
     suite: TestSuite,
     *,
     runner: RunnerFn | None = None,
     conn: Connection | None = None,
     seeds: list[str] | None = None,
+    env_files: list[str] | None = None,
+    update_snapshots: bool = False,
     timeout: float | None = None,
 ) -> RunResult:
     """Execute a whole suite on vista-meta.
 
-    Without ``seeds``: invokes ``mumps -run ^SUITE`` directly (no
-    ``%XCMD`` indirection). With ``seeds``: switches to
-    ``mumps -run %XCMD 'do load^STDSEED(...) do ^SUITE'`` so each
-    ``--seed PATH`` (track Y) is loaded before the suite runs.
+    Without ``seeds`` / ``env_files`` / ``update_snapshots``: invokes
+    ``mumps -run ^SUITE`` directly (no ``%XCMD`` indirection). With any
+    of those: switches to ``mumps -run %XCMD 'PRELUDE  do ^SUITE'`` so
+    the prelude can run before the suite. The prelude composes:
+
+    - ``--seed PATH`` (track Y): ``do load^STDSEED("path")``
+    - ``--env PATH`` : populates ``^STDLIB($JOB,"env",KEY)`` via STDENV
+    - ``--update-snapshots`` : sets ``^STDLIB($JOB,"stdsnap","update")=1``
 
     Per-test concerns (track X — STDMOCK registry, track W — STDFIX
     rollback) are handled in :func:`run_case` rather than at suite
@@ -194,13 +239,21 @@ def run_suite(
     conn = conn or read_connection()
     stage = remote_stage(suite.path)
     seeds = seeds or []
-    if seeds:
-        xcmd = _seed_prelude(seeds) + f"do ^{suite.name}"
+    env_files = env_files or []
+    prelude = (
+        _env_prelude(env_files)
+        + _snap_update_prelude(update_snapshots)
+        + _seed_prelude(seeds)
+    )
+    if prelude:
+        xcmd = prelude + f"do ^{suite.name}"
         cmd = build_xcmd_ssh_cmd(conn, xcmd, stage)
     else:
         cmd = build_suite_ssh_cmd(conn, suite.name, stage)
     runner = runner or _make_default_runner(timeout)
+    t0 = time.perf_counter()
     stdout, rc = runner(cmd, None)
+    elapsed_ms = (time.perf_counter() - t0) * 1000.0
     summary = parse_suite_output(stdout)
     timed_out = rc == TIMEOUT_RC
     ok = summary.ok and rc == 0
@@ -212,6 +265,7 @@ def run_suite(
         stdout=stdout,
         returncode=rc,
         timed_out=timed_out,
+        elapsed_ms=elapsed_ms,
     )
 
 
@@ -222,17 +276,21 @@ def run_case(
     conn: Connection | None = None,
     isolation: bool = True,
     seeds: list[str] | None = None,
+    env_files: list[str] | None = None,
+    update_snapshots: bool = False,
     timeout: float | None = None,
 ) -> RunResult:
     """Execute a single labeled test via ``mumps -run %XCMD`` on vista-meta.
 
     The xcmd prelude clears the STDMOCK registry (track X) and loads
-    each ``--seed PATH`` (track Y) before invoking the test. When
-    ``isolation`` is true (default), the test invocation is wrapped
-    in inline ``tstart`` / ``trollback`` so per-test global mutations
-    roll back at the end of the test (track W). Pass
-    ``isolation=False`` to opt out for legacy ^TESTRUN-style suites
-    or suites that manage their own transactions.
+    each ``--seed PATH`` (track Y) before invoking the test. With
+    ``--env PATH`` it also populates ``^STDLIB($JOB,"env",KEY)`` via
+    STDENV; with ``--update-snapshots`` it sets the STDSNAP update-
+    mode sentinel. When ``isolation`` is true (default), the test
+    invocation is wrapped in inline ``tstart`` / ``trollback`` so
+    per-test global mutations roll back at the end of the test
+    (track W). Pass ``isolation=False`` to opt out for legacy
+    ^TESTRUN-style suites or suites that manage their own transactions.
 
     Why inline rather than ``with^STDFIX``: STDFIX runs ``xecute code``
     inside its own stack frame, where the xcmd-level ``pass`` /
@@ -250,7 +308,9 @@ def run_case(
         invoke_test = f"tstart  {invoke_test}  trollback"
     xcmd = (
         "new pass,fail  "
-        "do clear^STDMOCK  "
+        + _env_prelude(env_files or [])
+        + _snap_update_prelude(update_snapshots)
+        + "do clear^STDMOCK  "
         + _seed_prelude(seeds or [])
         + f"do start^{protocol}(.pass,.fail)  "
         + invoke_test
@@ -259,7 +319,9 @@ def run_case(
     )
     cmd = build_xcmd_ssh_cmd(conn, xcmd, stage)
     runner = runner or _make_default_runner(timeout)
+    t0 = time.perf_counter()
     stdout, rc = runner(cmd, None)
+    elapsed_ms = (time.perf_counter() - t0) * 1000.0
     summary = parse_suite_output(stdout)
     timed_out = rc == TIMEOUT_RC
     ok = summary.ok and rc == 0
@@ -271,6 +333,7 @@ def run_case(
         stdout=stdout,
         returncode=rc,
         timed_out=timed_out,
+        elapsed_ms=elapsed_ms,
     )
 
 

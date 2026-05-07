@@ -311,6 +311,42 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     test_parser.add_argument(
+        "--env",
+        action="append",
+        default=[],
+        metavar="PATH",
+        dest="env_files",
+        help=(
+            "Load a `.env` file via STDENV before running each suite. "
+            "Parsed values land in `^STDLIB($JOB,\"env\",KEY)` so test "
+            "code reads via `$get(^STDLIB($JOB,\"env\",\"KEY\"))`. "
+            "Repeat for multiple env files; later files override earlier "
+            "keys."
+        ),
+    )
+    test_parser.add_argument(
+        "--update-snapshots",
+        action="store_true",
+        dest="update_snapshots",
+        help=(
+            "Set the STDSNAP update sentinel before running each suite, "
+            "so `asserts^STDSNAP` rewrites baselines instead of comparing. "
+            "Run after an intentional change in test output to regenerate "
+            "snapshot files."
+        ),
+    )
+    test_parser.add_argument(
+        "--timings",
+        action="store_true",
+        dest="timings",
+        help=(
+            "Show per-suite wall-clock duration in the summary line. "
+            "Captures the full subprocess invocation (SSH + ydb startup "
+            "+ test execution); useful for spotting suites that are "
+            "slowing down the inner loop."
+        ),
+    )
+    test_parser.add_argument(
         "--timeout",
         type=float,
         default=600.0,

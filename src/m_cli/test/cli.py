@@ -75,14 +75,26 @@ def test_command(args: argparse.Namespace) -> int:
         return 2
 
     seeds = list(getattr(args, "seeds", []) or [])
+    env_files = list(getattr(args, "env_files", []) or [])
+    update_snapshots = bool(getattr(args, "update_snapshots", False))
+    timings = bool(getattr(args, "timings", False))
     timeout = _resolve_timeout(args)
     results: list[RunResult] = []
     for suite in suites:
-        results.append(run_suite(suite, conn=conn, seeds=seeds, timeout=timeout))
+        results.append(
+            run_suite(
+                suite,
+                conn=conn,
+                seeds=seeds,
+                env_files=env_files,
+                update_snapshots=update_snapshots,
+                timeout=timeout,
+            )
+        )
 
     write_output(results, fmt=args.format)
     if not args.quiet:
-        _print_summary(results)
+        _print_summary(results, timings=timings)
 
     return 0 if all(r.ok for r in results) else 1
 
@@ -154,11 +166,22 @@ def _run_single_case(selector: tuple[Path, str], args: argparse.Namespace) -> in
         return 2
     isolation = not getattr(args, "no_isolation", False)
     seeds = list(getattr(args, "seeds", []) or [])
+    env_files = list(getattr(args, "env_files", []) or [])
+    update_snapshots = bool(getattr(args, "update_snapshots", False))
+    timings = bool(getattr(args, "timings", False))
     timeout = _resolve_timeout(args)
-    result = run_case(case, conn=conn, isolation=isolation, seeds=seeds, timeout=timeout)
+    result = run_case(
+        case,
+        conn=conn,
+        isolation=isolation,
+        seeds=seeds,
+        env_files=env_files,
+        update_snapshots=update_snapshots,
+        timeout=timeout,
+    )
     write_output([result], fmt=args.format)
     if not args.quiet:
-        _print_summary([result])
+        _print_summary([result], timings=timings)
     return 0 if result.ok else 1
 
 
@@ -182,7 +205,7 @@ def _resolve_timeout(args: argparse.Namespace) -> float | None:
     return float(raw)
 
 
-def _print_summary(results: list[RunResult]) -> None:
+def _print_summary(results: list[RunResult], *, timings: bool = False) -> None:
     n_suites = len(results)
     n_pass = sum(1 for r in results if r.ok)
     n_timeout = sum(1 for r in results if r.timed_out)
@@ -201,4 +224,16 @@ def _print_summary(results: list[RunResult]) -> None:
     parts.append(f"{total_pass}/{total} assertions passed")
     if total_fail:
         parts.append(f"{total_fail} failed")
+    if timings:
+        total_ms = sum(r.elapsed_ms for r in results)
+        parts.append(f"{total_ms:.0f} ms total")
     print("m test: " + ", ".join(parts), file=sys.stderr)
+    if timings:
+        # Per-suite breakdown sorted slowest-first to surface inner-loop drag.
+        ordered = sorted(results, key=lambda r: r.elapsed_ms, reverse=True)
+        for r in ordered:
+            label = f" [{r.label}]" if r.label else ""
+            print(
+                f"        {r.elapsed_ms:>8.0f} ms  {r.suite}{label}",
+                file=sys.stderr,
+            )

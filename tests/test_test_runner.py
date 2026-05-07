@@ -546,3 +546,99 @@ def test_run_suite_loads_seeds_before_suite(tmp_path: Path) -> None:
     remote = fake.captured["cmd"][-1]
     assert 'load^STDSEED("/data/x.tsv")' in remote
     assert remote.index("load^STDSEED") < remote.index("^MYPKGTST")
+
+
+# --env PATH — STDENV-loaded test config -------------------------------
+
+
+def test_run_case_loads_env_before_test(tmp_path: Path) -> None:
+    """`--env PATH` parses each .env file via STDENV.parseFile and merges
+    the result into ^STDLIB($JOB,"env"). Both files arrive before the
+    test invocation; the kill+merge sequence is per-file so later files
+    override earlier keys for matching subscripts."""
+    fake = _fake_runner(_PASS_OUTPUT)
+    run_case(
+        _case(tmp_path),
+        runner=fake,
+        conn=FAKE_CONN,
+        env_files=["/cfg/dev.env", "/cfg/local.env"],
+    )
+    remote = fake.captured["cmd"][-1]
+    assert 'parseFile^STDENV("/cfg/dev.env",.envtmp)' in remote
+    assert 'parseFile^STDENV("/cfg/local.env",.envtmp)' in remote
+    assert 'merge ^STDLIB($JOB,"env")=envtmp' in remote
+    # All env loads must precede the test invocation.
+    assert remote.index("parseFile^STDENV") < remote.index("tDoesAThing^MYPKGTST")
+    # Order preserved (later overrides earlier).
+    assert remote.index("/cfg/dev.env") < remote.index("/cfg/local.env")
+
+
+def test_run_case_no_env_files_emits_no_parsefile(tmp_path: Path) -> None:
+    fake = _fake_runner(_PASS_OUTPUT)
+    run_case(_case(tmp_path), runner=fake, conn=FAKE_CONN)
+    remote = fake.captured["cmd"][-1]
+    assert "parseFile^STDENV" not in remote
+
+
+def test_run_suite_loads_env_before_suite(tmp_path: Path) -> None:
+    """`--env PATH` (suite mode) populates ^STDLIB($JOB,"env") before the
+    suite routine runs so test code can read via $get(^STDLIB($JOB,"env",
+    KEY))."""
+    suite = TestSuite(name="MYPKGTST", path=tmp_path / "MYPKGTST.m", cases=[])
+    fake = _fake_runner(_PASS_OUTPUT)
+    run_suite(suite, runner=fake, conn=FAKE_CONN, env_files=["/cfg/x.env"])
+    remote = fake.captured["cmd"][-1]
+    assert 'parseFile^STDENV("/cfg/x.env",.envtmp)' in remote
+    assert remote.index("parseFile^STDENV") < remote.index("^MYPKGTST")
+    # Suite mode falls back to %XCMD when there's a prelude.
+    assert "%XCMD" in remote
+
+
+# --update-snapshots — STDSNAP update mode ----------------------------
+
+
+def test_run_case_sets_snap_update_sentinel(tmp_path: Path) -> None:
+    fake = _fake_runner(_PASS_OUTPUT)
+    run_case(_case(tmp_path), runner=fake, conn=FAKE_CONN, update_snapshots=True)
+    remote = fake.captured["cmd"][-1]
+    assert 'set ^STDLIB($JOB,"stdsnap","update")=1' in remote
+    assert remote.index("stdsnap") < remote.index("tDoesAThing^MYPKGTST")
+
+
+def test_run_case_default_does_not_set_snap_sentinel(tmp_path: Path) -> None:
+    fake = _fake_runner(_PASS_OUTPUT)
+    run_case(_case(tmp_path), runner=fake, conn=FAKE_CONN)
+    remote = fake.captured["cmd"][-1]
+    assert "stdsnap" not in remote
+
+
+def test_run_suite_update_snapshots_routes_via_xcmd(tmp_path: Path) -> None:
+    """Suite mode normally bypasses %XCMD; --update-snapshots forces
+    %XCMD because a prelude is needed to set the sentinel."""
+    suite = TestSuite(name="MYPKGTST", path=tmp_path / "MYPKGTST.m", cases=[])
+    fake = _fake_runner(_PASS_OUTPUT)
+    run_suite(suite, runner=fake, conn=FAKE_CONN, update_snapshots=True)
+    remote = fake.captured["cmd"][-1]
+    assert "%XCMD" in remote
+    assert 'set ^STDLIB($JOB,"stdsnap","update")=1' in remote
+
+
+# --timings — wall-clock per suite -------------------------------------
+
+
+def test_run_suite_records_elapsed_ms(tmp_path: Path) -> None:
+    """Every run_suite invocation records elapsed_ms via time.perf_counter,
+    even when the caller doesn't ask for timings (the cost is one
+    perf_counter call; cheap enough to always pay)."""
+    suite = TestSuite(name="HELLOTST", path=tmp_path / "HELLOTST.m", cases=[])
+    fake = _fake_runner(ALL_PASS)
+    result = run_suite(suite, runner=fake, conn=FAKE_CONN)
+    # The fake runner is essentially a no-op so elapsed will be very small,
+    # but must be a finite non-negative number.
+    assert result.elapsed_ms >= 0.0
+
+
+def test_run_case_records_elapsed_ms(tmp_path: Path) -> None:
+    fake = _fake_runner(_PASS_OUTPUT)
+    result = run_case(_case(tmp_path), runner=fake, conn=FAKE_CONN)
+    assert result.elapsed_ms >= 0.0
