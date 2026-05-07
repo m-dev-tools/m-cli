@@ -4,9 +4,10 @@ Emits a single workflow file (`.github/workflows/m-ci.yml`) that runs
 the four project gates the §6.2 Phase 3a roadmap names: format check,
 lint, test, coverage.
 
-The container is the published YottaDB base image. The runner installs
-`m` (m-cli) from PyPI in a venv. Adjust the matrix or the install
-source to taste — this is a starter, not a vendor lock.
+The container is the YottaDB base image. The runner clones
+``tree-sitter-m`` and ``m-cli`` from GitHub and installs them into a
+venv. Adjust the matrix or the install source to taste — this is a
+starter, not a vendor lock.
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ _WORKFLOW = """\
 # Customise:
 #   - Pin to a specific YottaDB tag (replace `latest-master`).
 #   - Add coverage upload (e.g. codecov/codecov-action@v4).
-#   - Switch m-cli source if you publish to a private index.
+#   - Pin tree-sitter-m / m-cli to a tag instead of HEAD.
 
 name: m-ci
 
@@ -59,7 +60,12 @@ jobs:
 
       - name: Install m-cli
         run: |
-          /tmp/venv/bin/pip install m-cli tree-sitter-m
+          # Clone-and-install: tree-sitter-m must land before m-cli so its
+          # local checkout satisfies m-cli's dependency declaration.
+          git clone https://github.com/rafael5/tree-sitter-m /tmp/tree-sitter-m
+          git clone https://github.com/rafael5/m-cli /tmp/m-cli
+          /tmp/venv/bin/pip install /tmp/tree-sitter-m
+          /tmp/venv/bin/pip install /tmp/m-cli
           echo "/tmp/venv/bin" >> "$GITHUB_PATH"
 
       - name: Source YottaDB env

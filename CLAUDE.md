@@ -320,8 +320,7 @@ Downstream M projects opt into `m fmt --check` and `m lint --error-on=fatal` via
 
 - Hook declarations live in `.pre-commit-hooks.yaml` (top-level). Three hooks: `m-fmt-check`, `m-fmt` (write), `m-lint`.
 - Schema integrity is gated by `tests/test_pre_commit_hooks.py` — every hook's `entry` must invoke a real `m` subcommand, and the `files` regex must match `.m` paths.
-- See `docs/pre-commit.md` for downstream usage examples (both git-repo and `language: system` styles).
-- **Activation prerequisite:** the git-repo style needs `m-cli` published (and `tree-sitter-m` on PyPI or a git URL). Until then, downstream projects use the `language: system` style with a locally-installed `m`.
+- See `docs/pre-commit.md` for downstream usage examples — downstream projects install m-cli locally (clone + venv) and use the `language: system` style.
 
 ## Performance status — under budget
 

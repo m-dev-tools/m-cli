@@ -342,7 +342,7 @@ maps each to `m-cli`'s current state. Columns:
 | 8 | Build / compile | `cargo build` / `go build` / `tsc` / `mvn package` | ⚠️ **Partial / engine-owned** | `ydb` compiles routines on first call (`.m` → `.o`). `m build` could front-end this (warm-compile a directory, surface compile errors uniformly). Low-medium value — most users let ydb compile lazily. **Gap rank 9.** |
 | 9 | Coverage | `cargo llvm-cov` / `go test -cover` / `pytest --cov` / `vitest --coverage` / `jacoco` | ✅ **Done** | `m coverage` — Phase C. YDB `view "TRACE"` for per-line counts; label-level 85/123 = 69.1% on m-tools (byte-identical to `ycover`); line-level 340/637 = 53.4%. Outputs: text / text --lines / json / lcov. |
 | 10 | Watch | `cargo watch` / `air` / `pytest-watch` / `vitest` / `gradle --continuous` | ✅ **Done** | `m watch` — polling-based (0.5 s default), source→suite affinity (`FOO.m → FOOTST.m`), `--once` for smoke checks. Pure Python, no extra deps. |
-| 11 | Pre-commit / hooks | `pre-commit` framework hooks across all five | ✅ **Done** | `.pre-commit-hooks.yaml` exposes `m-fmt-check`, `m-fmt`, `m-lint`. Schema gated by `tests/test_pre_commit_hooks.py`. Activation pending PyPI publish. |
+| 11 | Pre-commit / hooks | `pre-commit` framework hooks across all five | ✅ **Done** | `.pre-commit-hooks.yaml` exposes `m-fmt-check`, `m-fmt`, `m-lint`. Schema gated by `tests/test_pre_commit_hooks.py`. Downstream projects use the `language: system` style with a locally-installed `m`. |
 | 12 | Run / execute | `cargo run` / `go run` / `uv run` / `node`/`bun` / `java -jar` | ⚠️ **Partial (engine-owned)** | `ydb -run ^ROUTINE` is the canonical entry; users invoke it directly. `m run ROUTINE` could wrap it (env composition, exit-code mapping). Low value — the engine command is short. **Gap rank 11.** |
 | 13 | Debugger / DAP | `lldb` / `dlv` / `debugpy` / `node --inspect` / JDWP | ⏸️ **Deferred** | Per CLAUDE.md, DAP is its own engineering project; both engines ship `ZBREAK` at the engine level. **Gap rank 5** — high developer-felt value, large engineering scope. |
 | 14 | Doc generator | `cargo doc` / `go doc` / `sphinx` / `typedoc` / `javadoc` | ❌ **Missing** | `m doc` could extract `;;` documentation comments + label / formal signatures into Markdown / HTML. M has the `;;` doc-comment convention used by VistA (`Z*` utilities, etc.) — a low-friction starter. **Gap rank 4.** |
@@ -381,7 +381,7 @@ Recording these so future planning rounds don't re-litigate the decision.
 - **Type checker.** No demand signal; M has no typing convention. Revisit if a gradual-typing proposal emerges in m-standard.
 - **Toolchain manager.** YDB / GT.M install via vendor packages; not a language-version-manager problem. `m doctor` covers the realistic need.
 - **Security audit.** Without a package registry there are no third-party deps to scan. The injection-style concerns belong in lint rules (taint analysis on `XECUTE` arguments), not a separate `m audit` subcommand.
-- **Publish.** Blocked on package manager (#6); defer until that lands.
+- **Publish.** No registry. `m-cli` and `tree-sitter-m` are distributed as git checkouts; downstream consumers clone-and-install.
 
 ---
 
@@ -588,7 +588,6 @@ than appearing as line items.
 | **VistA gate maintenance.** Re-run `make vista`, `make lint-vista`, and the smoke tests on every new subcommand that touches the parser or rule engines. | Continuous | The 39,330-routine corpus is the only honest stress test we have. Regressions caught here cost 1 hour; in production they cost weeks. |
 | **Library API stability.** Anything new that out-of-tree tools should consume goes into `m_cli.__all__` and is pinned by `tests/test_library_api.py`. | Phase 3a onward | The LSP, pre-commit, and future IDE integrations all consume the library API. Breaking it is a tax on every consumer. |
 | **Performance budget.** Every new subcommand that walks the corpus must declare a budget and verify it. | Phase 3b onward | Lint already costs 22.6 s on 16 cores. A coverage / profile / fix run that scales linearly to corpus size needs the same `--jobs` discipline up front. |
-| **PyPI publish.** Ship `m-cli` and `tree-sitter-m` to PyPI. | Late Phase 3a | Unblocks the git-repo-style pre-commit hook for downstream M projects (see [pre-commit.md](pre-commit.md)). |
 
 ### 6.4 Decision points and risk register
 
@@ -598,7 +597,7 @@ Things to revisit before starting each phase, rather than deciding now.
 |---|---|---|---|
 | Continue extending Python codebase vs port hot paths to Rust | Phase 3b end | Stay in Python | Lint perf regressing past 60 s on VistA; test runner startup overhead becoming visible. |
 | Build `m debug` on YDB only or design for engine-portable DAP | Phase 3c start | YDB-first, abstraction comes later if Caché / IRIS users appear | Demand signal from non-YDB users; sponsor for Caché support. |
-| `m pkg` registry: build one, reuse git, or piggyback on PyPI | Phase 4 RFC | Git-URL-only initially | Spam / malicious packages once any registry exists; trust model needs to land before launch. |
+| `m pkg` registry: build one or reuse git | Phase 4 RFC | Git-URL-only initially | Spam / malicious packages once any registry exists; trust model needs to land before launch. |
 | Cargo-style `$PATH` subcommand discovery | After Phase 3c | Hold | Wait until the in-tree subcommand surface is stable for ≥6 months — premature extension points become migration debt. |
 
 ### 6.5 At-a-glance Gantt
@@ -609,7 +608,6 @@ Phase 3a quick wins █████
 Phase 3b infra              █████████
 Phase 3c debug                                █████████████
 Phase 4  ecosystem                                                ████████████►
-PyPI publish              ▲
 VistA gate            ◄────────── continuous ──────────────────────────►
 ```
 

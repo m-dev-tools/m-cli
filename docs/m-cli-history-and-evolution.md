@@ -510,8 +510,9 @@ What is queued, in rough order:
   `$ZF` host calls. Build-callouts harness (`tools/
   build-callouts.sh`) shipped as A6, so the infra prereq is met.
 - **tree-sitter-m v0.1 publish.** Prebuildify CI is shipped;
-  `npm publish` / `cargo publish` / `twine upload` are
-  maintainer-credential-gated and need to be done manually.
+  `npm publish` / `cargo publish` / Go-module tag are
+  maintainer-credential-gated and need to be done manually. The
+  Python binding stays clone-and-install (no PyPI publication).
 
 **Medium term (months):**
 

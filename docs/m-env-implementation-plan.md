@@ -177,13 +177,14 @@ Canonical install block:
 ```dockerfile
 ARG M_CLI_REF=main
 
-RUN git clone https://github.com/rafael5/m-cli /opt/m-cli && \
+RUN git clone https://github.com/rafael5/tree-sitter-m /opt/tree-sitter-m && \
+    git clone https://github.com/rafael5/m-cli /opt/m-cli && \
     cd /opt/m-cli && \
     git checkout "$M_CLI_REF" && \
     python3 -m venv .venv && \
     .venv/bin/python -m pip install --upgrade pip uv && \
-    .venv/bin/uv pip install -e ".[lsp]" && \
-    .venv/bin/uv pip install tree-sitter-m
+    .venv/bin/uv pip install /opt/tree-sitter-m && \
+    .venv/bin/uv pip install -e ".[lsp]"
 ```
 
 All generated configs should point at:
@@ -476,13 +477,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 ARG M_CLI_REF=main
 
-RUN git clone https://github.com/rafael5/m-cli /opt/m-cli && \
+RUN git clone https://github.com/rafael5/tree-sitter-m /opt/tree-sitter-m && \
+    git clone https://github.com/rafael5/m-cli /opt/m-cli && \
     cd /opt/m-cli && \
     git checkout "$M_CLI_REF" && \
     python3 -m venv .venv && \
     .venv/bin/python -m pip install --upgrade pip uv && \
-    .venv/bin/uv pip install -e ".[lsp]" && \
-    .venv/bin/uv pip install tree-sitter-m
+    .venv/bin/uv pip install /opt/tree-sitter-m && \
+    .venv/bin/uv pip install -e ".[lsp]"
 
 USER yottadb
 WORKDIR /workspace
@@ -745,13 +747,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 ARG M_CLI_REF=main
 
-RUN git clone https://github.com/rafael5/m-cli /opt/m-cli && \
+RUN git clone https://github.com/rafael5/tree-sitter-m /opt/tree-sitter-m && \
+    git clone https://github.com/rafael5/m-cli /opt/m-cli && \
     cd /opt/m-cli && \
     git checkout "$M_CLI_REF" && \
     python3 -m venv .venv && \
     .venv/bin/python -m pip install --upgrade pip uv && \
-    .venv/bin/uv pip install -e ".[lsp]" && \
-    .venv/bin/uv pip install tree-sitter-m
+    .venv/bin/uv pip install /opt/tree-sitter-m && \
+    .venv/bin/uv pip install -e ".[lsp]"
 
 WORKDIR /workspace
 

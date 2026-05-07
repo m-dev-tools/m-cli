@@ -15,34 +15,10 @@ Three hooks are exported from `.pre-commit-hooks.yaml`:
 Pick `m-fmt-check` *or* `m-fmt` — not both. The first blocks unformatted
 commits; the second auto-fixes them.
 
-## Two integration styles
+## Integration: use a system-installed `m`
 
-### Style 1: pull from a published m-cli repo (recommended)
-
-Once `m-cli` is published to a git host, downstream projects add this
-to their `.pre-commit-config.yaml`:
-
-```yaml
-repos:
-  - repo: https://github.com/<owner>/m-cli
-    rev: v0.1.0  # pin to a tagged release
-    hooks:
-      - id: m-fmt-check
-      - id: m-lint
-```
-
-`pre-commit` clones the repo at `rev`, builds an isolated venv, and
-runs the hooks against your staged `.m` files.
-
-> **Note.** This style requires `m-cli` and its `tree-sitter-m`
-> dependency to be installable from PyPI or git. Until that lands
-> (see `TODO.md` and the m-cli README), use Style 2 below.
-
-### Style 2: use a system-installed `m` (works today)
-
-If your developers already have `m-cli` installed in their environment
-(via `uv`, `pipx`, or `pip install -e ../m-cli`), you can wire pre-commit
-to the system binary directly:
+Install `m-cli` locally (clone + venv) so the `m` binary is on each
+developer's `PATH`, then wire pre-commit to it via `language: system`:
 
 ```yaml
 repos:
@@ -64,25 +40,22 @@ repos:
 ```
 
 `language: system` tells pre-commit to skip venv creation and assume
-`m` is on `PATH`. Same result; no clone required.
+`m` is on `PATH`.
 
 ## Tightening the lint gate
 
 `m-lint` defaults to `--error-on=fatal` so it only blocks commits on
 real bugs. To also fail on warnings (the SAC violations and the noisier
-XINDEX rules), override the entry in your downstream config:
+XINDEX rules), override the entry:
 
 ```yaml
-  - repo: https://github.com/<owner>/m-cli
-    rev: v0.1.0
-    hooks:
       - id: m-lint
-        args: ["--error-on=warning"]
+        name: m lint --error-on=warning
+        entry: m lint --error-on=warning
+        language: system
+        files: \.m$
+        types: [file]
 ```
-
-(Note: `pre-commit` appends `args` after the hook's own `entry` line.
-The default entry already supplies `--error-on=fatal`, and the override
-arg simply takes precedence — `argparse` keeps the last value.)
 
 ## Running ad-hoc
 

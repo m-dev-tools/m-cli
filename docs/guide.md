@@ -177,7 +177,7 @@ The table below mirrors the categories in [§7 of m-tool-gap-analysis.md](../../
 | 20 | 4 | Profiling | ENGINE-SPECIFIC | ➖ Out of scope | (engine concern) | IRIS-only (`^%SYS.MONLBL`); YDB lacks it. Not source-level. |
 | 21 | 4 | Benchmarking | PARTIAL | ⏸️ Deferred | (none) | `$ZHOROLOG` is the engine primitive both vendors ship. |
 | 22 | 4 | Security scan | MAJOR | 🟡 Partial | `m lint --rules=M-MOD-036` | Taint analysis MVP (Phase 9): tracks untrusted data (`READ` input, public-label formals) through assignment chains and flags any flow into an indirection sink (`@expr`, `S @expr=...`, `D @expr`, `G @expr`, `XECUTE`). Cross-routine taint propagation is the remaining stretch piece. |
-| 23 | 4 | Package publishing | MAJOR | ⏳ Planned (own repo only) | (PyPI for m-cli itself) | Publishing `m-cli` + `tree-sitter-m` to PyPI is a near-term unblocker for downstream pre-commit / CI usage. The broader "M package ecosystem" is aspirational. |
+| 23 | 4 | Package publishing | MAJOR | ➖ Out of scope | (none) | Distribution of `m-cli` and `tree-sitter-m` is git-clone-and-install; no package-registry plan. The broader "M package ecosystem" is aspirational. |
 | — | — | Type checking | N/A | ➖ Not applicable | — | M is untyped. |
 | — | — | Import analysis | N/A | ➖ Not applicable | — | M has no import system. |
 | — | — | Environment check | N/A | ➖ Not applicable | — | No language-level equivalent to `pyenv` / `nvm`. |
@@ -700,7 +700,7 @@ m ci init --path /repo     # write into a different project root
 m ci init --force          # overwrite an existing workflow
 ```
 
-The generated `m-ci.yml` runs against the published `yottadb/yottadb-base:latest-master` container so test/coverage actually have a YDB engine, installs `m-cli` + `tree-sitter-m` via pip into a venv, sources `ydb_env_set`, then walks:
+The generated `m-ci.yml` runs against the `yottadb/yottadb-base:latest-master` container so test/coverage actually have a YDB engine, clones `tree-sitter-m` and `m-cli` from GitHub and installs them into a venv, sources `ydb_env_set`, then walks:
 
 1. `m doctor` — sanity check before doing anything destructive
 2. `m fmt --check routines tests`
@@ -937,7 +937,6 @@ Strategic phases beyond Tier 1 (in dependency order):
 | Cross-routine taint propagation (Phase 9 follow-up) | ⏸️ Deferred | Tainted formal flowing into `$$F(X)` doesn't yet inherit through to the callee's return. Largest remaining piece of Phase 9. |
 | Implicit globals as taint sources (`^TMP("USER", ...)`, `^XTMP`, etc.) | ⏸️ Deferred | Would extend `[lint.taint]` with a `source_globals = [...]` knob. |
 | `$EXTRACT` / `$TRANSLATE` conditional sanitizers | ⏸️ Deferred | Pattern-match safe usage (e.g. `$E(X,1,N)` where N is a constant). Workaround today: add to `extra_sanitizers` if you've audited the call sites. |
-| Publishing `m-cli` + `tree-sitter-m` to PyPI | ⏳ Planned | Unblocks the `language: repo` pre-commit style and downstream `pip install m-cli`. Held until the library API has more soak time. |
 | DAP debugger integration | ⏸️ Deferred | Tier 2 capability; substantial engineering on its own. Both engines ship `ZBREAK` at engine level. |
 | FOR loop back-edge in CFG | ⏸️ Deferred | Phase 7+ refinement. Currently FOR body is straight-line; first-iteration reads of FOR-set variables may under-report. |
 
