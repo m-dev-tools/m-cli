@@ -15,6 +15,10 @@ from m_cli.build import build_command
 from m_cli.ci import ci_command
 from m_cli.coverage.cli import add_arguments as add_coverage_arguments
 from m_cli.doc import doc_command
+from m_cli.doc.errors import errors_command
+from m_cli.doc.examples import examples_command
+from m_cli.doc.manifest import manifest_command
+from m_cli.doc.search import search_command
 from m_cli.doctor import doctor_command
 from m_cli.fmt import fmt_command
 from m_cli.lint import lint_command
@@ -670,6 +674,128 @@ def main(argv: list[str] | None = None) -> int:
         help="Path to dist/stdlib-manifest.json (default: walk up from cwd)",
     )
     doc_parser.set_defaults(func=doc_command)
+
+    # `m search <query>` — full-text search over the m-stdlib manifest
+    # (per discoverability-and-tooling-plan.md § 4.2, WB3). Substring
+    # match, case-insensitive, AND-style across query tokens; ranks
+    # synopsis hits above description hits above example hits.
+    search_parser = subparsers.add_parser(
+        "search",
+        help="Full-text search over the m-stdlib manifest",
+        description=(
+            "Walk every (module, label) entry and report any whose "
+            "synopsis / description / example contains every space-"
+            "separated token in the query (case-insensitive). Results "
+            "rank synopsis matches above description above example. "
+            "Manifest discovery is shared with `m doc` (--manifest "
+            "PATH overrides; otherwise walks up from cwd, then "
+            "$M_CLI_MANIFEST, then ~/projects/m-stdlib/dist/...)."
+        ),
+    )
+    search_parser.add_argument(
+        "query",
+        nargs="?",
+        default="",
+        help="Search query — space-separated tokens (AND-style match)",
+    )
+    search_parser.add_argument(
+        "--limit",
+        type=int,
+        default=50,
+        help="Max number of matches to print (default: 50)",
+    )
+    search_parser.add_argument(
+        "--manifest",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Path to dist/stdlib-manifest.json (default: walk up from cwd)",
+    )
+    search_parser.set_defaults(func=search_command)
+
+    # `m manifest [path]` — emit the m-stdlib manifest (or a sub-path)
+    # as JSON. Thin wrapper for piping into jq / scripting / AI agent
+    # context loading. Per WB4.
+    manifest_parser = subparsers.add_parser(
+        "manifest",
+        help="Emit the m-stdlib manifest (or a sub-path) as JSON",
+        description=(
+            "With no path, writes the resolved dist/stdlib-manifest.json "
+            "to stdout. With a path like STDJSON / STDJSON.parse / "
+            "modules / errors / stdlib_version, emits just that subtree. "
+            "Manifest discovery is shared with `m doc`."
+        ),
+    )
+    manifest_parser.add_argument(
+        "path",
+        nargs="?",
+        default="",
+        help="Sub-path to emit (e.g. STDJSON.parse). Empty = whole manifest.",
+    )
+    manifest_parser.add_argument(
+        "--manifest",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Path to dist/stdlib-manifest.json (default: walk up from cwd)",
+    )
+    manifest_parser.set_defaults(func=manifest_command)
+
+    # `m examples [MODULE]` — print every @example body from the
+    # manifest, prefixed with `module.label:` for grep-friendliness.
+    # Per WB4.
+    examples_parser = subparsers.add_parser(
+        "examples",
+        help="Print every @example from the manifest",
+        description=(
+            "Walk every public label's @example bodies and emit them "
+            "prefixed with `module.label:` so the output is greppable. "
+            "With a MODULE argument, scope the walk to that module only."
+        ),
+    )
+    examples_parser.add_argument(
+        "module",
+        nargs="?",
+        default="",
+        help="Module to scope output to (default: every module)",
+    )
+    examples_parser.add_argument(
+        "--manifest",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Path to dist/stdlib-manifest.json (default: walk up from cwd)",
+    )
+    examples_parser.set_defaults(func=examples_command)
+
+    # `m errors` — list every U-STD* error code with its producing
+    # module + labels. Per WB4. Reads dist/errors.json when it exists
+    # (m-stdlib's WA7 sidecar); falls back to deriving from the main
+    # manifest's per-label `raises` arrays.
+    errors_parser = subparsers.add_parser(
+        "errors",
+        help="List every U-STD* error code and the labels that raise it",
+        description=(
+            "Inverted index over the manifest's @raises tags: every "
+            "U-STDxxx-NAME code is listed with its producing module + "
+            "every label that raises it. Reads dist/errors.json when "
+            "available (m-stdlib's WA7 sidecar); otherwise derives the "
+            "inversion from the main manifest's per-label `raises` arrays."
+        ),
+    )
+    errors_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit the errors index as JSON (the same shape as dist/errors.json)",
+    )
+    errors_parser.add_argument(
+        "--manifest",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Path to dist/stdlib-manifest.json (default: walk up from cwd)",
+    )
+    errors_parser.set_defaults(func=errors_command)
 
     args = parser.parse_args(argv)
     return args.func(args)
