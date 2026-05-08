@@ -10,6 +10,8 @@ __pycache__/
 /build/
 *.egg-info/
 .mypy_cache/
+.pytest_cache/
+.ruff_cache/
 .DS_Store
 *.db
 *.sqlite
