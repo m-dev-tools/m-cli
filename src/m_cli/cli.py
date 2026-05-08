@@ -625,37 +625,49 @@ def main(argv: list[str] | None = None) -> int:
     )
     build_parser.set_defaults(func=build_command)
 
-    # `m doc`
+    # `m doc` — godoc-style symbol lookup over the m-stdlib manifest
+    # (per discoverability-and-tooling-plan.md § 4.1, WB1). The
+    # legacy path-based extract-to-Markdown behaviour is now
+    # accessible only via the underlying library
+    # (`m_cli.doc.extract` / `m_cli.doc.render`); the CLI surface
+    # is the manifest reader.
     doc_parser = subparsers.add_parser(
         "doc",
-        help="Extract M docstrings to Markdown / HTML",
+        help="godoc-style symbol lookup over the m-stdlib manifest",
         description=(
-            "Walk the given paths for `.m` files and render their "
-            "`@summary` annotations and label signatures into a single "
-            "document. Recognises the modern `LABEL ; @summary <text>` "
-            "convention (M-MOD-028) and the VistA version stub on line "
-            "2. Output: Markdown by default, HTML with --format=html. "
-            "Writes to stdout, or to --output PATH."
+            "Look up a module or label in the m-stdlib manifest and "
+            "print its signature, params, returns, raises, examples, "
+            "and source pointer. Forms: `m doc STDJSON` (module "
+            "overview), `m doc STDJSON.parse` (single label), `m doc "
+            "parse` (fuzzy name lookup across modules), `m doc` (list "
+            "every module). The manifest is found by walking up from "
+            "cwd looking for `dist/stdlib-manifest.json`, then by "
+            "checking $M_CLI_MANIFEST, then `~/projects/m-stdlib/"
+            "dist/stdlib-manifest.json`; --manifest PATH overrides."
         ),
     )
     doc_parser.add_argument(
-        "paths",
-        nargs="*",
-        type=Path,
-        help="Files or directories to scan (default: current directory)",
+        "symbol",
+        nargs="?",
+        default="",
+        help="Symbol to look up: MODULE, MODULE.label, or bare label name",
     )
     doc_parser.add_argument(
-        "--format",
-        choices=("markdown", "html"),
-        default="markdown",
-        help="Output format (default: markdown)",
+        "--short",
+        action="store_true",
+        help="One-line synopsis instead of full long-form output",
     )
     doc_parser.add_argument(
-        "--output",
-        type=Path,
+        "--json",
+        action="store_true",
+        help="Emit the raw manifest entry as JSON",
+    )
+    doc_parser.add_argument(
+        "--manifest",
+        type=str,
         default=None,
         metavar="PATH",
-        help="Write to PATH instead of stdout",
+        help="Path to dist/stdlib-manifest.json (default: walk up from cwd)",
     )
     doc_parser.set_defaults(func=doc_command)
 

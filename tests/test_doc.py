@@ -1,11 +1,16 @@
-"""Tests for ``m doc`` — extract M docstrings to Markdown / HTML."""
+"""Tests for the ``m_cli.doc.extract`` / ``m_cli.doc.render`` library
+functions — the original ``@summary``-based extract-to-Markdown
+implementation, kept available as a programmatic surface even though
+``m doc`` (the CLI) was repurposed in WB1 to do manifest-driven
+symbol lookup.
+
+Symbol-lookup CLI tests live in ``test_cli_doc_lookup.py``.
+"""
 
 from __future__ import annotations
 
-import argparse
 from pathlib import Path
 
-from m_cli.doc import doc_command
 from m_cli.doc.extract import (
     LabelDoc,
     RoutineDoc,
@@ -156,45 +161,11 @@ def test_render_html_wraps_in_html_tags():
     assert "HELLO" in html
 
 
-# ----------------------------------------------------------------- doc_command
-
-
-def _ns(**kw) -> argparse.Namespace:
-    base = {"paths": [], "format": "markdown", "output": None}
-    base.update(kw)
-    return argparse.Namespace(**base)
-
-
-def test_doc_command_writes_stdout_by_default(tmp_path, capsys):
-    f = tmp_path / "HELLO.m"
-    f.write_text("HELLO ; @summary  greeting\n quit\n")
-    rc = doc_command(_ns(paths=[tmp_path]))
-    out = capsys.readouterr().out
-    assert rc == 0
-    assert "## HELLO" in out
-
-
-def test_doc_command_writes_output_file(tmp_path):
-    f = tmp_path / "HELLO.m"
-    f.write_text("HELLO ; @summary  greeting\n quit\n")
-    out_path = tmp_path / "DOCS.md"
-    rc = doc_command(_ns(paths=[tmp_path], output=out_path))
-    assert rc == 0
-    body = out_path.read_text()
-    assert "## HELLO" in body
-
-
-def test_doc_command_no_files_returns_two(tmp_path, capsys):
-    rc = doc_command(_ns(paths=[tmp_path]))
-    err = capsys.readouterr().err
-    assert rc == 2
-    assert "no .m files" in err.lower() or "no m files" in err.lower()
-
-
-def test_doc_command_html_format(tmp_path, capsys):
-    f = tmp_path / "HELLO.m"
-    f.write_text("HELLO ; @summary  greeting\n quit\n")
-    rc = doc_command(_ns(paths=[tmp_path], format="html"))
-    out = capsys.readouterr().out
-    assert rc == 0
-    assert "<html" in out.lower()
+# NOTE: tests for the ``m doc`` CLI command live in
+# tests/test_cli_doc_lookup.py — the command was repurposed to be a
+# godoc-style symbol lookup over m-stdlib's manifest (WB1 in the
+# discoverability tracker), so the old ``paths``/``format``/``output``
+# CLI tests no longer apply. The extract/render library functions
+# tested above are unchanged and still load via
+# ``m_cli.doc.extract`` / ``m_cli.doc.render`` for any consumer that
+# wants the legacy behavior programmatically.
