@@ -24,6 +24,7 @@ from m_cli.fmt import fmt_command
 from m_cli.lint import lint_command
 from m_cli.lsp import lsp_command
 from m_cli.new import new_command
+from m_cli.plugins import plugins_command, register_plugins
 from m_cli.run import run_command
 from m_cli.test import test_command
 from m_cli.watch import watch_command
@@ -796,6 +797,38 @@ def main(argv: list[str] | None = None) -> int:
         help="Path to dist/stdlib-manifest.json (default: walk up from cwd)",
     )
     errors_parser.set_defaults(func=errors_command)
+
+    # ── `m plugins` — out-of-tree subcommand introspection ────────────
+    plugins_parser = subparsers.add_parser(
+        "plugins",
+        help="List installed m-cli plugins (out-of-tree subcommands)",
+        description=(
+            "Walks every Python entry-point in the 'm_cli.plugins' "
+            "group and reports the discovered subcommands. Plugins "
+            "whose names collide with built-ins, fail to load, or "
+            "raise during register() are listed under 'conflicts' "
+            "and skipped — the dispatcher is never blocked by a "
+            "broken plugin. See docs/plugin-development.md for the "
+            "contract third-party packages should follow."
+        ),
+    )
+    plugins_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit the discovered set as JSON",
+    )
+    plugins_parser.set_defaults(func=plugins_command)
+
+    # ── Discover and register out-of-tree plugins ─────────────────────
+    # Built-in subcommand names — passed to register_plugins() so
+    # entry-points that collide with them get rejected up front.
+    _builtins = set(subparsers.choices)
+    _registered, _conflicts = register_plugins(subparsers, builtins=_builtins)
+    # Stash the discovery result on the parser defaults so the
+    # `m plugins` handler can read them without rediscovering.
+    parser.set_defaults(
+        _plugin_registered=_registered, _plugin_conflicts=_conflicts
+    )
 
     args = parser.parse_args(argv)
     return args.func(args)
