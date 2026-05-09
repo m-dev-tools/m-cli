@@ -45,14 +45,13 @@ Public library surface (stable for out-of-tree tooling):
 # Side-effect import: registers M-MOD-NN rules. Must come after `rules`
 # is imported (so the registry exists) and after `profiles` (so
 # `modern` is registered before any code calls list_profiles()).
-from m_cli.lint import _modern as _modern_rules  # noqa: F401
-
 # Side-effect import: registers M-DOC-NN rules. Loaded after `_modern`
 # because _doc imports `_label_body_extents` from there. The M-DOC
 # family validates the M-doc tag grammar specified in m-stdlib's
 # `docs/guides/m-doc-grammar.md` (WA1) and feeds the manifest
 # generator (WA4).
 from m_cli.lint import _doc as _doc_rules  # noqa: F401
+from m_cli.lint import _modern as _modern_rules  # noqa: F401
 from m_cli.lint.cli import lint_command
 from m_cli.lint.context import LintContext
 from m_cli.lint.diagnostic import Category, Diagnostic, Severity
