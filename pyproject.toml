@@ -40,8 +40,40 @@ lsp = [
     "pygls~=2.1",
 ]
 
+[tool.uv]
+# Restrict the universal lock to the four platforms tree-sitter-m
+# publishes wheels for. Without this, uv tries to resolve
+# tree-sitter-m for every PEP-508 platform combination in the
+# universe (Linux i686/ppc64le/s390x, Intel macOS, ARM Windows,
+# FreeBSD, etc.) and fails because we have no URL for those.
+environments = [
+    "sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "sys_platform == 'linux' and platform_machine == 'aarch64'",
+    "sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "sys_platform == 'win32' and platform_machine == 'AMD64'",
+]
+
 [tool.uv.sources]
-tree-sitter-m = { path = "../tree-sitter-m", editable = true }
+# Track C2 of the m-dev-tools self-containment sprint: pin to the
+# wheel attached to tree-sitter-m's GitHub Release rather than a
+# sibling local checkout. cibuildwheel produces one cp310-abi3 wheel
+# per platform; markers route uv to the right one. Cuts the
+# clone-and-install requirement for fresh installs of m-cli.
+#
+# To bump: change the version in the URLs (and pin) and run
+# `uv lock`. The template is documented in tree-sitter-m's
+# RELEASE.md §5.5.
+# Each entry is a single-line inline table — TOML spec forbids
+# newlines inside `{ ... }`, and stdlib tomllib (used by setuptools
+# at editable-build time) rejects multi-line inline tables even
+# though uv's lenient parser accepts them. Lines are long; that's
+# the trade-off for staying spec-conformant.
+tree-sitter-m = [
+    { url = "https://github.com/m-dev-tools/tree-sitter-m/releases/download/v0.1.1/tree_sitter_m-0.1.1-cp310-abi3-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
+    { url = "https://github.com/m-dev-tools/tree-sitter-m/releases/download/v0.1.1/tree_sitter_m-0.1.1-cp310-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", marker = "sys_platform == 'linux' and platform_machine == 'aarch64'" },
+    { url = "https://github.com/m-dev-tools/tree-sitter-m/releases/download/v0.1.1/tree_sitter_m-0.1.1-cp310-abi3-macosx_11_0_arm64.whl", marker = "sys_platform == 'darwin' and platform_machine == 'arm64'" },
+    { url = "https://github.com/m-dev-tools/tree-sitter-m/releases/download/v0.1.1/tree_sitter_m-0.1.1-cp310-abi3-win_amd64.whl", marker = "sys_platform == 'win32' and platform_machine == 'AMD64'" },
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
