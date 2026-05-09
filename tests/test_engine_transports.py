@@ -18,7 +18,6 @@ compatibility.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
@@ -31,7 +30,6 @@ from m_cli.engine import (
     SSHEngine,
     detect_engine,
 )
-
 
 # ── LocalEngine ────────────────────────────────────────────────────
 
