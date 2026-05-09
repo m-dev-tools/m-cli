@@ -139,10 +139,10 @@ def format_label_long(m: LabelMatch) -> str:
 
     src = d.get("source") or {}
     if src.get("file"):
-        line = src.get("line")
-        if line:
+        src_line = src.get("line")
+        if src_line:
             out.append("")
-            out.append(f"source: {src['file']}:{line}")
+            out.append(f"source: {src['file']}:{src_line}")
         else:
             out.append("")
             out.append(f"source: {src['file']}")
