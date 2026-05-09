@@ -17,6 +17,12 @@ jobs:
         with:
           python-version-file: .python-version
 
+      - name: Clone tree-sitter-m as sibling (uv.lock declares ../tree-sitter-m)
+        # m-cli's distribution model is clone-and-install: pyproject.toml
+        # declares tree-sitter-m as a path dep at ../tree-sitter-m. CI must
+        # provide that sibling checkout before `uv sync` will resolve.
+        run: git clone --depth=1 https://github.com/m-dev-tools/tree-sitter-m ../tree-sitter-m
+
       - name: Install dependencies
         run: uv sync --frozen --extra dev
 
