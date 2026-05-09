@@ -167,7 +167,7 @@ devcontainer down --workspace-folder . --config .devcontainer/yottadb/devcontain
 Every generated environment should install `m-cli` by cloning from GitHub:
 
 ```text
-https://github.com/rafael5/m-cli
+https://github.com/m-dev-tools/m-cli
 ```
 
 Do not use PyPI for `m-cli`. Inside the container, installation uses a venv and `uv pip install`.
@@ -177,8 +177,8 @@ Canonical install block:
 ```dockerfile
 ARG M_CLI_REF=main
 
-RUN git clone https://github.com/rafael5/tree-sitter-m /opt/tree-sitter-m && \
-    git clone https://github.com/rafael5/m-cli /opt/m-cli && \
+RUN git clone https://github.com/m-dev-tools/tree-sitter-m /opt/tree-sitter-m && \
+    git clone https://github.com/m-dev-tools/m-cli /opt/m-cli && \
     cd /opt/m-cli && \
     git checkout "$M_CLI_REF" && \
     python3 -m venv .venv && \
@@ -208,7 +208,7 @@ workspace = "/workspace"
 
 [environment.m_cli]
 source = "git"
-repo = "https://github.com/rafael5/m-cli"
+repo = "https://github.com/m-dev-tools/m-cli"
 ref = "main"
 venv = "/opt/m-cli/.venv"
 install = "uv"
@@ -477,8 +477,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 ARG M_CLI_REF=main
 
-RUN git clone https://github.com/rafael5/tree-sitter-m /opt/tree-sitter-m && \
-    git clone https://github.com/rafael5/m-cli /opt/m-cli && \
+RUN git clone https://github.com/m-dev-tools/tree-sitter-m /opt/tree-sitter-m && \
+    git clone https://github.com/m-dev-tools/m-cli /opt/m-cli && \
     cd /opt/m-cli && \
     git checkout "$M_CLI_REF" && \
     python3 -m venv .venv && \
@@ -747,8 +747,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 ARG M_CLI_REF=main
 
-RUN git clone https://github.com/rafael5/tree-sitter-m /opt/tree-sitter-m && \
-    git clone https://github.com/rafael5/m-cli /opt/m-cli && \
+RUN git clone https://github.com/m-dev-tools/tree-sitter-m /opt/tree-sitter-m && \
+    git clone https://github.com/m-dev-tools/m-cli /opt/m-cli && \
     cd /opt/m-cli && \
     git checkout "$M_CLI_REF" && \
     python3 -m venv .venv && \

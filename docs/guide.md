@@ -91,9 +91,9 @@ gap analysis  →  Tier 1 plan  →  tree-sitter-m  →  m-standard  →  VistA 
 
 **2. The Tier 1 plan** — [m-tooling-tier1.md](../../m-tools/docs/m-tooling-tier1.md). A focused five-tool plan addressing the highest-impact developer-loop gaps: formatter, linter, test runner, single-test selection, file watcher. Defined the architectural principles (vendor-neutral, source-level, validate against VistA on every release) and the validation gates that gate every release.
 
-**3. [`tree-sitter-m`](https://github.com/rafael5/tree-sitter-m)** — the production tree-sitter grammar for M. **99.06% clean parse** on the 39,330-routine VistA corpus. The shared parser. Every `m-cli` subcommand parses `.m` source through this grammar — the formatter relies on its lossless byte ranges; the linter walks its AST node types; the test runner searches for `label` and `formals` AST nodes; the LSP traverses its structure helpers; the Phase 7 control-flow graph builder reads its `command` and `command_sequence` nodes.
+**3. [`tree-sitter-m`](https://github.com/m-dev-tools/tree-sitter-m)** — the production tree-sitter grammar for M. **99.06% clean parse** on the 39,330-routine VistA corpus. The shared parser. Every `m-cli` subcommand parses `.m` source through this grammar — the formatter relies on its lossless byte ranges; the linter walks its AST node types; the test runner searches for `label` and `formals` AST nodes; the LSP traverses its structure helpers; the Phase 7 control-flow graph builder reads its `command` and `command_sequence` nodes.
 
-**4. [`m-standard`](https://github.com/rafael5/m-standard)** — a machine-readable cross-vendor inventory of **949 M keyword forms** (commands, intrinsic functions, intrinsic special variables) with provenance flags (`in_anno`, `in_ydb`, `in_iris`). Every linter rule that needs to know "is this a standard command?" reads from m-standard, never hardcoded lists. Hover and completion in the LSP serve m-standard's syntax format strings directly. Engine-aware portability rules (M-MOD-021..023) consult its `standard_status` column (`ansi`, `ydb`, `iris`, `ydb-and-iris`, `vista`).
+**4. [`m-standard`](https://github.com/m-dev-tools/m-standard)** — a machine-readable cross-vendor inventory of **949 M keyword forms** (commands, intrinsic functions, intrinsic special variables) with provenance flags (`in_anno`, `in_ydb`, `in_iris`). Every linter rule that needs to know "is this a standard command?" reads from m-standard, never hardcoded lists. Hover and completion in the LSP serve m-standard's syntax format strings directly. Engine-aware portability rules (M-MOD-021..023) consult its `standard_status` column (`ansi`, `ydb`, `iris`, `ydb-and-iris`, `vista`).
 
 **5. The VistA corpus** — [WorldVistA/VistA-M](https://github.com/WorldVistA/VistA-M). The 39,330-routine open-source M codebase that is the largest in the world. The validation gate for every `m-cli` release: `make vista` round-trips every routine through `m fmt`; `make lint-vista` runs the full XINDEX rule pack across the corpus in 22.6 s on 16 cores. **A tool that doesn't survive VistA isn't ready.** The supplementary `make lint-modern` gate runs the M-MOD-NN track over a curated 4,215-routine non-VistA corpus catalogued in [docs/m-corpus-catalog.md](m-corpus-catalog.md) (YottaDB/YDBTest, mgsql, YDBOcto-aux, EWD, M-Web-Server) — calibrating the modernization rules against contemporary non-VA M code.
 
@@ -187,7 +187,7 @@ The table below mirrors the categories in [§7 of m-tool-gap-analysis.md](../../
 | Capability | Status | Module |
 |---|:---:|---|
 | LSP server (diagnostics, formatting, code actions, hover, completion, document symbols, code lenses, folding, signature help, document highlight, go-to-definition) | ✅ Done | [`m lsp`](#65-m-lsp) — Stages 1+2+3+4+4b+B |
-| VS Code extension wiring | ✅ Done | [`tree-sitter-m-vscode`](https://github.com/rafael5/tree-sitter-m-vscode) sibling repo; spawns `m lsp` on activation |
+| VS Code extension wiring | ✅ Done | [`tree-sitter-m-vscode`](https://github.com/m-dev-tools/tree-sitter-m-vscode) sibling repo; spawns `m lsp` on activation |
 | Project configuration (`.m-cli.toml` / `[tool.m-cli]`) | ✅ Done | [`m_cli.config`](#7-project-configuration) |
 | Workspace symbol index | ✅ Done | [`m_cli.workspace`](#5-architecture) — backs go-to-definition, find-references, workspace symbol search; refreshes via `didChangeWatchedFiles` and `didSave` |
 | Environment diagnostics (Phase 3a) | ✅ Done | [`m doctor`](#67-m-doctor) — `$ydb_dist`, `$ydb_routines`, parser, m-standard TSVs, `ydb` binary; OK / WARN / FAIL with actionable hints |
@@ -202,8 +202,8 @@ The table below mirrors the categories in [§7 of m-tool-gap-analysis.md](../../
 
 | Foundation | What it provides | Why `m-cli` depends on it |
 |---|---|---|
-| **[`m-standard`](https://github.com/rafael5/m-standard)** | Machine-readable cross-vendor inventory of 949 M keyword forms (commands, intrinsic functions, ISVs) with provenance flags (`in_anno`, `in_ydb`, `in_iris`) | The `m_cli.lint._keywords` module loads command / ISV / function sets from m-standard's TSVs. Every linter rule that needs to know "is this a standard command?" reads from m-standard, never hardcoded lists. Hover / completion in the LSP serve m-standard's syntax format strings directly. |
-| **[`tree-sitter-m`](https://github.com/rafael5/tree-sitter-m)** | Production tree-sitter grammar for M; 99.06% clean parse on the 39,330-routine VistA corpus | Every `m-cli` subcommand parses `.m` source through this grammar. The fmt round-trip relies on its lossless byte ranges; the linter walks its AST node types; test discovery searches for `label` / `formals` AST nodes; the LSP's structure helpers traverse it. |
+| **[`m-standard`](https://github.com/m-dev-tools/m-standard)** | Machine-readable cross-vendor inventory of 949 M keyword forms (commands, intrinsic functions, ISVs) with provenance flags (`in_anno`, `in_ydb`, `in_iris`) | The `m_cli.lint._keywords` module loads command / ISV / function sets from m-standard's TSVs. Every linter rule that needs to know "is this a standard command?" reads from m-standard, never hardcoded lists. Hover / completion in the LSP serve m-standard's syntax format strings directly. |
+| **[`tree-sitter-m`](https://github.com/m-dev-tools/tree-sitter-m)** | Production tree-sitter grammar for M; 99.06% clean parse on the 39,330-routine VistA corpus | Every `m-cli` subcommand parses `.m` source through this grammar. The fmt round-trip relies on its lossless byte ranges; the linter walks its AST node types; test discovery searches for `label` / `formals` AST nodes; the LSP's structure helpers traverse it. |
 | **VistA corpus** (`~/vista-meta/vista/vista-m-host/Packages` — 39,330 routines via [`WorldVistA/VistA-M`](https://github.com/WorldVistA/VistA-M)) | The largest open-source M codebase in the world | The validation gate for every `m-cli` release: `make vista` round-trips every routine through `m fmt`; `make lint-vista` runs the full XINDEX rule pack across the corpus. A tool that doesn't survive VistA isn't ready. |
 
 The reasoning behind this layering (parser-shared, source-level, vendor-neutral) is in [§3.4 of m-tooling-tier1.md](../../m-tools/docs/m-tooling-tier1.md#34-portability-across-m-implementations).
@@ -684,7 +684,7 @@ Generated layout:
 
 **Routine name derivation.** The project name is uppercased and stripped of non-alphanumeric characters, then truncated to 8 chars per the M routine-name limit (`my-app-v2` → `MYAPPV2`; `supercalifragilistic` → `SUPERCAL`). Names that start with a digit or strip to empty are rejected with a usage error.
 
-**Why an in-tree assertion helper?** `<NAME>ASRT.m` is a tiny ~25-line wrapper exposing `start` / `eq` / `report` labels that emit the same `  PASS  desc` / `  FAIL  desc` / `Results: N tests P passed F failed` wire protocol that `m test`'s parser expects. New projects therefore have **zero external M dependencies** at startup. When the project later adopts [`m-stdlib`](https://github.com/rafael5/m-stdlib), each call to `^<NAME>ASRT` swaps to the equivalent on `^STDASSERT` (same API).
+**Why an in-tree assertion helper?** `<NAME>ASRT.m` is a tiny ~25-line wrapper exposing `start` / `eq` / `report` labels that emit the same `  PASS  desc` / `  FAIL  desc` / `Results: N tests P passed F failed` wire protocol that `m test`'s parser expects. New projects therefore have **zero external M dependencies** at startup. When the project later adopts [`m-stdlib`](https://github.com/m-dev-tools/m-stdlib), each call to `^<NAME>ASRT` swaps to the equivalent on `^STDASSERT` (same API).
 
 **Generated content is verified at build time.** Unit tests apply `format_source(rules=select_fmt_rules('pythonic-lower'))` and `lint_source(rules=select_rules('default'))` to the rendered routine, helper, and test — no shipped scaffold ships with lint errors.
 
@@ -838,7 +838,7 @@ The LSP loads the config from `Path.cwd()` at spawn time. VS Code spawns subproc
 
 ## 8. Editor integration (VS Code)
 
-`m-cli`'s LSP is wired into VS Code via the sibling extension repo [`tree-sitter-m-vscode`](https://github.com/rafael5/tree-sitter-m-vscode) (installed as `rafael5.tree-sitter-m-vscode`). The extension:
+`m-cli`'s LSP is wired into VS Code via the sibling extension repo [`tree-sitter-m-vscode`](https://github.com/m-dev-tools/tree-sitter-m-vscode) (installed as `rafael5.tree-sitter-m-vscode`). The extension:
 
 - Provides syntax highlighting via TextMate grammar + tree-sitter semantic tokens
 - Spawns `m lsp` on activation via `vscode-languageclient` (stdio transport)

@@ -4,8 +4,8 @@
 ecosystem gap-remediation plan ([strategy doc](../m-tools/docs/m-tooling-tier1.md)).
 
 Built on:
-- **[m-standard](https://github.com/rafael5/m-standard)** — the language reference
-- **[tree-sitter-m](https://github.com/rafael5/tree-sitter-m)** — the parser (99.06% clean on the 39,330-routine VistA corpus)
+- **[m-standard](https://github.com/m-dev-tools/m-standard)** — the language reference
+- **[tree-sitter-m](https://github.com/m-dev-tools/tree-sitter-m)** — the parser (99.06% clean on the 39,330-routine VistA corpus)
 - **YottaDB** — open-source M engine; the test runner adapter targets YottaDB primarily, with the source-level tools (`m fmt`, `m lint`) engine-neutral
 
 ## Status
@@ -212,7 +212,7 @@ normalized input (`compact(pythonic(compact(src))) == compact(src)`).
 ```
 
 Expected output: ~99.04% round-trip clean, parse errors in the
-remaining ~0.96% match the [tree-sitter-m corpus boundary](https://github.com/rafael5/tree-sitter-m).
+remaining ~0.96% match the [tree-sitter-m corpus boundary](https://github.com/m-dev-tools/tree-sitter-m).
 
 ## Naming convention
 

@@ -662,8 +662,8 @@ jobs:
       - uses: actions/checkout@v4
       - run: python3 -m venv /tmp/venv
       - run: |
-          git clone https://github.com/rafael5/tree-sitter-m /tmp/tree-sitter-m
-          git clone https://github.com/rafael5/m-cli /tmp/m-cli
+          git clone https://github.com/m-dev-tools/tree-sitter-m /tmp/tree-sitter-m
+          git clone https://github.com/m-dev-tools/m-cli /tmp/m-cli
           /tmp/venv/bin/pip install /tmp/tree-sitter-m
           /tmp/venv/bin/pip install /tmp/m-cli
           echo "/tmp/venv/bin" >> "$GITHUB_PATH"

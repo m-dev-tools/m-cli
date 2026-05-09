@@ -81,7 +81,7 @@ Responsibilities:
 - Generate `.devcontainer/<engine>/devcontainer.json`.
 - Generate engine-specific Dockerfile and helper scripts.
 - Generate Docker Compose only when the engine or project shape benefits from it.
-- Configure `m-cli` inside the container by cloning `https://github.com/rafael5/m-cli`.
+- Configure `m-cli` inside the container by cloning `https://github.com/m-dev-tools/m-cli`.
 - Install Python packages with `uv pip install`, not bare `pip`.
 
 ### 2.3 `m env`
@@ -152,7 +152,7 @@ workspace = "/workspace"
 
 [environment.m_cli]
 source = "git"
-repo = "https://github.com/rafael5/m-cli"
+repo = "https://github.com/m-dev-tools/m-cli"
 ref = "main"
 venv = "/opt/m-cli/.venv"
 install = "uv"
@@ -217,8 +217,8 @@ Canonical install pattern:
 ```dockerfile
 ARG M_CLI_REF=main
 
-RUN git clone https://github.com/rafael5/tree-sitter-m /opt/tree-sitter-m && \
-    git clone https://github.com/rafael5/m-cli /opt/m-cli && \
+RUN git clone https://github.com/m-dev-tools/tree-sitter-m /opt/tree-sitter-m && \
+    git clone https://github.com/m-dev-tools/m-cli /opt/m-cli && \
     cd /opt/m-cli && \
     git checkout "$M_CLI_REF" && \
     python3 -m venv .venv && \
@@ -348,8 +348,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 ARG M_CLI_REF=main
 
-RUN git clone https://github.com/rafael5/tree-sitter-m /opt/tree-sitter-m && \
-    git clone https://github.com/rafael5/m-cli /opt/m-cli && \
+RUN git clone https://github.com/m-dev-tools/tree-sitter-m /opt/tree-sitter-m && \
+    git clone https://github.com/m-dev-tools/m-cli /opt/m-cli && \
     cd /opt/m-cli && \
     git checkout "$M_CLI_REF" && \
     python3 -m venv .venv && \
@@ -578,8 +578,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 ARG M_CLI_REF=main
 
-RUN git clone https://github.com/rafael5/tree-sitter-m /opt/tree-sitter-m && \
-    git clone https://github.com/rafael5/m-cli /opt/m-cli && \
+RUN git clone https://github.com/m-dev-tools/tree-sitter-m /opt/tree-sitter-m && \
+    git clone https://github.com/m-dev-tools/m-cli /opt/m-cli && \
     cd /opt/m-cli && \
     git checkout "$M_CLI_REF" && \
     python3 -m venv .venv && \
