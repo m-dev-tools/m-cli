@@ -34,7 +34,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from pathlib import Path
 
 from m_cli.doc.format import (
     format_label_json,

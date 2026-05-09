@@ -14,9 +14,7 @@ m-stdlib being installed alongside.
 from __future__ import annotations
 
 import argparse
-import io
 import json
-import sys
 from pathlib import Path
 
 import pytest
@@ -35,10 +33,8 @@ from m_cli.doc.lookup import (
     ModuleMatch,
     find_manifest,
     list_modules,
-    load_manifest,
     resolve_symbol,
 )
-
 
 # ----- fixtures --------------------------------------------------------------
 
@@ -150,45 +146,45 @@ def _ns(**kw) -> argparse.Namespace:
 
 class TestResolveSymbol:
     def test_module_overview(self):
-        m, l = resolve_symbol("STDJSON", _manifest())
-        assert len(m) == 1
-        assert m[0].module == "STDJSON"
-        assert l == []
+        modules, labels = resolve_symbol("STDJSON", _manifest())
+        assert len(modules) == 1
+        assert modules[0].module == "STDJSON"
+        assert labels == []
 
     def test_unknown_module_returns_empty(self):
-        m, l = resolve_symbol("STDDOESNOTEXIST", _manifest())
-        assert m == []
-        assert l == []
+        modules, labels = resolve_symbol("STDDOESNOTEXIST", _manifest())
+        assert modules == []
+        assert labels == []
 
     def test_dotted_single_label(self):
-        m, l = resolve_symbol("STDJSON.parse", _manifest())
-        assert m == []
-        assert len(l) == 1
-        assert l[0].module == "STDJSON"
-        assert l[0].label == "parse"
+        modules, labels = resolve_symbol("STDJSON.parse", _manifest())
+        assert modules == []
+        assert len(labels) == 1
+        assert labels[0].module == "STDJSON"
+        assert labels[0].label == "parse"
 
     def test_dotted_unknown_label_returns_empty(self):
-        m, l = resolve_symbol("STDJSON.nonsuch", _manifest())
-        assert m == []
-        assert l == []
+        modules, labels = resolve_symbol("STDJSON.nonsuch", _manifest())
+        assert modules == []
+        assert labels == []
 
     def test_fuzzy_bare_name_finds_all_matches(self):
-        m, l = resolve_symbol("parse", _manifest())
-        assert m == []
-        assert {(x.module, x.label) for x in l} == {
+        modules, labels = resolve_symbol("parse", _manifest())
+        assert modules == []
+        assert {(x.module, x.label) for x in labels} == {
             ("STDB64", "parse"),
             ("STDJSON", "parse"),
         }
 
     def test_fuzzy_bare_name_unique_returns_one(self):
-        m, l = resolve_symbol("encode", _manifest())
-        assert m == []
-        assert len(l) == 1
-        assert l[0].module == "STDB64" and l[0].label == "encode"
+        modules, labels = resolve_symbol("encode", _manifest())
+        assert modules == []
+        assert len(labels) == 1
+        assert labels[0].module == "STDB64" and labels[0].label == "encode"
 
     def test_empty_symbol_returns_empty(self):
-        m, l = resolve_symbol("", _manifest())
-        assert m == [] and l == []
+        modules, labels = resolve_symbol("", _manifest())
+        assert modules == [] and labels == []
 
 
 class TestListModules:
@@ -250,12 +246,12 @@ class TestFormatModuleLong:
 class TestFormatLabelLong:
     def test_includes_signature_synopsis_params_returns_raises_example_source(self):
         manifest = _manifest()
-        l = LabelMatch(
+        match = LabelMatch(
             module="STDJSON",
             label="parse",
             label_data=manifest["modules"]["STDJSON"]["labels"]["parse"],
         )
-        out = format_label_long(l)
+        out = format_label_long(match)
         assert "$$parse^STDJSON(text, root)" in out
         assert "→ bool" in out
         assert "Parse `text` into `root`" in out
@@ -279,12 +275,12 @@ class TestFormatShort:
 
     def test_label_short_is_one_line(self):
         manifest = _manifest()
-        l = LabelMatch(
+        match = LabelMatch(
             module="STDJSON",
             label="parse",
             label_data=manifest["modules"]["STDJSON"]["labels"]["parse"],
         )
-        out = format_label_short(l)
+        out = format_label_short(match)
         assert out.count("\n") == 1
         assert "STDJSON.parse" in out
 
@@ -292,12 +288,12 @@ class TestFormatShort:
 class TestFormatJson:
     def test_label_json_round_trips(self):
         manifest = _manifest()
-        l = LabelMatch(
+        match = LabelMatch(
             module="STDJSON",
             label="parse",
             label_data=manifest["modules"]["STDJSON"]["labels"]["parse"],
         )
-        out = format_label_json(l)
+        out = format_label_json(match)
         parsed = json.loads(out)
         assert parsed["signature"] == "$$parse^STDJSON(text, root)"
 

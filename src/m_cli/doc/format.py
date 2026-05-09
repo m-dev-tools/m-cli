@@ -19,7 +19,6 @@ import json
 
 from m_cli.doc.lookup import LabelMatch, ModuleMatch
 
-
 # ----- Long form -------------------------------------------------------------
 
 

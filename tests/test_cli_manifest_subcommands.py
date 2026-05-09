@@ -130,7 +130,9 @@ class TestSearch:
         assert "STDJSON.encode" not in out
 
     def test_no_match_returns_one(self, manifest_path, capsys):
-        rc = search_command(_ns(query="nopatternmatchesthis", manifest=str(manifest_path), limit=50))
+        rc = search_command(
+            _ns(query="nopatternmatchesthis", manifest=str(manifest_path), limit=50)
+        )
         err = capsys.readouterr().err
         assert rc == 1
         assert "no matches" in err.lower()
@@ -152,7 +154,7 @@ class TestSearch:
         # Limit of 1 should truncate to 1.
         rc = search_command(_ns(query="encode", manifest=str(manifest_path), limit=1))
         assert rc == 0
-        out_lines = [l for l in capsys.readouterr().out.splitlines() if l.strip()]
+        out_lines = [line for line in capsys.readouterr().out.splitlines() if line.strip()]
         assert len(out_lines) == 1
 
 
