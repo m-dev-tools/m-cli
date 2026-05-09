@@ -282,13 +282,16 @@ class TestPedanticSplit:
         assert default_ids | pedantic_ids == modern_ids
 
     def test_default_no_longer_aliases_xindex(self):
-        # Architectural commitment: `default` is the M-MOD curated set,
-        # NOT the legacy XINDEX engine-neutral subset. VA shops use
-        # `--rules=xindex` explicitly.
+        # Architectural commitment: `default` is the modern curated set
+        # (M-MOD-NN modernization rules plus the M-DOC-NN doc-block
+        # family that ships in the same `default + modern + pythonic`
+        # tag scope per WA3), NOT the legacy XINDEX engine-neutral
+        # subset. VA shops use `--rules=xindex` explicitly.
         default_ids = {r.id for r in resolve_profile("default")}
         xindex_ids = {r.id for r in resolve_profile("xindex")}
-        # default is M-MOD-only; xindex is M-XINDX-only.
-        assert all(rid.startswith("M-MOD-") for rid in default_ids)
+        # default = M-MOD-NN ∪ M-DOC-NN; xindex = M-XINDX-NN only.
+        modern_prefixes = ("M-MOD-", "M-DOC-")
+        assert all(rid.startswith(modern_prefixes) for rid in default_ids)
         assert all(rid.startswith("M-XINDX-") for rid in xindex_ids)
         assert default_ids.isdisjoint(xindex_ids)
 
