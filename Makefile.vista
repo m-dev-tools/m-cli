@@ -1,0 +1,32 @@
+# Makefile.vista — whole-corpus validation gates.
+#
+# These targets walk a directory of .m files (round-trip, canonical-layout,
+# lint baseline). They are corpus-agnostic; the historical "vista" naming
+# reflects that the original calibration corpus was the VA VistA tree.
+#
+# CORPUS is defined in the main Makefile and defaults to
+# ~/projects/m-modern-corpus, which is in-org and works on a fresh clone.
+# Override per-invocation to point at a different corpus, e.g. VistA:
+#
+#     make vista          CORPUS=$(HOME)/vista-meta/vista/vista-m-host/Packages
+#     make vista-canonical CORPUS=$(HOME)/vista-meta/vista/vista-m-host/Packages
+#     make lint-vista     CORPUS=$(HOME)/vista-meta/vista/vista-m-host/Packages
+#
+# Auto-included from the main Makefile via `-include Makefile.vista`.
+# Delete this file (or pass a different `-f`) to drop the targets.
+
+.PHONY: vista vista-canonical lint-vista
+
+# Round-trip validation gate for `m fmt` (identity formatter): every
+# parseable routine must round-trip byte-for-byte.
+vista:
+	$(PYTHON) scripts/vista_round_trip.py $(CORPUS)
+
+# Canonical-layout gate: idempotency + AST shape preserved across the corpus.
+vista-canonical:
+	$(PYTHON) scripts/vista_canonical.py $(CORPUS)
+
+# Full lint baseline (xindex + vista profiles by default — see vista_lint.py
+# for the active rule selection).
+lint-vista:
+	$(PYTHON) scripts/vista_lint.py $(CORPUS) --top 10

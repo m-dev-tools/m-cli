@@ -1,4 +1,4 @@
-.PHONY: install test test-lf watch lint format mypy cov check vista vista-canonical lint-vista lint-modern lint-modern-baseline lint-modern-setup push pull hooks seed unseed test-vista
+.PHONY: install test test-lf watch lint format mypy cov check lint-modern lint-modern-baseline lint-modern-setup push pull hooks seed unseed test-vista
 
 PYTHON := .venv/bin/python
 PYTEST := .venv/bin/pytest
@@ -6,6 +6,12 @@ PTW    := .venv/bin/ptw
 RUFF   := .venv/bin/ruff
 MYPY   := .venv/bin/mypy
 PRECOMMIT := .venv/bin/pre-commit
+
+# Default corpus for whole-corpus validation gates (round-trip, canonical,
+# lint). Override per-invocation: `make vista CORPUS=/path/to/other/corpus`,
+# or via environment: `CORPUS=... make vista`. Defaults to the in-org
+# m-modern-corpus so gates work on a fresh clone without VistA access.
+CORPUS ?= $(HOME)/projects/m-modern-corpus
 
 # vista-meta client wiring — see ~/claude/templates/m-vista-client/
 VISTA_CONN := $(HOME)/data/vista-meta/conn.env
@@ -43,18 +49,10 @@ mypy:
 cov:
 	$(PYTEST) --cov --cov-report=term-missing
 
-# Run the full VistA round-trip validation gate for `m fmt` (39,330 routines)
-vista:
-	$(PYTHON) scripts/vista_round_trip.py /home/rafael/vista-meta/vista/vista-m-host/Packages
-
-# Run the canonical-layout gate: idempotency + AST shape preserved across the corpus
-vista-canonical:
-	$(PYTHON) scripts/vista_canonical.py /home/rafael/vista-meta/vista/vista-m-host/Packages
-
-# Run the full VistA lint baseline (xindex + vista profiles, since the
-# corpus *is* VistA — both apply).
-lint-vista:
-	$(PYTHON) scripts/vista_lint.py /home/rafael/vista-meta/vista/vista-m-host/Packages --top 10
+# Whole-corpus validation gates (`vista`, `vista-canonical`, `lint-vista`)
+# live in Makefile.vista — opt-in via this silent include. The targets are
+# corpus-agnostic; their default corpus is $(CORPUS) (see top of file).
+-include Makefile.vista
 
 # Run the modern (non-VistA) lint regression gate. Walks the corpora
 # at $$HOME/projects/m-modern-corpus/ (set up via `make lint-modern-setup`)
