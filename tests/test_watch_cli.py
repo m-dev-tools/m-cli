@@ -9,36 +9,6 @@ import pytest
 
 from m_cli.cli import main
 
-
-@pytest.fixture(autouse=True)
-def _stub_engine_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Stub `read_connection` so watch tests don't need a real conn.env.
-
-    Each test below monkey-patches `_default_runner` to a fake that
-    returns canned subprocess output — the real `mumps -run …` never
-    executes. But `run_suite` / `run_case` still call
-    `read_connection()` *before* the fake runner is invoked, to build
-    the SSH command shape. Without a vista-meta `conn.env` on disk
-    (e.g. in CI) that raises `EngineNotConfigured`. Stubbing it with
-    a junk SSHEngine lets the cmd-builder run; the fake `_default_runner`
-    discards the cmd and returns canned output regardless.
-
-    Patch target is `m_cli.test.runner.read_connection`, not
-    `m_cli.engine.read_connection` — the runner imports the symbol
-    by name at module load, so the engine-module-level binding is
-    already a different reference by test time.
-    """
-    from m_cli.engine import SSHEngine
-    from m_cli.test import runner as runner_mod
-
-    monkeypatch.setattr(
-        runner_mod,
-        "read_connection",
-        lambda *args, **kwargs: SSHEngine(
-            host="ci-stub", ssh_port=22, ssh_user="ci-stub"
-        ),
-    )
-
 HELLOTST_SRC = dedent("""\
     HELLOTST ; Test suite
             new pass,fail
