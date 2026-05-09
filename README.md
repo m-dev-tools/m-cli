@@ -1,22 +1,33 @@
 # m-cli — the M (MUMPS) source-level toolchain
 
-`m fmt`, `m lint`, `m test` for the M (MUMPS) language. **Tier 1** of the M
-ecosystem gap-remediation plan ([strategy doc](../m-tools/docs/m-tooling-tier1.md)).
+The canonical `m <subcommand>` developer toolchain for the M (MUMPS)
+language: `m fmt` (formatter), `m lint` (linter), `m test` (test runner),
+`m coverage` (line + branch coverage), `m doc` (m-stdlib reference
+lookup), `m lsp` (Language Server), `m watch`, plus orientation
+helpers `m doctor` / `m new` / `m run` / `m build` / `m ci init`.
 
 Built on:
-- **[m-standard](https://github.com/m-dev-tools/m-standard)** — the language reference
+- **[m-standard](https://github.com/m-dev-tools/m-standard)** — the language reference (commands / ISVs / functions / SAC overlay)
 - **[tree-sitter-m](https://github.com/m-dev-tools/tree-sitter-m)** — the parser (99.06% clean on the 39,330-routine VistA corpus)
-- **YottaDB** — open-source M engine; the test runner adapter targets YottaDB primarily, with the source-level tools (`m fmt`, `m lint`) engine-neutral
+- **[m-test-engine](https://github.com/m-dev-tools/m-test-engine)** — minimal YottaDB Docker container for `m test` / `m coverage` (default; legacy vista-meta SSH path also supported via `M_CLI_ENGINE=ssh`)
+
+The source-level tools (`m fmt`, `m lint`, `m doc`, `m lsp`) are
+engine-neutral; runtime tools (`m test`, `m coverage`) target YottaDB
+primarily with IRIS portability documented per-feature.
 
 ## Status
 
-| Step | Tool | Status |
-|------|------|--------|
-| 1 | `m fmt` (formatter) | **Step 1.0 + canonical + Phase A translation** — identity round-trip 38,954 / 39,330 (99.04%); `--rules=canonical` adds trim + uppercase; `--rules=pythonic` / `--rules=compact` translate between VistA-compact and canonical-name forms |
-| 2 | `m lint` | **Step 2.1 shipped** — engine-neutral lint engine; the `xindex` profile (VA VistA Toolkit port) provides 42 of the 66 XINDEX rules. See Linter section below |
-| 3 | `m test` | Planned (parser-aware port of `ytest`) |
-| 4 | Single-test selection | Folded into `m test` |
-| 5 | `m watch` | Planned |
+| Subcommand | Status |
+|---|---|
+| `m fmt` | **Shipped** — identity round-trip 99.04% byte-for-byte on the 39,330-routine VistA corpus; `--rules=canonical` (trim + uppercase), plus the Phase A translation presets `pythonic` / `pythonic-lower` / `compact` for converting between VistA-compact and canonical-name forms. Idempotent + AST-preserving. |
+| `m lint` | **Shipped** — engine-neutral lint engine + 7 named profiles. **Default profile = curated M-MOD daily-lint subset** (26 rules, ~3 findings/routine on the 4K-routine modern corpus); the full M-MOD modernization track is 35 rules across length/complexity, concurrency, transactions, control-flow, portability. Plus the legacy 34-rule `xindex` profile (VA VistA Toolkit port) and the 8-rule `vista` profile (VA Kernel-specific). Path-sensitive flow analysis (CFG + reaching-def + LOCK / TSTART / $ETRAP / $TEST / taint state) is wired; M-MOD-024 / 025 / 026 / 027 / 036 ride on it. See the Linter section below for the full rule + profile breakdown. |
+| `m test` | **Shipped** — parser-aware suite + label discovery; YottaDB runner via the multi-transport `Engine` abstraction (Local / Docker / SSH); text / TAP / JSON / JUnit output. Supports `--filter`, single-test selection (`m test FILE.m::tLabel`), `--changed` (diff-driven runs), `--seed` / `--update-snapshots` / `--env` / `--timings` / `--no-isolation` consuming m-stdlib's TDD primitives. |
+| `m coverage` | **Shipped** — line + branch coverage via YottaDB's `view "TRACE"`; output formats `text` / `text --lines` / `json` / `lcov`. Label-level on m-tools 85/123 (69.1%); line-level 340/637 (53.4%). |
+| `m watch` | **Shipped** — polling-based file watcher with source→suite affinity (`FOO.m` change → `FOOTST.m` re-run). |
+| `m lsp` | **Shipped through Phase B** — diagnostics, formatting, code actions, hover, completion, document symbols, code lenses, folding, signature help, document highlight, go-to-definition, find-references, workspace symbol search, incremental index updates. Stdio transport; pip-extra `m-cli[lsp]`. |
+| `m doc` | **Shipped** — m-stdlib reference lookup (`m doc parse^STDJSON` → signature / params / examples). |
+| `m doctor` / `m new` / `m run` / `m build` / `m ci init` | **Shipped** — Phase 3a quick-win orientation + scaffolding helpers. |
+| `m plugins` (Track D 6a) | **Shipped** — entry-points-based plugin discovery in the `m_cli.plugins` group. Out-of-tree subcommands are in [`m-cli-extras`](https://github.com/m-dev-tools/m-cli-extras) (first plugin: `m corpus-stats`). |
 
 ## Linter — `m lint`
 
@@ -40,7 +51,7 @@ their config.
 | `sac` | 23 | VA SAC (Standards & Conventions) portable subset — `sac`-tagged rules minus VistA-Kernel ones. |
 | `all` | 72 | Every registered rule, regardless of profile. |
 
-**Rules shipped in Step 2.1** (42 of XINDEX's 66, surfaced via the `xindex` profile):
+**XINDEX-derived rules** (34 of XINDEX's 66, surfaced via the `xindex` profile):
 
 | ID | Severity | Title |
 |----|----------|-------|
@@ -121,7 +132,7 @@ audit measured 134,848 → 125,561 findings (-7%) just from setting
 
 The XINDEX-parity rule pack will grow incrementally toward the full 66-rule baseline. After parity, `m lint` extends with parser-aware checks XINDEX cannot do (deeper control-flow analysis, dead-code detection, naked-reference hazards, etc.). New rules from non-VA sources will use their own ID prefix (e.g. `M-IRIS-NN`, `M-YDB-NN`) and ship under their own profile.
 
-### VistA-corpus baseline (Step 2.1)
+### VistA-corpus baseline
 
 `make lint-vista` runs `m lint --rules=xindex,vista` over the full 39,330-routine VistA corpus — explicitly selecting both the engine-neutral XINDEX subset and the VistA-Kernel-specific profile, since the corpus is VistA itself. (Non-VistA shops should run `m lint --rules=xindex` or `--rules=default`.)
 
@@ -172,7 +183,13 @@ The 42 fatal findings are concrete missing-label bugs (e.g., `A1BFJOBR.m` calls 
 
 **Coverage:** 28 of 36 registered rules fire on the VistA corpus. The 8 silent rules cover patterns rare in VistA (non-standard `Z` commands, `$Z*` ISVs/funcs, `$SYSTEM`, `$VIEW`, parse-error fallback) — they remain registered for use against more diverse codebases.
 
-**Performance note:** the §3.5 budget for `m lint` on the corpus is 120 s. Step 2.1 runs in 1458 s — **12× over budget**, on a single thread, with a naive AST walk per rule. The 4.6× slowdown vs Step 2.0 (316 s) tracks the rule-count growth from 11 to 36. Optimisation work (parallelism, single-pass walk, selective rule activation) is sequenced as a follow-up; correctness comes first.
+**Performance:** the corpus-lint budget is 120 s. Single-pass dispatcher
+(`NodeIndex` walks each parse tree once and groups by node type;
+rules consume `index.of("X")` instead of running their own walks)
+cut serial lint time from ~1458 s to 166 s (8.7×). With
+`m lint --jobs N` (default `os.cpu_count()`) on a 16-core host the
+full VistA corpus lints in **22.6 s — 5.3× under budget, 64.5× faster
+than the original**. Findings byte-identical at every step.
 
 ## Install (development)
 
@@ -204,59 +221,62 @@ PEP-8-flavoured variant that produces all-lowercase output
 (idempotent and AST-shape-preserving) and round-trip on already-
 normalized input (`compact(pythonic(compact(src))) == compact(src)`).
 
-## Run the VistA round-trip gate
+## Run the round-trip gate against an M corpus
 
 ```bash
-.venv/bin/python scripts/vista_round_trip.py \
-    ~/vista-meta/vista/vista-m-host/Packages
+make vista                                                  # default: m-modern-corpus
+make vista CORPUS=$HOME/path/to/some/Packages               # override
 ```
 
-Expected output: ~99.04% round-trip clean, parse errors in the
-remaining ~0.96% match the [tree-sitter-m corpus boundary](https://github.com/m-dev-tools/tree-sitter-m).
+The default points at
+[`m-modern-corpus`](https://github.com/m-dev-tools/m-modern-corpus)
+(in-org). Maintainers with a VistA checkout override `CORPUS`
+to that path to exercise the full 39,330-routine VistA gate
+(~99.04% round-trip clean; parse errors in the remaining ~0.96%
+match the [tree-sitter-m corpus boundary](https://github.com/m-dev-tools/tree-sitter-m)).
 
 ## Naming convention
 
 Commands follow the universal `m <subcommand>` pattern (mirroring `cargo`,
-`go`, `git`). The legacy `y*` shell tools in [m-tools/bin/](../m-tools/bin/)
-are kept as references and templates only — they remain functional but
-are not the canonical interface going forward.
+`go`, `git`). m-cli is the canonical interface; older bash-prototype
+tooling is retired.
 
 ## Layout
 
 ```
 m-cli/
-├── pyproject.toml              # uv-managed; tree-sitter-m as editable dep
+├── pyproject.toml              # uv-managed; tree-sitter-m URL-pinned to the GitHub release wheel
 ├── src/m_cli/
-│   ├── __init__.py
-│   ├── cli.py                  # `m` dispatcher
-│   ├── parser.py               # tree-sitter-m wrapper
-│   └── fmt/
-│       ├── __init__.py
-│       ├── cli.py              # `m fmt` argparse + file orchestration
-│       └── formatter.py        # the round-trip pretty-printer
-├── tests/
-│   └── test_formatter.py       # round-trip + idempotence + parse-error tests
+│   ├── cli.py                  # `m` dispatcher (argparse subcommands + plugin discovery)
+│   ├── parser.py               # tree-sitter-m wrapper (lru_cached Language/Parser)
+│   ├── plugins.py              # entry-points-based plugin discovery (Track D 6a)
+│   ├── engine.py               # multi-transport Engine: LocalEngine / DockerEngine / SSHEngine
+│   ├── fmt/                    # `m fmt` — formatter + Phase A translation rules
+│   ├── lint/                   # `m lint` — rule registry + 7 profiles + path-sensitive flow analysis
+│   ├── test/                   # `m test` — parser-aware discovery + ydb runner + TAP/JSON/JUnit output
+│   ├── coverage/               # `m coverage` — line + branch via `view "TRACE"`
+│   ├── watch/                  # `m watch` — polling-based, source→suite affinity
+│   ├── lsp/                    # `m lsp` — diagnostics, formatting, code actions, hover, completion,
+│   │                           #          go-to-def, find-refs, workspace symbol, code lens, signature help
+│   ├── doc/                    # `m doc` — m-stdlib reference lookup
+│   └── workspace/              # cross-routine label index (Phase B)
+├── tests/                      # pytest — one file per source module; 1300+ tests
 ├── scripts/
-│   └── vista_round_trip.py     # full-corpus validation gate
+│   ├── vista_round_trip.py     # corpus round-trip gate driver
+│   └── vista_lint.py           # corpus lint baseline driver
+├── docs/                       # guide.md, m-linting-survey.md, plugin-development.md, m-cli-history-and-evolution.md, …
+├── Makefile                    # `make install` / `test` / `lint` / `mypy` / `cov` / `check` / `vista` / `lint-vista` / `engine-up` / `engine-down`
 └── README.md                   # this file
 ```
 
 ## Roadmap
 
-Step 1 (this doc) ships the **identity formatter** — the full parse → emit
-round-trip with no canonical-layout rules yet. Subsequent passes layer in:
-
-1. **Indentation normalisation** — `; comment` lines, dot-block indentation, label-column-1 enforcement.
-2. **Whitespace canonicalisation** — no spaces around `_` (string concat), single-space after commas, etc., per the M style guide.
-3. **Vertical spacing** — blank `;` lines between sections.
-4. **`--check` integration with pre-commit** — hook scaffold + reference config.
-5. **VistA-corpus performance ceiling tightening** — target sub-30s, then incremental improvements as rules are added.
-
-Each rule is added with: a hand-crafted test, a VistA-corpus regression
-gate (cleanly-parsing routines must still round-trip with the rule
-*disabled*; with the rule enabled, only intentional changes appear), and
-a brief design note.
+The Tier 1 + Tier 2 toolchain is shipped; current work is in
+[`TODO.md`](TODO.md). Live status is tracked in the M-language ecosystem
+sprint plan — the [m-dev-tools self-containment work](https://github.com/m-dev-tools)
+closed in May 2026, leaving Tier 6c (audit-and-migrate niche subcommands
+into `m-cli-extras`) and post-soak polish as the remaining items.
 
 ## Licence
 
-AGPL-3.0, matching the YottaDB and `tree-sitter-m` licence posture.
+AGPL-3.0, matching m-standard, m-stdlib, and tree-sitter-m.
