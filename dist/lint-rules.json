@@ -1,0 +1,1407 @@
+[
+  {
+    "id": "M-DOC-001",
+    "severity": "warning",
+    "category": "documentation",
+    "tags": [
+      "doc",
+      "modern"
+    ],
+    "profiles": [
+      "all",
+      "default",
+      "modern",
+      "pythonic"
+    ],
+    "fixer_id": null,
+    "description": "Public label missing required M-doc tags",
+    "replaces": []
+  },
+  {
+    "id": "M-MOD-001",
+    "severity": "style",
+    "category": "style",
+    "tags": [
+      "modern"
+    ],
+    "profiles": [
+      "all",
+      "default",
+      "modern",
+      "pythonic"
+    ],
+    "fixer_id": null,
+    "description": "Line longer than configured limit",
+    "replaces": [
+      "M-XINDX-019"
+    ]
+  },
+  {
+    "id": "M-MOD-002",
+    "severity": "style",
+    "category": "complexity",
+    "tags": [
+      "modern"
+    ],
+    "profiles": [
+      "all",
+      "default",
+      "modern",
+      "pythonic"
+    ],
+    "fixer_id": null,
+    "description": "Code line longer than configured limit",
+    "replaces": [
+      "M-XINDX-058"
+    ]
+  },
+  {
+    "id": "M-MOD-003",
+    "severity": "style",
+    "category": "complexity",
+    "tags": [
+      "modern"
+    ],
+    "profiles": [
+      "all",
+      "default",
+      "modern",
+      "pythonic"
+    ],
+    "fixer_id": null,
+    "description": "Routine longer than configured LOC limit",
+    "replaces": [
+      "M-XINDX-035"
+    ]
+  },
+  {
+    "id": "M-MOD-004",
+    "severity": "style",
+    "category": "complexity",
+    "tags": [
+      "modern"
+    ],
+    "profiles": [
+      "all",
+      "default",
+      "modern",
+      "pythonic"
+    ],
+    "fixer_id": null,
+    "description": "Label body longer than configured LOC limit",
+    "replaces": []
+  },
+  {
+    "id": "M-MOD-005",
+    "severity": "warning",
+    "category": "complexity",
+    "tags": [
+      "modern"
+    ],
+    "profiles": [
+      "all",
+      "default",
+      "modern",
+      "pythonic"
+    ],
+    "fixer_id": null,
+    "description": "Cyclomatic complexity per label exceeds configured limit",
+    "replaces": []
+  },
+  {
+    "id": "M-MOD-006",
+    "severity": "warning",
+    "category": "complexity",
+    "tags": [
+      "modern"
+    ],
+    "profiles": [
+      "all",
+      "default",
+      "modern",
+      "pythonic"
+    ],
+    "fixer_id": null,
+    "description": "Cognitive complexity per label exceeds configured limit",
+    "replaces": []
+  },
+  {
+    "id": "M-MOD-007",
+    "severity": "warning",
+    "category": "complexity",
+    "tags": [
+      "modern"
+    ],
+    "profiles": [
+      "all",
+      "default",
+      "modern",
+      "pythonic"
+    ],
+    "fixer_id": null,
+    "description": "Dot-block nesting depth exceeds configured limit",
+    "replaces": []
+  },
+  {
+    "id": "M-MOD-008",
+    "severity": "warning",
+    "category": "complexity",
+    "tags": [
+      "modern"
+    ],
+    "profiles": [
+      "all",
+      "default",
+      "modern",
+      "pythonic"
+    ],
+    "fixer_id": null,
+    "description": "Argument count exceeds configured limit",
+    "replaces": []
+  },
+  {
+    "id": "M-MOD-009",
+    "severity": "style",
+    "category": "style",
+    "tags": [
+      "modern",
+      "pedantic"
+    ],
+    "profiles": [
+      "all",
+      "modern",
+      "pedantic",
+      "pythonic"
+    ],
+    "fixer_id": null,
+    "description": "Too many commands on a single line",
+    "replaces": []
+  },
+  {
+    "id": "M-MOD-010",
+    "severity": "error",
+    "category": "concurrency",
+    "tags": [
+      "modern"
+    ],
+    "profiles": [
+      "all",
+      "default",
+      "modern",
+      "pythonic"
+    ],
+    "fixer_id": null,
+    "description": "LOCK acquire without timeout (deadlock risk)",
+    "replaces": [
+      "M-XINDX-060"
+    ]
+  },
+  {
+    "id": "M-MOD-011",
+    "severity": "error",
+    "category": "concurrency",
+    "tags": [
+      "modern"
+    ],
+    "profiles": [
+      "all",
+      "default",
+      "modern",
+      "pythonic"
+    ],
+    "fixer_id": null,
+    "description": "LOCK acquire without matching release in same label",
+    "replaces": []
+  },
+  {
+    "id": "M-MOD-012",
+    "severity": "error",
+    "category": "concurrency",
+    "tags": [
+      "modern"
+    ],
+    "profiles": [
+      "all",
+      "default",
+      "modern",
+      "pythonic"
+    ],
+    "fixer_id": null,
+    "description": "TSTART without matching TCOMMIT/TROLLBACK in same label",
+    "replaces": []
+  },
+  {
+    "id": "M-MOD-013",
+    "severity": "error",
+    "category": "bug",
+    "tags": [
+      "modern"
+    ],
+    "profiles": [
+      "all",
+      "default",
+      "modern",
+      "pythonic"
+    ],
+    "fixer_id": null,
+    "description": "$ETRAP set without NEW in same label (handler leak)",
+    "replaces": []
+  },
+  {
+    "id": "M-MOD-014",
+    "severity": "warning",
+    "category": "concurrency",
+    "tags": [
+      "modern"
+    ],
+    "profiles": [
+      "all",
+      "default",
+      "modern",
+      "pythonic"
+    ],
+    "fixer_id": null,
+    "description": "OPEN without matching CLOSE in same label",
+    "replaces": []
+  },
+  {
+    "id": "M-MOD-015",
+    "severity": "warning",
+    "category": "bug",
+    "tags": [
+      "modern"
+    ],
+    "profiles": [
+      "all",
+      "default",
+      "modern",
+      "pythonic"
+    ],
+    "fixer_id": null,
+    "description": "$SELECT() without final default arm",
+    "replaces": []
+  },
+  {
+    "id": "M-MOD-016",
+    "severity": "warning",
+    "category": "bug",
+    "tags": [
+      "modern"
+    ],
+    "profiles": [
+      "all",
+      "default",
+      "modern",
+      "pythonic"
+    ],
+    "fixer_id": null,
+    "description": "Postconditional with side-effecting argument",
+    "replaces": []
+  },
+  {
+    "id": "M-MOD-017",
+    "severity": "warning",
+    "category": "bug",
+    "tags": [
+      "modern"
+    ],
+    "profiles": [
+      "all",
+      "default",
+      "modern",
+      "pythonic"
+    ],
+    "fixer_id": null,
+    "description": "$TEST read without preceding $T-setter (stale read)",
+    "replaces": []
+  },
+  {
+    "id": "M-MOD-018",
+    "severity": "warning",
+    "category": "bug",
+    "tags": [
+      "modern"
+    ],
+    "profiles": [
+      "all",
+      "default",
+      "modern",
+      "pythonic"
+    ],
+    "fixer_id": null,
+    "description": "Argumentless FOR without conditional exit on same line",
+    "replaces": []
+  },
+  {
+    "id": "M-MOD-019",
+    "severity": "warning",
+    "category": "bug",
+    "tags": [
+      "modern"
+    ],
+    "profiles": [
+      "all",
+      "default",
+      "modern",
+      "pythonic"
+    ],
+    "fixer_id": null,
+    "description": "Broad pattern operator (`?.E`) \u2014 tautological match",
+    "replaces": []
+  },
+  {
+    "id": "M-MOD-020",
+    "severity": "warning",
+    "category": "bug",
+    "tags": [
+      "modern"
+    ],
+    "profiles": [
+      "all",
+      "default",
+      "modern",
+      "pythonic"
+    ],
+    "fixer_id": null,
+    "description": "By-reference argument never written by intra-routine callee",
+    "replaces": []
+  },
+  {
+    "id": "M-MOD-021",
+    "severity": "warning",
+    "category": "portability",
+    "tags": [
+      "modern"
+    ],
+    "profiles": [
+      "all",
+      "default",
+      "modern",
+      "pythonic"
+    ],
+    "fixer_id": null,
+    "description": "Z-command not in target engine's documented set",
+    "replaces": [
+      "M-XINDX-002"
+    ]
+  },
+  {
+    "id": "M-MOD-022",
+    "severity": "warning",
+    "category": "portability",
+    "tags": [
+      "modern"
+    ],
+    "profiles": [
+      "all",
+      "default",
+      "modern",
+      "pythonic"
+    ],
+    "fixer_id": null,
+    "description": "$Z* ISV not in target engine's documented set",
+    "replaces": [
+      "M-XINDX-028"
+    ]
+  },
+  {
+    "id": "M-MOD-023",
+    "severity": "warning",
+    "category": "portability",
+    "tags": [
+      "modern"
+    ],
+    "profiles": [
+      "all",
+      "default",
+      "modern",
+      "pythonic"
+    ],
+    "fixer_id": null,
+    "description": "$Z* function not in target engine's documented set",
+    "replaces": [
+      "M-XINDX-031"
+    ]
+  },
+  {
+    "id": "M-MOD-024",
+    "severity": "error",
+    "category": "bug",
+    "tags": [
+      "modern"
+    ],
+    "profiles": [
+      "all",
+      "default",
+      "modern",
+      "pythonic"
+    ],
+    "fixer_id": null,
+    "description": "Read of local variable before definite assignment",
+    "replaces": []
+  },
+  {
+    "id": "M-MOD-025",
+    "severity": "error",
+    "category": "concurrency",
+    "tags": [
+      "modern"
+    ],
+    "profiles": [
+      "all",
+      "default",
+      "modern",
+      "pythonic"
+    ],
+    "fixer_id": null,
+    "description": "LOCK leak across exit paths (path-sensitive)",
+    "replaces": [
+      "M-MOD-011"
+    ]
+  },
+  {
+    "id": "M-MOD-026",
+    "severity": "error",
+    "category": "concurrency",
+    "tags": [
+      "modern"
+    ],
+    "profiles": [
+      "all",
+      "default",
+      "modern",
+      "pythonic"
+    ],
+    "fixer_id": null,
+    "description": "TSTART leak across exit paths (path-sensitive)",
+    "replaces": [
+      "M-MOD-012"
+    ]
+  },
+  {
+    "id": "M-MOD-027",
+    "severity": "error",
+    "category": "bug",
+    "tags": [
+      "modern"
+    ],
+    "profiles": [
+      "all",
+      "default",
+      "modern",
+      "pythonic"
+    ],
+    "fixer_id": null,
+    "description": "$ETRAP leak across exit paths (path-sensitive)",
+    "replaces": [
+      "M-MOD-013"
+    ]
+  },
+  {
+    "id": "M-MOD-028",
+    "severity": "info",
+    "category": "documentation",
+    "tags": [
+      "modern",
+      "pedantic"
+    ],
+    "profiles": [
+      "all",
+      "modern",
+      "pedantic",
+      "pythonic"
+    ],
+    "fixer_id": null,
+    "description": "Label without docstring",
+    "replaces": []
+  },
+  {
+    "id": "M-MOD-029",
+    "severity": "info",
+    "category": "documentation",
+    "tags": [
+      "modern"
+    ],
+    "profiles": [
+      "all",
+      "default",
+      "modern",
+      "pythonic"
+    ],
+    "fixer_id": null,
+    "description": "Comment density per label below configured threshold",
+    "replaces": []
+  },
+  {
+    "id": "M-MOD-030",
+    "severity": "info",
+    "category": "documentation",
+    "tags": [
+      "modern"
+    ],
+    "profiles": [
+      "all",
+      "default",
+      "modern",
+      "pythonic"
+    ],
+    "fixer_id": null,
+    "description": "TODO / FIXME / XXX / HACK without owner or ticket reference",
+    "replaces": []
+  },
+  {
+    "id": "M-MOD-031",
+    "severity": "style",
+    "category": "style",
+    "tags": [
+      "modern",
+      "pedantic"
+    ],
+    "profiles": [
+      "all",
+      "modern",
+      "pedantic",
+      "pythonic"
+    ],
+    "fixer_id": null,
+    "description": "Magic numeric literal (extract to a named constant)",
+    "replaces": []
+  },
+  {
+    "id": "M-MOD-032",
+    "severity": "style",
+    "category": "style",
+    "tags": [
+      "modern",
+      "pedantic"
+    ],
+    "profiles": [
+      "all",
+      "modern",
+      "pedantic",
+      "pythonic"
+    ],
+    "fixer_id": null,
+    "description": "Single-letter local variable outside FOR loop counter",
+    "replaces": []
+  },
+  {
+    "id": "M-MOD-033",
+    "severity": "warning",
+    "category": "bug",
+    "tags": [
+      "modern"
+    ],
+    "profiles": [
+      "all",
+      "default",
+      "modern",
+      "pythonic"
+    ],
+    "fixer_id": null,
+    "description": "Argumentless NEW (stack-saves every local \u2014 almost always a mistake)",
+    "replaces": []
+  },
+  {
+    "id": "M-MOD-034",
+    "severity": "info",
+    "category": "modernization",
+    "tags": [
+      "modern"
+    ],
+    "profiles": [
+      "all",
+      "default",
+      "modern",
+      "pythonic"
+    ],
+    "fixer_id": null,
+    "description": "SET X=X+N \u2192 prefer $INCREMENT(X) for atomic counters",
+    "replaces": []
+  },
+  {
+    "id": "M-MOD-035",
+    "severity": "info",
+    "category": "modernization",
+    "tags": [
+      "modern"
+    ],
+    "profiles": [
+      "all",
+      "default",
+      "modern",
+      "pythonic"
+    ],
+    "fixer_id": "expand-intrinsic-functions",
+    "description": "$Z* function abbreviation \u2014 prefer canonical name",
+    "replaces": []
+  },
+  {
+    "id": "M-MOD-036",
+    "severity": "error",
+    "category": "security",
+    "tags": [
+      "modern"
+    ],
+    "profiles": [
+      "all",
+      "default",
+      "modern",
+      "pythonic"
+    ],
+    "fixer_id": null,
+    "description": "Untrusted data flows into an indirection sink",
+    "replaces": []
+  },
+  {
+    "id": "M-MOD-037",
+    "severity": "error",
+    "category": "portability",
+    "tags": [
+      "modern"
+    ],
+    "profiles": [
+      "all",
+      "default",
+      "modern",
+      "pythonic"
+    ],
+    "fixer_id": null,
+    "description": "Subscripted-by-reference parameter is invalid YDB syntax",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-002",
+    "severity": "error",
+    "category": "modernization",
+    "tags": [
+      "sac",
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "sac",
+      "vista-full",
+      "xindex"
+    ],
+    "fixer_id": null,
+    "description": "Non-standard 'Z' command",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-007",
+    "severity": "error",
+    "category": "bug",
+    "tags": [
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "vista-full",
+      "xindex"
+    ],
+    "fixer_id": null,
+    "description": "Call to undefined routine",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-008",
+    "severity": "error",
+    "category": "bug",
+    "tags": [
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "vista-full",
+      "xindex"
+    ],
+    "fixer_id": null,
+    "description": "Call to undefined label in another routine",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-009",
+    "severity": "warning",
+    "category": "bug",
+    "tags": [
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "vista-full",
+      "xindex"
+    ],
+    "fixer_id": null,
+    "description": "Unreachable code after unconditional QUIT / HALT / GOTO",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-013",
+    "severity": "style",
+    "category": "style",
+    "tags": [
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "vista-full",
+      "xindex"
+    ],
+    "fixer_id": "trim-trailing-whitespace",
+    "description": "Blank(s) at end of line",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-014",
+    "severity": "error",
+    "category": "bug",
+    "tags": [
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "vista-full",
+      "xindex"
+    ],
+    "fixer_id": null,
+    "description": "Call to missing label in this routine",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-015",
+    "severity": "warning",
+    "category": "bug",
+    "tags": [
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "vista-full",
+      "xindex"
+    ],
+    "fixer_id": null,
+    "description": "Duplicate label",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-017",
+    "severity": "warning",
+    "category": "bug",
+    "tags": [
+      "sac",
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "sac",
+      "vista-full",
+      "xindex"
+    ],
+    "fixer_id": null,
+    "description": "First line label NOT routine name",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-018",
+    "severity": "style",
+    "category": "style",
+    "tags": [
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "vista-full",
+      "xindex"
+    ],
+    "fixer_id": null,
+    "description": "Line contains a CONTROL (non-graphic) character",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-019",
+    "severity": "style",
+    "category": "style",
+    "tags": [
+      "sac",
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "sac",
+      "vista-full",
+      "xindex"
+    ],
+    "fixer_id": null,
+    "description": "Line is longer than 245 bytes",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-020",
+    "severity": "warning",
+    "category": "portability",
+    "tags": [
+      "sac",
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "sac",
+      "vista-full",
+      "xindex"
+    ],
+    "fixer_id": null,
+    "description": "VIEW command used",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-021",
+    "severity": "error",
+    "category": "bug",
+    "tags": [
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "vista-full",
+      "xindex"
+    ],
+    "fixer_id": null,
+    "description": "General syntax error",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-022",
+    "severity": "style",
+    "category": "style",
+    "tags": [
+      "sac",
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "sac",
+      "vista-full",
+      "xindex"
+    ],
+    "fixer_id": null,
+    "description": "Exclusive Kill",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-023",
+    "severity": "warning",
+    "category": "bug",
+    "tags": [
+      "sac",
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "sac",
+      "vista-full",
+      "xindex"
+    ],
+    "fixer_id": null,
+    "description": "Unargumented Kill",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-024",
+    "severity": "error",
+    "category": "bug",
+    "tags": [
+      "sac",
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "sac",
+      "vista-full",
+      "xindex"
+    ],
+    "fixer_id": null,
+    "description": "Kill of an unsubscripted global",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-025",
+    "severity": "warning",
+    "category": "bug",
+    "tags": [
+      "sac",
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "sac",
+      "vista-full",
+      "xindex"
+    ],
+    "fixer_id": null,
+    "description": "BREAK command used",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-026",
+    "severity": "style",
+    "category": "style",
+    "tags": [
+      "sac",
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "sac",
+      "vista-full",
+      "xindex"
+    ],
+    "fixer_id": null,
+    "description": "Exclusive or Unargumented NEW command",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-027",
+    "severity": "warning",
+    "category": "portability",
+    "tags": [
+      "sac",
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "sac",
+      "vista-full",
+      "xindex"
+    ],
+    "fixer_id": null,
+    "description": "$View function used",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-028",
+    "severity": "warning",
+    "category": "portability",
+    "tags": [
+      "sac",
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "sac",
+      "vista-full",
+      "xindex"
+    ],
+    "fixer_id": null,
+    "description": "Non-standard $Z special variable",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-029",
+    "severity": "warning",
+    "category": "modernization",
+    "tags": [
+      "sac",
+      "vista",
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "vista",
+      "vista-full"
+    ],
+    "fixer_id": null,
+    "description": "CLOSE should be invoked through D ^%ZISC",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-030",
+    "severity": "warning",
+    "category": "bug",
+    "tags": [
+      "sac",
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "sac",
+      "vista-full",
+      "xindex"
+    ],
+    "fixer_id": null,
+    "description": "LABEL+OFFSET syntax",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-031",
+    "severity": "warning",
+    "category": "portability",
+    "tags": [
+      "sac",
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "sac",
+      "vista-full",
+      "xindex"
+    ],
+    "fixer_id": null,
+    "description": "Non-standard $Z function",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-032",
+    "severity": "warning",
+    "category": "modernization",
+    "tags": [
+      "sac",
+      "vista",
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "vista",
+      "vista-full"
+    ],
+    "fixer_id": null,
+    "description": "HALT should be invoked through G ^XUSCLEAN",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-033",
+    "severity": "warning",
+    "category": "bug",
+    "tags": [
+      "sac",
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "sac",
+      "vista-full",
+      "xindex"
+    ],
+    "fixer_id": null,
+    "description": "READ command does not have a timeout",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-034",
+    "severity": "warning",
+    "category": "modernization",
+    "tags": [
+      "sac",
+      "vista",
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "vista",
+      "vista-full"
+    ],
+    "fixer_id": null,
+    "description": "OPEN should be invoked through ^%ZIS",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-035",
+    "severity": "style",
+    "category": "complexity",
+    "tags": [
+      "sac",
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "sac",
+      "vista-full",
+      "xindex"
+    ],
+    "fixer_id": null,
+    "description": "Routine exceeds SACC maximum size of 20000 bytes",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-036",
+    "severity": "warning",
+    "category": "modernization",
+    "tags": [
+      "sac",
+      "vista",
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "vista",
+      "vista-full"
+    ],
+    "fixer_id": null,
+    "description": "Should use TASKMAN instead of JOB",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-041",
+    "severity": "info",
+    "category": "modernization",
+    "tags": [
+      "sac",
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "sac",
+      "vista-full",
+      "xindex"
+    ],
+    "fixer_id": null,
+    "description": "Star or pound READ used",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-042",
+    "severity": "style",
+    "category": "style",
+    "tags": [
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "vista-full",
+      "xindex"
+    ],
+    "fixer_id": null,
+    "description": "Null line (no commands or comment)",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-044",
+    "severity": "info",
+    "category": "documentation",
+    "tags": [
+      "sac",
+      "vista",
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "vista",
+      "vista-full"
+    ],
+    "fixer_id": null,
+    "description": "2nd line of routine violates the SAC",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-045",
+    "severity": "warning",
+    "category": "bug",
+    "tags": [
+      "sac",
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "sac",
+      "vista-full",
+      "xindex"
+    ],
+    "fixer_id": null,
+    "description": "Set to a '%' global",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-047",
+    "severity": "style",
+    "category": "style",
+    "tags": [
+      "sac",
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "sac",
+      "vista-full",
+      "xindex"
+    ],
+    "fixer_id": "uppercase-command-keywords",
+    "description": "Lowercase command(s) used in line",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-049",
+    "severity": "style",
+    "category": "style",
+    "tags": [
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "vista-full",
+      "xindex"
+    ],
+    "fixer_id": null,
+    "description": "Label declared but never referenced",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-050",
+    "severity": "warning",
+    "category": "portability",
+    "tags": [
+      "sac",
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "sac",
+      "vista-full",
+      "xindex"
+    ],
+    "fixer_id": null,
+    "description": "Extended reference",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-051",
+    "severity": "warning",
+    "category": "bug",
+    "tags": [
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "vista-full",
+      "xindex"
+    ],
+    "fixer_id": null,
+    "description": "IF / ELSE with no body on the same line",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-054",
+    "severity": "warning",
+    "category": "security",
+    "tags": [
+      "sac",
+      "vista",
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "vista",
+      "vista-full"
+    ],
+    "fixer_id": null,
+    "description": "Access to SSVN's or $SYSTEM restricted to Kernel",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-056",
+    "severity": "info",
+    "category": "documentation",
+    "tags": [
+      "sac",
+      "vista",
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "vista",
+      "vista-full"
+    ],
+    "fixer_id": null,
+    "description": "Patch number missing from second line",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-057",
+    "severity": "style",
+    "category": "style",
+    "tags": [
+      "sac",
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "sac",
+      "vista-full",
+      "xindex"
+    ],
+    "fixer_id": null,
+    "description": "Lower/mixed case in local variable name",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-058",
+    "severity": "style",
+    "category": "complexity",
+    "tags": [
+      "sac",
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "sac",
+      "vista-full",
+      "xindex"
+    ],
+    "fixer_id": null,
+    "description": "Routine code exceeds SACC max of 15000 bytes",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-060",
+    "severity": "warning",
+    "category": "concurrency",
+    "tags": [
+      "sac",
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "sac",
+      "vista-full",
+      "xindex"
+    ],
+    "fixer_id": null,
+    "description": "LOCK missing timeout",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-061",
+    "severity": "warning",
+    "category": "concurrency",
+    "tags": [
+      "sac",
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "sac",
+      "vista-full",
+      "xindex"
+    ],
+    "fixer_id": null,
+    "description": "Non-incremental LOCK",
+    "replaces": []
+  },
+  {
+    "id": "M-XINDX-062",
+    "severity": "info",
+    "category": "documentation",
+    "tags": [
+      "sac",
+      "vista",
+      "xindex"
+    ],
+    "profiles": [
+      "all",
+      "vista",
+      "vista-full"
+    ],
+    "fixer_id": null,
+    "description": "First line of routine violates the SAC",
+    "replaces": []
+  }
+]

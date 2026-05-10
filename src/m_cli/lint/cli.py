@@ -27,6 +27,7 @@ from m_cli.lint.baseline import (
 )
 from m_cli.lint.diagnostic import Diagnostic, Severity
 from m_cli.lint.fix import apply_fixes
+from m_cli.lint.list_rules import list_rules_command
 from m_cli.lint.output import write_output
 from m_cli.lint.profiles import DEFAULT_PROFILE, list_profiles
 from m_cli.lint.runner import lint_source, select_rules
@@ -41,6 +42,8 @@ def lint_command(args: argparse.Namespace) -> int:
       1 — at least one diagnostic at or above --error-on severity
       2 — usage / argument error / rule selection error
     """
+    if getattr(args, "list_rules", False):
+        return list_rules_command(args)
     if getattr(args, "list_profiles", False):
         return _print_profiles()
 
@@ -156,9 +159,7 @@ def lint_command(args: argparse.Namespace) -> int:
             except ValueError as e:
                 print(f"m lint: {e}", file=sys.stderr)
                 return 2
-            all_diags, n_baselined = filter_baselined(
-                all_diags, entries, baseline_file.parent
-            )
+            all_diags, n_baselined = filter_baselined(all_diags, entries, baseline_file.parent)
 
     # --fix: apply linked fmt fixers, then re-lint to drop fixed
     # diagnostics from the report.
@@ -182,9 +183,7 @@ def lint_command(args: argparse.Namespace) -> int:
                     continue
                 relint.extend(lint_source(path, src, rules, ctx=ctx))
             if config.lint_severity_overrides:
-                relint = _apply_severity_overrides(
-                    relint, config.lint_severity_overrides
-                )
+                relint = _apply_severity_overrides(relint, config.lint_severity_overrides)
             # Re-apply baseline filter to the post-fix diagnostics so the
             # user doesn't see baselined findings reappear after a fix
             # rewrites surrounding lines.
@@ -291,9 +290,7 @@ def _resolve_thresholds(
     flag_values = getattr(args, "threshold", None) or []
     for spec in flag_values:
         if "=" not in spec:
-            raise ValueError(
-                f"--threshold expects KEY=VAL, got {spec!r}"
-            )
+            raise ValueError(f"--threshold expects KEY=VAL, got {spec!r}")
         key, _, val_str = spec.partition("=")
         key = key.strip()
         try:
@@ -512,9 +509,7 @@ def _print_summary(
     if fix_result is not None:
         n_changed = len(fix_result.files_changed)
         n_addressed = sum(fix_result.by_fixer.values())
-        parts.append(
-            f"--fix: {n_addressed} fixed across {n_changed} file(s)"
-        )
+        parts.append(f"--fix: {n_addressed} fixed across {n_changed} file(s)")
         if fix_result.skipped_parse_errors:
             parts.append(
                 f"{len(fix_result.skipped_parse_errors)} skipped (parse errors during fix)"
@@ -546,6 +541,6 @@ def _print_summary(
                 f"code targets a specific engine, set "
                 f"`--target-engine=yottadb` (or =iris) to silence "
                 f"engine-allowed $Z* uses. Persist via "
-                f"`[lint] target_engine = \"yottadb\"` in .m-cli.toml.",
+                f'`[lint] target_engine = "yottadb"` in .m-cli.toml.',
                 file=sys.stderr,
             )

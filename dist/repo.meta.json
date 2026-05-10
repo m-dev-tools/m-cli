@@ -1,0 +1,17 @@
+{
+  "$schema": "https://raw.githubusercontent.com/m-dev-tools/.github/main/profile/repo.meta.schema.json",
+  "id": "tool:m-cli",
+  "repo": "https://github.com/m-dev-tools/m-cli",
+  "role": "Canonical M CLI — fmt / lint / test / coverage / watch / lsp / doc / new",
+  "language": ["python"],
+  "license": "AGPL-3.0",
+  "agent_instructions": "AGENTS.md",
+  "verified_on": "2026-05-10",
+  "exposes": {
+    "commands":   "commands.json",
+    "lint_rules": "lint-rules.json",
+    "fmt_rules":  "fmt-rules.json"
+  },
+  "consumes": ["tool:tree-sitter-m", "tool:m-standard", "tool:m-test-engine"],
+  "verification_commands": ["make check", "m doctor"]
+}

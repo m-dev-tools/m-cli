@@ -13,6 +13,7 @@ from pathlib import Path
 
 from m_cli.config import Config, load_config
 from m_cli.fmt.formatter import ParseError, format_source
+from m_cli.fmt.list_rules import list_rules_command
 from m_cli.fmt.rules import select_fmt_rules
 
 
@@ -24,6 +25,9 @@ def fmt_command(args: argparse.Namespace) -> int:
       1 — one or more files would change (--check) or had parse errors
       2 — usage / argument error
     """
+    if getattr(args, "list_rules", False):
+        return list_rules_command(args)
+
     files = _collect_files(args.paths)
     if not files:
         print("m fmt: no .m files found", file=sys.stderr)

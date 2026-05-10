@@ -12,6 +12,7 @@ from pathlib import Path
 
 from m_cli import __version__
 from m_cli.build import build_command
+from m_cli.capabilities import capabilities_command
 from m_cli.ci import ci_command
 from m_cli.coverage.cli import add_arguments as add_coverage_arguments
 from m_cli.doc import doc_command
@@ -30,7 +31,14 @@ from m_cli.test import test_command
 from m_cli.watch import watch_command
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
+    """Construct the full `m` argparse parser.
+
+    Factored out of :func:`main` so `m capabilities` can introspect the
+    same tree that `main` dispatches against. Plugin discovery runs
+    here, so contributed subcommands appear in the capabilities output
+    just like built-ins.
+    """
     parser = argparse.ArgumentParser(
         prog="m",
         description=(
@@ -60,9 +68,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     fmt_parser.add_argument(
         "paths",
-        nargs="+",
+        nargs="*",
         type=Path,
-        help="One or more .m files (or directories — searched recursively for *.m)",
+        help=(
+            "One or more .m files (or directories — searched recursively "
+            "for *.m). Optional only when paired with --list-rules."
+        ),
     )
     fmt_parser.add_argument(
         "--rules",
@@ -98,6 +109,24 @@ def main(argv: list[str] | None = None) -> int:
         "--quiet",
         action="store_true",
         help="Suppress per-file progress output",
+    )
+    fmt_parser.add_argument(
+        "--list-rules",
+        action="store_true",
+        help=(
+            "Emit the full fmt rule inventory (id, title, description, "
+            "presets) as JSON and exit. Source of truth for "
+            "dist/fmt-rules.json."
+        ),
+    )
+    fmt_parser.add_argument(
+        "--json",
+        action="store_true",
+        help=(
+            "Force JSON output. Currently only meaningful with --list-rules "
+            "(the rule inventory always emits JSON in Phase 0); accepted "
+            "for explicit invocation per the tier-1 manifest contract."
+        ),
     )
     fmt_parser.set_defaults(func=fmt_command)
 
@@ -140,6 +169,24 @@ def main(argv: list[str] | None = None) -> int:
         "--list-profiles",
         action="store_true",
         help="List the named lint profiles and exit",
+    )
+    lint_parser.add_argument(
+        "--list-rules",
+        action="store_true",
+        help=(
+            "Emit the full rule inventory (id, severity, category, tags, "
+            "profiles, fixer_id, description) as JSON and exit. Source of "
+            "truth for dist/lint-rules.json."
+        ),
+    )
+    lint_parser.add_argument(
+        "--json",
+        action="store_true",
+        help=(
+            "Force JSON output. Currently only meaningful with --list-rules "
+            "(the rule inventory always emits JSON in Phase 0); accepted "
+            "for explicit invocation per the tier-1 manifest contract."
+        ),
     )
     lint_parser.add_argument(
         "--target-engine",
@@ -323,8 +370,8 @@ def main(argv: list[str] | None = None) -> int:
         dest="env_files",
         help=(
             "Load a `.env` file via STDENV before running each suite. "
-            "Parsed values land in `^STDLIB($JOB,\"env\",KEY)` so test "
-            "code reads via `$get(^STDLIB($JOB,\"env\",\"KEY\"))`. "
+            'Parsed values land in `^STDLIB($JOB,"env",KEY)` so test '
+            'code reads via `$get(^STDLIB($JOB,"env","KEY"))`. '
             "Repeat for multiple env files; later files override earlier "
             "keys."
         ),
@@ -819,6 +866,28 @@ def main(argv: list[str] | None = None) -> int:
     )
     plugins_parser.set_defaults(func=plugins_command)
 
+    # ── `m capabilities` — machine-readable view of the CLI surface ──
+    # Drives dist/commands.json (consumed by repo.meta.json's `commands`
+    # exposure). Source of truth = this argparse tree.
+    capabilities_parser = subparsers.add_parser(
+        "capabilities",
+        help="Emit a machine-readable view of every m subcommand (JSON)",
+        description=(
+            "Walk the argparse subparser tree and emit a JSON document "
+            "describing every subcommand's purpose, options, choices, "
+            "defaults, and (when authored via the parser's epilog field) "
+            "example invocations. The output is the source artifact for "
+            "dist/commands.json, exposed by tier-1 repo.meta.json. "
+            "Plugin-contributed subcommands appear automatically."
+        ),
+    )
+    capabilities_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit JSON (currently the only supported format; accepted for explicitness)",
+    )
+    capabilities_parser.set_defaults(func=capabilities_command)
+
     # ── Discover and register out-of-tree plugins ─────────────────────
     # Built-in subcommand names — passed to register_plugins() so
     # entry-points that collide with them get rejected up front.
@@ -826,10 +895,13 @@ def main(argv: list[str] | None = None) -> int:
     _registered, _conflicts = register_plugins(subparsers, builtins=_builtins)
     # Stash the discovery result on the parser defaults so the
     # `m plugins` handler can read them without rediscovering.
-    parser.set_defaults(
-        _plugin_registered=_registered, _plugin_conflicts=_conflicts
-    )
+    parser.set_defaults(_plugin_registered=_registered, _plugin_conflicts=_conflicts)
 
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
     args = parser.parse_args(argv)
     return args.func(args)
 
