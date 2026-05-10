@@ -1,262 +1,379 @@
-# m-cli — the M (MUMPS) source-level toolchain
+# m-cli — the M (MUMPS) developer toolchain
 
-`m fmt`, `m lint`, `m test` for the M (MUMPS) language. **Tier 1** of the M
-ecosystem gap-remediation plan ([strategy doc](../m-tools/docs/m-tooling-tier1.md)).
+`m fmt`, `m lint`, `m test`, `m coverage`, `m watch`, `m lsp`, and friends
+for the M (MUMPS) language. The canonical `m <subcommand>` interface
+(mirroring `cargo`, `go`, `git`) for the
+[m-dev-tools](https://github.com/m-dev-tools) ecosystem.
 
-Built on:
-- **[m-standard](https://github.com/m-dev-tools/m-standard)** — the language reference
-- **[tree-sitter-m](https://github.com/m-dev-tools/tree-sitter-m)** — the parser (99.06% clean on the 39,330-routine VistA corpus)
-- **YottaDB** — open-source M engine; the test runner adapter targets YottaDB primarily, with the source-level tools (`m fmt`, `m lint`) engine-neutral
+Engine-neutral at the source layer (`m fmt`, `m lint` care about M syntax,
+not a runtime). YottaDB-targeted at the runtime layer (`m test`,
+`m coverage`); IRIS portability tracked in fail-soft CI. Works for any M
+codebase — you do not need MUMPS or VistA background to use this tool.
 
-## Status
+```bash
+m new myapp              # scaffold a TDD-ready M project
+cd myapp
+m test                   # run the test suite
+m fmt && m lint          # canonicalise + lint
+m coverage --min-percent=85
+```
 
-| Step | Tool | Status |
-|------|------|--------|
-| 1 | `m fmt` (formatter) | **Step 1.0 + canonical + Phase A translation** — identity round-trip 38,954 / 39,330 (99.04%); `--rules=canonical` adds trim + uppercase; `--rules=pythonic` / `--rules=compact` translate between VistA-compact and canonical-name forms |
-| 2 | `m lint` | **Step 2.1 shipped** — engine-neutral lint engine; the `xindex` profile (VA VistA Toolkit port) provides 42 of the 66 XINDEX rules. See Linter section below |
-| 3 | `m test` | Planned (parser-aware port of `ytest`) |
-| 4 | Single-test selection | Folded into `m test` |
-| 5 | `m watch` | Planned |
+## Contents
 
-## Linter — `m lint`
+- [What ships](#what-ships)
+- [Install](#install)
+- [Quick tour](#quick-tour)
+- [Subcommand reference](#subcommand-reference)
+  - [`m fmt` — formatter](#m-fmt--formatter)
+  - [`m lint` — linter](#m-lint--linter)
+  - [`m test` — test runner](#m-test--test-runner)
+  - [`m coverage` — coverage](#m-coverage--coverage)
+  - [`m watch` — TDD watcher](#m-watch--tdd-watcher)
+  - [`m lsp` — Language Server](#m-lsp--language-server)
+  - [`m doc` family — m-stdlib reference](#m-doc-family--m-stdlib-reference)
+  - [Project scaffolding and helpers](#project-scaffolding-and-helpers)
+- [Configuration — `.m-cli.toml`](#configuration--m-clitoml)
+- [Engine support](#engine-support)
+- [Plugin extension](#plugin-extension)
+- [Layout](#layout)
+- [Documentation](#documentation)
+- [Licence](#licence)
 
-`m lint` is engine- and dialect-neutral by design: the lint engine
-registers rules and runs them, while opinionated rule sets ship as
-named **profiles**. This separation keeps m-cli from privileging any
-single dialect (VistA, IRIS, YottaDB, ANSI) and makes it easy to
-extend the rule library without forcing existing projects to rename
-their config.
+## What ships
 
-**Built-in profiles** (run `m lint --list-profiles` for the live list):
+| Surface | Status | One-line summary |
+|---------|:------:|------------------|
+| `m fmt`      | ✅ | Round-trip formatter — identity (default), canonical hygiene, four translation presets (`pythonic` / `pythonic-lower` / `compact`). |
+| `m lint`     | ✅ | Engine-neutral lint engine with named profiles (`default`, `modern`, `pedantic`, `xindex`, `vista`, `sac`, `pythonic`, `all`); `M-XINDX-NN` + `M-MOD-NN` rule families; configurable thresholds; engine targeting; inline disable directives; auto-fix linkage with `m fmt`. |
+| `m test`     | ✅ | Parser-aware discovery (`*TST.m` / `t<UpperCase>(pass,fail)`); single-test selection (`FILE.m::tLabel`); text / TAP / JSON output; `--changed` for diff-driven runs. |
+| `m coverage` | ✅ | Label + line coverage via YDB `view "TRACE"`; `--branch` for AST-driven branch points; text / `text --lines` / JSON / LCOV output; `--min-percent` CI gate. |
+| `m watch`    | ✅ | Polling file watcher; source→suite affinity; `--once` / `--interval` / `--filter`. |
+| `m lsp`      | ✅ | LSP server over stdio — diagnostics, formatting, code actions, hover, completion, document symbols, code lenses, folding, signature help, document highlight, go-to-definition, find-references, workspace symbol search. |
+| `m doc` / `m search` / `m manifest` / `m examples` / `m errors` | ✅ | Manifest-driven m-stdlib reference. |
+| `m new` / `m run` / `m build` / `m doctor` / `m ci init` | ✅ | Project scaffolding, ad-hoc execution, build, environment self-check, CI scaffolding. |
+| `m plugins`  | ✅ | Lists out-of-tree subcommands registered via the `m_cli.plugins` entry-point group. |
+
+Pre-commit hooks (`m-fmt-check`, `m-fmt`, `m-lint`) ship in
+[`.pre-commit-hooks.yaml`](.pre-commit-hooks.yaml).
+
+## Install
+
+m-cli's distribution model is **clone-and-install**: `pyproject.toml`
+declares [`tree-sitter-m`](https://github.com/m-dev-tools/tree-sitter-m)
+and [`m-standard`](https://github.com/m-dev-tools/m-standard) as sibling
+checkouts. Clone all three; install m-cli into a uv-managed venv:
+
+```bash
+git clone https://github.com/m-dev-tools/tree-sitter-m
+git clone https://github.com/m-dev-tools/m-standard
+git clone https://github.com/m-dev-tools/m-cli
+cd m-cli
+make install                                  # uv sync --extra dev + pre-commit hooks
+```
+
+Verify:
+
+```bash
+.venv/bin/m --version                         # m-cli 0.1.0
+.venv/bin/m doctor                            # checks tree-sitter-m, m-standard, engine
+```
+
+For runtime tools (`m test`, `m coverage`) you'll also want one of:
+
+- **Docker** + the [`m-test-engine`](https://github.com/m-dev-tools/m-test-engine) container (cross-platform; recommended);
+- **Local YottaDB** on `$PATH`;
+- **Remote YDB over SSH** (advanced).
+
+See [Engine support](#engine-support).
+
+## Quick tour
+
+The TDD inner loop, end to end:
+
+```bash
+m new fetcher && cd fetcher                   # scaffold project
+make -C ~/projects/m-test-engine up           # start test engine (one-time)
+
+# write tests/FETCHTST.m using STDASSERT (red)
+m test                                        # confirm RED
+# implement src/fetch.m
+m test                                        # GREEN
+
+m fmt                                         # canonicalise
+m lint --error-on=error                       # zero errors before commit
+m coverage --min-percent=85                   # coverage gate
+```
+
+`m watch` collapses the inner loop to a single long-running command:
+
+```bash
+m watch                                       # polls cwd, reruns affected suites on change
+```
+
+## Subcommand reference
+
+The condensed reference. The deep version with profiles, thresholds, rule
+catalogues, and design rationale lives in [`docs/guide.md`](docs/guide.md).
+
+### `m fmt` — formatter
+
+```bash
+m fmt path/                                   # rewrite in place (identity, default)
+m fmt --rules=canonical path/                 # SAC hygiene: trim + uppercase commands
+m fmt --rules=pythonic path/                  # expand abbreviations: S→SET, $L→$LENGTH
+m fmt --rules=pythonic-lower path/            # all lowercase: set, $length, $test
+m fmt --rules=compact path/                   # compact: SET→S, $LENGTH→$L
+m fmt --check src/                            # CI mode — exit 1 on any pending change
+m fmt --diff path/file.m                      # unified diff
+m fmt --stdout file.m                         # write to stdout
+```
+
+Translation presets are AST-shape-preserving and idempotent on
+already-normalised input; `compact(pythonic(compact(src))) == compact(src)`.
+
+### `m lint` — linter
+
+```bash
+m lint path/                                  # default profile (curated M-MOD subset)
+m lint --list-profiles                        # show available profiles
+m lint --rules=modern path/                   # full M-MOD modernization track
+m lint --rules=xindex path/                   # engine-neutral XINDEX subset (42 rules)
+m lint --rules=pythonic path/                 # M-MOD + tighter Python-style thresholds
+m lint --rules=M-XINDX-014 path/              # explicit rule list
+m lint --format=json path/                    # machine-readable
+m lint --format=tap  path/                    # CI integration
+m lint --error-on=fatal path/                 # exit 1 only on fatal
+m lint --target-engine=yottadb path/          # silence engine-portability false positives
+m lint --jobs 16 path/                        # parallel across routines
+```
+
+Built-in profiles:
 
 | Profile | Rules | Notes |
-|---------|-------|-------|
-| `default` | 26 | **Curated daily-lint set** — the M-MOD-NN modernization track *minus* the four pedantic style rules (M-MOD-009 commands-per-line, M-MOD-028 label-docstring, M-MOD-031 magic-numbers, M-MOD-032 single-letter-vars). Validated against 4K-routine non-VA corpus: ~3 findings/routine. This is what `m lint` runs when no `--rules` flag is given. |
-| `modern` | 30 | Full M-MOD-NN track — every rule tagged `modern`, including the four pedantic style rules. Use for the strict review pass; on a 4K-routine non-VA corpus produces ~57 findings/routine, mostly from M-MOD-031/032. |
-| `pedantic` | 4 | Just the four pedantic style rules — useful for a focused style pass. |
-| `pythonic` | 30 | **Preset for developers coming from Python.** Same rules as `modern` (Python culture wants long names, no magic numbers, one statement per line, label docstrings) plus tighter thresholds: `line_length=100`, `commands_per_line=1`, `argument_count=5`, `cyclomatic=10`, `cognitive=15`, `dot_block_depth=3`, `label_lines=30`. Override any threshold via `[lint.thresholds]` or `--threshold`. |
-| `xindex` | 34 | VA VistA Toolkit `^XINDEX` port, engine-neutral subset. The 34 ported rules that don't require VA Kernel APIs. **XINDEX itself is a VA tool — not part of the M standard, not shipped by IRIS or YottaDB.** Use this for VistA-style discipline. |
-| `vista` | 8 | VA VistA-Kernel-specific rules: `OPEN`→`^%ZIS`, `CLOSE`→`^%ZISC`, `HALT`→`^XUSCLEAN`, `JOB`→TASKMAN, `$SYSTEM` Kernel-only, plus VistA banner conventions (1st/2nd-line SAC, patch number). Opt-in via `--rules=vista`; emits pure false positives outside VistA. |
-| `sac` | 23 | VA SAC (Standards & Conventions) portable subset — `sac`-tagged rules minus VistA-Kernel ones. |
-| `all` | 72 | Every registered rule, regardless of profile. |
+|---------|:-----:|-------|
+| `default`  | 26 | Curated daily-lint set — M-MOD minus the four pedantic style rules. |
+| `modern`   | 30 | Full M-MOD modernization track including pedantic style rules. |
+| `pedantic` | 4  | Just the four pedantic style rules — focused style pass. |
+| `pythonic` | 30 | `modern` + tighter thresholds (line=100, commands_per_line=1, cyclomatic=10, …). |
+| `xindex`   | 34 | Engine-neutral subset of the VA Toolkit XINDEX rule set. |
+| `vista`    | 8  | VA-Kernel-specific (`OPEN`→`^%ZIS`, banner conventions, etc.). Opt-in. |
+| `sac`      | 23 | VA SAC portable subset — `sac`-tagged rules minus VistA-Kernel ones. |
+| `all`      | 72 | Every registered rule. |
 
-**Rules shipped in Step 2.1** (42 of XINDEX's 66, surfaced via the `xindex` profile):
+Inline disable directives:
 
-| ID | Severity | Title |
-|----|----------|-------|
-| M-XINDX-002 | Standard | Non-standard Z command used |
-| M-XINDX-013 | Warning  | Blank(s) at end of line |
-| M-XINDX-014 | Fatal    | Call to missing label in this routine |
-| M-XINDX-015 | Warning  | Duplicate label |
-| M-XINDX-017 | Warning  | First line label NOT routine name |
-| M-XINDX-018 | Warning  | Line contains a CONTROL (non-graphic) character |
-| M-XINDX-019 | Standard | Line is longer than 245 bytes |
-| M-XINDX-020 | Standard | VIEW command used |
-| M-XINDX-021 | Fatal    | Syntax error in line (parse failure) |
-| M-XINDX-022 | Standard | Exclusive Kill |
-| M-XINDX-023 | Standard | Unargumented Kill |
-| M-XINDX-024 | Standard | Kill of unsubscripted global |
-| M-XINDX-025 | Standard | BREAK command used |
-| M-XINDX-026 | Standard | NEW exclusive or unargumented |
-| M-XINDX-027 | Standard | $VIEW function used |
-| M-XINDX-028 | Standard | $Z* intrinsic special variable used |
-| M-XINDX-029 | Standard | CLOSE command — use ZISC instead |
-| M-XINDX-030 | Standard | LABEL+OFFSET reference (fragile) |
-| M-XINDX-031 | Standard | $Z* intrinsic function used |
-| M-XINDX-032 | Standard | HALT command — use XUSCLEAN instead |
-| M-XINDX-033 | Warning  | READ without timeout |
-| M-XINDX-034 | Standard | OPEN command — use ZIS instead |
-| M-XINDX-035 | Standard | Routine exceeds SACC maximum size of 20000 bytes |
-| M-XINDX-036 | Standard | JOB command — use TASKMAN instead |
-| M-XINDX-041 | Standard | Star/pound READ format |
-| M-XINDX-042 | Warning  | Null line (no commands or comment) |
-| M-XINDX-044 | Standard | 2nd line of routine violates the SAC |
-| M-XINDX-045 | Standard | Set to %global |
-| M-XINDX-047 | Standard | Lowercase command(s) used in line |
-| M-XINDX-050 | Standard | Extended global reference |
-| M-XINDX-054 | Standard | $SYSTEM access — Kernel-only |
-| M-XINDX-056 | Info     | Patch number reference |
-| M-XINDX-058 | Standard | Code line >15000 bytes |
-| M-XINDX-060 | Warning  | LOCK without timeout |
-| M-XINDX-061 | Standard | Non-incremental LOCK |
-| M-XINDX-062 | Standard | First-line SAC violation |
-
-**Rule selection:**
-
-```bash
-m lint <paths>                           # default: --rules=default
-m lint --list-profiles                   # show available profiles
-m lint --rules=xindex <paths>            # VA VistA Toolkit profile
-m lint --rules=all <paths>               # every registered rule
-m lint --rules=M-XINDX-014,M-XINDX-015 <paths>  # explicit list
-m lint --format=json <paths>             # machine-readable
-m lint --format=tap <paths>              # CI integration
-m lint --error-on=fatal <paths>          # exit-1 only on fatal
+```mumps
+SET X=1   ; m-lint: disable=M-MOD-031        ; same line
+; m-lint: disable-next-line=M-XINDX-013
+; m-lint: disable-file=*                      ; whole file
 ```
 
-**Engine targeting (recommended):** if your code targets a specific
-M engine (YottaDB or IRIS), set `--target-engine` to silence the
-engine-portability rules' false positives. The default (`any`) flags
-*every* `$Z*` token as non-portable; on engine-specific code this
-generates thousands of irrelevant findings dominated by
-`M-MOD-021` / `M-MOD-022` / `M-MOD-023`.
+Configurable thresholds (CLI flag or `[lint.thresholds]` in
+`.m-cli.toml`):
 
 ```bash
-m lint --rules=default --target-engine=yottadb <paths>
-m lint --rules=default --target-engine=iris <paths>
+m lint --threshold line_length=100 --threshold commands_per_line=1 path/
 ```
 
-Persist via `.m-cli.toml` so you don't need the flag every run:
+### `m test` — test runner
+
+```bash
+m test                                        # discover + run every *TST.m
+m test src/routines/tests/FOOTST.m            # one suite
+m test FOOTST.m::tHappyPath                   # one label
+m test --filter happy                         # name-substring filter
+m test --changed                              # only suites affine with git-modified .m files
+m test --changed-base origin/main             # diff against a specific rev
+m test --format=tap                           # CI / aggregator output
+m test --format=json
+m test --list                                 # discovery only
+```
+
+### `m coverage` — coverage
+
+```bash
+m coverage                                    # text summary
+m coverage --lines                            # per-routine label + line columns
+m coverage --branch                           # AST-driven branch coverage
+m coverage --format=lcov > cov.info           # genhtml / Codecov / Coveralls
+m coverage --format=json
+m coverage --min-percent=85                   # CI gate (exit 1 below threshold)
+```
+
+### `m watch` — TDD watcher
+
+```bash
+m watch                                       # poll cwd; rerun affected suites on change
+m watch --once                                # one pass then exit (CI smoke)
+m watch --interval 1.0                        # tune poll period (default 0.5 s)
+m watch --filter slow                         # restrict to suites matching name substring
+```
+
+Affinity rule: `<X>.m` → `<X>TST.m` if it exists; suite-file edits map to
+themselves only; non-mappable changes re-run every suite (defensive
+default).
+
+### `m lsp` — Language Server
+
+```bash
+m lsp                                         # speak LSP over stdio
+m lsp --rules xindex,vista                    # override the lint profile for diagnostics
+```
+
+VS Code wiring: install
+[`tree-sitter-m-vscode`](https://github.com/m-dev-tools/tree-sitter-m-vscode);
+the extension spawns `m lsp` on activation. Settings: `m-cli.enabled`,
+`m-cli.path` (set to the venv-installed `m` binary if not on `$PATH`),
+`m-cli.args`, `m-cli.trace.server`.
+
+### `m doc` family — m-stdlib reference
+
+```bash
+m doc parse^STDJSON                           # signature, params, returns, examples
+m search uuid                                 # full-text search across the manifest
+m manifest                                    # print the active stdlib-manifest.json
+m examples STDCSV                             # runnable examples for a module
+m errors STDB64                               # error catalogue for a module
+```
+
+Manifest source:
+[`m-stdlib/dist/stdlib-manifest.json`](https://raw.githubusercontent.com/m-dev-tools/m-stdlib/main/dist/stdlib-manifest.json).
+
+### Project scaffolding and helpers
+
+```bash
+m new myproj                                  # scaffold TDD-ready M package
+m ci init                                     # drop a CI workflow into .github/
+m run path/to/routine.m                       # run a routine end-to-end
+m build                                       # compile / package
+m doctor                                      # self-check: ydb, parser, m-standard, manifests
+m plugins                                     # list registered out-of-tree subcommands
+```
+
+## Configuration — `.m-cli.toml`
+
+Both `.m-cli.toml` (preferred) and `[tool.m-cli]` in `pyproject.toml` are
+discovered by walking up from the working directory; the walk stops at
+`.git`. CLI flags override config; unknown keys are ignored.
 
 ```toml
 [lint]
-target_engine = "yottadb"   # or "iris"; "any" = portable lint
+rules = "default"                  # profile name or comma list of rule IDs
+disable = ["M-XINDX-013"]          # rule ids to skip after selection
+target_engine = "yottadb"          # "yottadb" | "iris" | "any"
+
+[lint.severity]
+"M-XINDX-019" = "warning"          # remap per-rule severity
+
+[lint.thresholds]
+line_length = 100
+commands_per_line = 1
+cyclomatic = 10
+
+[lint.taint]                       # M-MOD-036 taint analysis
+formals_tainted = true
+extra_sanitizers = ["$E"]
+
+[fmt]
+rules = "canonical"                # "canonical" | "none" | comma list of rule IDs
 ```
 
-When the linter detects a heavy load of portability-rule findings
-under `target_engine=any`, it surfaces a one-line hint at the end
-of the run pointing here. (Real impact on YottaDB code: a recent
-audit measured 134,848 → 125,561 findings (-7%) just from setting
-`--target-engine=yottadb`.)
+## Engine support
 
-The XINDEX-parity rule pack will grow incrementally toward the full 66-rule baseline. After parity, `m lint` extends with parser-aware checks XINDEX cannot do (deeper control-flow analysis, dead-code detection, naked-reference hazards, etc.). New rules from non-VA sources will use their own ID prefix (e.g. `M-IRIS-NN`, `M-YDB-NN`) and ship under their own profile.
+`m test` and `m coverage` need a YottaDB engine.
+[`m_cli.engine.detect_engine`](src/m_cli/engine.py) auto-resolves a
+transport in this order:
 
-### VistA-corpus baseline (Step 2.1)
+1. **Explicit override** — `M_CLI_ENGINE=local|docker|ssh`.
+2. **Local YottaDB** — `mumps` on `$PATH`.
+3. **Docker (m-test-engine)** — a running container named `m-test-engine`.
+4. **SSH** — only if a `~/data/vista-meta/conn.env` file exists. Legacy
+   maintainer path.
 
-`make lint-vista` runs `m lint --rules=xindex,vista` over the full 39,330-routine VistA corpus — explicitly selecting both the engine-neutral XINDEX subset and the VistA-Kernel-specific profile, since the corpus is VistA itself. (Non-VistA shops should run `m lint --rules=xindex` or `--rules=default`.)
-
-```
-total routines : 39,330  (38,954 linted, 376 skipped on parse error)
-routines flagged : 24,877 (63.9%)
-total findings : 62,806
-elapsed        : ~1458 s (~27 routines/s)
-
-By rule (descending):
-  M-XINDX-013  35,214  trailing blanks
-  M-XINDX-056  10,867  patch number references          (INFO)
-  M-XINDX-060   5,621  LOCK without timeout
-  M-XINDX-044   3,556  2nd-line SAC
-  M-XINDX-033   2,652  READ without timeout
-  M-XINDX-030   1,602  LABEL+OFFSET reference
-  M-XINDX-047   1,330  lowercase command
-  M-XINDX-061     419  non-incremental LOCK
-  M-XINDX-017     333  first label != routine name
-  M-XINDX-045     286  Set to %global
-  M-XINDX-041     203  star/pound READ
-  M-XINDX-050     144  extended global reference
-  M-XINDX-042     138  null line
-  M-XINDX-034     109  OPEN — use ZIS
-  M-XINDX-029      98  CLOSE — use ZISC
-  M-XINDX-014      42  call to missing label             (FATAL — real bugs)
-  M-XINDX-025      39  BREAK command
-  M-XINDX-062      33  first-line SAC violation
-  M-XINDX-019      31  line >245 bytes
-  M-XINDX-032      23  HALT — use XUSCLEAN
-  M-XINDX-036      15  JOB — use TASKMAN
-  M-XINDX-024      14  kill of unsubscripted global
-  M-XINDX-058      12  code line >15000 bytes
-  M-XINDX-020       8  VIEW command
-  M-XINDX-022       6  exclusive Kill
-  M-XINDX-023       5  unargumented Kill
-  M-XINDX-035       4  routine >20000 bytes
-  M-XINDX-026       2  NEW exclusive/unargumented
-
-By severity:
-  fatal        42
-  standard 26,876
-  warning  35,685
-  info        203
-```
-
-The 42 fatal findings are concrete missing-label bugs (e.g., `A1BFJOBR.m` calls `EXIT` on lines 5 and 6, but no `EXIT` label is defined in the file).
-
-**Coverage:** 28 of 36 registered rules fire on the VistA corpus. The 8 silent rules cover patterns rare in VistA (non-standard `Z` commands, `$Z*` ISVs/funcs, `$SYSTEM`, `$VIEW`, parse-error fallback) — they remain registered for use against more diverse codebases.
-
-**Performance note:** the §3.5 budget for `m lint` on the corpus is 120 s. Step 2.1 runs in 1458 s — **12× over budget**, on a single thread, with a naive AST walk per rule. The 4.6× slowdown vs Step 2.0 (316 s) tracks the rule-count growth from 11 to 36. Optimisation work (parallelism, single-pass walk, selective rule activation) is sequenced as a follow-up; correctness comes first.
-
-## Install (development)
+Fresh installs typically use option 2 (developers with a host install) or
+option 3:
 
 ```bash
-cd ~/projects/m-cli
-make install      # uv sync --extra dev + pre-commit hooks
+git clone https://github.com/m-dev-tools/m-test-engine
+make -C m-test-engine up                       # builds + starts the container
+
+cd ~/projects/myapp
+m test                                          # auto-detects the running container
 ```
 
-## Use
+Force a transport explicitly:
 
 ```bash
-m --version                          # m-cli 0.1.0
-m fmt path/to/routine.m              # rewrite in place (identity, default)
-m fmt --rules=canonical path/        # SAC hygiene: trim + uppercase
-m fmt --rules=pythonic path/         # expand abbreviations: S→SET, $L→$LENGTH
-m fmt --rules=pythonic-lower path/   # same but lowercase: set, $length, $test
-m fmt --rules=compact path/          # compact canonical names: SET→S, $LENGTH→$L
-m fmt --check src/routines/          # CI mode: exit 1 if any file would change
-m fmt --diff path/to/routine.m       # unified diff
-m fmt --stdout single_file.m         # write to stdout
+M_CLI_ENGINE=docker m test
+M_CLI_ENGINE=local  m test
 ```
 
-The `pythonic` and `compact` presets translate between VistA-compact code
-(`S X=1 W $L(X),$T`) and canonical-name code (`SET X=1 WRITE $LENGTH(X),$TEST`)
-for readers coming from Python or other modern languages without the M
-tradition of one-/two-character abbreviations. `pythonic-lower` is the
-PEP-8-flavoured variant that produces all-lowercase output
-(`set X=1 write $length(X),$test`). All three presets are *normalizing*
-(idempotent and AST-shape-preserving) and round-trip on already-
-normalized input (`compact(pythonic(compact(src))) == compact(src)`).
+## Plugin extension
 
-## Run the VistA round-trip gate
+Out-of-tree subcommands register against m-cli via the `m_cli.plugins`
+Python entry-point group. After `pip install m-cli-extras` (or any other
+plugin), `m plugins` lists them and they appear as regular subcommands:
 
-```bash
-.venv/bin/python scripts/vista_round_trip.py \
-    ~/vista-meta/vista/vista-m-host/Packages
+```
+$ m plugins
+m-cli plugin API v1
+
+Registered plugins (1):
+  m corpus-stats   (m-cli-extras 0.1.0)
+
+$ m corpus-stats /path/to/corpus
+corpus                          /path/to/corpus
+files                           1234
+total_lines                     287654
 ```
 
-Expected output: ~99.04% round-trip clean, parse errors in the
-remaining ~0.96% match the [tree-sitter-m corpus boundary](https://github.com/m-dev-tools/tree-sitter-m).
-
-## Naming convention
-
-Commands follow the universal `m <subcommand>` pattern (mirroring `cargo`,
-`go`, `git`). The legacy `y*` shell tools in [m-tools/bin/](../m-tools/bin/)
-are kept as references and templates only — they remain functional but
-are not the canonical interface going forward.
+Plugin contract: [`docs/plugin-development.md`](docs/plugin-development.md).
+Reference implementation:
+[`m-cli-extras`](https://github.com/m-dev-tools/m-cli-extras).
 
 ## Layout
 
 ```
 m-cli/
-├── pyproject.toml              # uv-managed; tree-sitter-m as editable dep
+├── pyproject.toml                # uv-managed; tree-sitter-m + m-standard as path deps
 ├── src/m_cli/
-│   ├── __init__.py
-│   ├── cli.py                  # `m` dispatcher
-│   ├── parser.py               # tree-sitter-m wrapper
-│   └── fmt/
-│       ├── __init__.py
-│       ├── cli.py              # `m fmt` argparse + file orchestration
-│       └── formatter.py        # the round-trip pretty-printer
-├── tests/
-│   └── test_formatter.py       # round-trip + idempotence + parse-error tests
-├── scripts/
-│   └── vista_round_trip.py     # full-corpus validation gate
-└── README.md                   # this file
+│   ├── cli.py                    # `m` dispatcher (argparse subcommands)
+│   ├── parser.py                 # tree-sitter-m wrapper
+│   ├── config.py                 # .m-cli.toml / [tool.m-cli] loader
+│   ├── engine.py                 # YDB / Docker / SSH transports
+│   ├── workspace.py              # cross-routine label index
+│   ├── plugins.py                # entry-point discovery for plugins
+│   ├── fmt/                      # m fmt   — round-trip formatter
+│   ├── lint/                     # m lint  — engine-neutral lint engine + profiles
+│   ├── test/                     # m test  — discovery + ydb runner
+│   ├── watch/                    # m watch — polling file watcher
+│   ├── coverage/                 # m coverage — view "TRACE" + LCOV emitter
+│   ├── lsp/                      # m lsp   — pygls language server
+│   ├── doc/                      # m doc / search / manifest / examples / errors
+│   ├── doctor/                   # m doctor — environment self-check
+│   ├── new/                      # m new   — project scaffolder
+│   ├── ci/                       # m ci    — CI scaffolding
+│   ├── run/                      # m run   — ad-hoc routine execution
+│   └── build/                    # m build — compile / package
+├── tests/                        # one test file per source module
+├── scripts/                      # corpus-validation drivers + benches
+├── docs/                         # guide + plugin contract + design notes (see below)
+└── README.md                     # this file
 ```
 
-## Roadmap
+## Documentation
 
-Step 1 (this doc) ships the **identity formatter** — the full parse → emit
-round-trip with no canonical-layout rules yet. Subsequent passes layer in:
-
-1. **Indentation normalisation** — `; comment` lines, dot-block indentation, label-column-1 enforcement.
-2. **Whitespace canonicalisation** — no spaces around `_` (string concat), single-space after commas, etc., per the M style guide.
-3. **Vertical spacing** — blank `;` lines between sections.
-4. **`--check` integration with pre-commit** — hook scaffold + reference config.
-5. **VistA-corpus performance ceiling tightening** — target sub-30s, then incremental improvements as rules are added.
-
-Each rule is added with: a hand-crafted test, a VistA-corpus regression
-gate (cleanly-parsing routines must still round-trip with the rule
-*disabled*; with the rule enabled, only intentional changes appear), and
-a brief design note.
+| Doc | Audience |
+|-----|----------|
+| [`docs/guide.md`](docs/guide.md) | Comprehensive user guide — every subcommand, every flag, every profile, every rule family, with rationale. |
+| [`docs/m-linting-user-guide.md`](docs/m-linting-user-guide.md) | Long-form linter user guide — picking a profile, tuning thresholds, writing inline disables. |
+| [`docs/plugin-development.md`](docs/plugin-development.md) | Contract for out-of-tree subcommands via `m_cli.plugins` entry-point group. |
+| [`docs/pre-commit.md`](docs/pre-commit.md) | Wiring `m-fmt-check` / `m-fmt` / `m-lint` into the pre-commit framework. |
+| [`docs/worked-example-accsum.md`](docs/worked-example-accsum.md) | A real M routine walked end-to-end through fmt + lint + test. |
+| [`docs/evolution.md`](docs/evolution.md) | **Archaeology.** How m-cli was built, in chronological order. Read this only if you care *why* the tool is shaped this way. |
+| [`docs/vista-meta-bootstrap.md`](docs/vista-meta-bootstrap.md) | **Archaeology.** How the VistA corpus was used during initial development, and the explicit verification that m-cli is no longer dependent on it. |
 
 ## Licence
 
-AGPL-3.0, matching the YottaDB and `tree-sitter-m` licence posture.
+[AGPL-3.0](LICENSE). Family-wide consistency with the rest of
+[m-dev-tools](https://github.com/m-dev-tools).
