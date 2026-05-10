@@ -95,7 +95,7 @@ gap analysis  →  Tier 1 plan  →  tree-sitter-m  →  m-standard  →  VistA 
 
 **4. [`m-standard`](https://github.com/m-dev-tools/m-standard)** — a machine-readable cross-vendor inventory of **949 M keyword forms** (commands, intrinsic functions, intrinsic special variables) with provenance flags (`in_anno`, `in_ydb`, `in_iris`). Every linter rule that needs to know "is this a standard command?" reads from m-standard, never hardcoded lists. Hover and completion in the LSP serve m-standard's syntax format strings directly. Engine-aware portability rules (M-MOD-021..023) consult its `standard_status` column (`ansi`, `ydb`, `iris`, `ydb-and-iris`, `vista`).
 
-**5. The VistA corpus** — [WorldVistA/VistA-M](https://github.com/WorldVistA/VistA-M). The 39,330-routine open-source M codebase that is the largest in the world. The validation gate for every `m-cli` release: `make vista` round-trips every routine through `m fmt`; `make lint-vista` runs the full XINDEX rule pack across the corpus in 22.6 s on 16 cores. **A tool that doesn't survive VistA isn't ready.** The supplementary `make lint-modern` gate runs the M-MOD-NN track over a curated 4,215-routine non-VistA corpus catalogued in [docs/m-corpus-catalog.md](m-corpus-catalog.md) (YottaDB/YDBTest, mgsql, YDBOcto-aux, EWD, M-Web-Server) — calibrating the modernization rules against contemporary non-VA M code.
+**5. The VistA corpus** — [WorldVistA/VistA-M](https://github.com/WorldVistA/VistA-M). The 39,330-routine open-source M codebase that is the largest in the world. The validation gate for every `m-cli` release: `make vista` round-trips every routine through `m fmt`; `make lint-vista` runs the full XINDEX rule pack across the corpus in 22.6 s on 16 cores. **A tool that doesn't survive VistA isn't ready.** The supplementary `make lint-modern` gate runs the M-MOD-NN track over a curated 4,215-routine non-VistA corpus catalogued in [docs/plans/m-corpus-catalog.md](plans/m-corpus-catalog.md) (YottaDB/YDBTest, mgsql, YDBOcto-aux, EWD, M-Web-Server) — calibrating the modernization rules against contemporary non-VA M code.
 
 **6. `m-cli`** — this project. The Tier 1 deliverable, plus the Tier 2 quality-gate features it laid the groundwork for, plus the M-MOD-NN modernization track (Phases 1–8 of the linting roadmap), plus the Phase 7 data-flow infrastructure (per-label CFG, definite-assignment analyzer, and per-resource state analyzers for LOCK / TSTART / $ETRAP / $TEST), plus the Phase 9 taint-analysis MVP (M-MOD-036 — untrusted data → indirection sinks), plus the LSP server that wraps it all for editor integration.
 
@@ -382,7 +382,7 @@ Every rule declares **both** a severity (how strictly to enforce) and a category
 
 #### 6.2.4 The modernization track (M-MOD-NN)
 
-A greenfield rule family designed against contemporary M idioms (post-2010), engine- and dialect-neutral, **independent of the legacy XINDEX baseline** but with most rules supersesing one or more XINDEX rules via `Rule.replaces=...` metadata. Validated against the 4,215-routine non-VA corpus catalogued in [docs/m-corpus-catalog.md](m-corpus-catalog.md).
+A greenfield rule family designed against contemporary M idioms (post-2010), engine- and dialect-neutral, **independent of the legacy XINDEX baseline** but with most rules supersesing one or more XINDEX rules via `Rule.replaces=...` metadata. Validated against the 4,215-routine non-VA corpus catalogued in [docs/plans/m-corpus-catalog.md](plans/m-corpus-catalog.md).
 
 **Length / complexity (M-MOD-001..009)** — configurable thresholds:
 - 001 line length, 002 code-line length, 003 routine LOC, 004 label-body LOC
@@ -940,7 +940,7 @@ Strategic phases beyond Tier 1 (in dependency order):
 | DAP debugger integration | ⏸️ Deferred | Tier 2 capability; substantial engineering on its own. Both engines ship `ZBREAK` at engine level. |
 | FOR loop back-edge in CFG | ⏸️ Deferred | Phase 7+ refinement. Currently FOR body is straight-line; first-iteration reads of FOR-set variables may under-report. |
 
-The full roadmap with phasing plan and validation criteria lives in [docs/m-linting-implementation-plan.md](m-linting-implementation-plan.md). Per-session punch list in [TODO.md](../TODO.md).
+The full roadmap with phasing plan and validation criteria lives in [docs/plans/m-linting-implementation-plan.md](plans/m-linting-implementation-plan.md). Historical work-board / archaeology in [docs/evolution.md](evolution.md).
 
 ---
 

@@ -444,6 +444,6 @@ rule shipped.
 ## See also
 
 - [`docs/guide.md`](guide.md) — the complete `m-cli` user guide (lint, fmt, test, watch, coverage, LSP)
-- [`docs/m-linting-survey.md`](m-linting-survey.md) — the survey behind the M-MOD-NN rule design
-- [`docs/m-linting-implementation-plan.md`](m-linting-implementation-plan.md) — phasing roadmap
+- [`docs/plans/m-linting-survey.md`](plans/m-linting-survey.md) — the survey behind the M-MOD-NN rule design
+- [`docs/plans/m-linting-implementation-plan.md`](plans/m-linting-implementation-plan.md) — phasing roadmap
 - [`docs/pre-commit.md`](pre-commit.md) — wiring `m lint` into pre-commit hooks
