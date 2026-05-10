@@ -8,9 +8,9 @@
   "agent_instructions": "AGENTS.md",
   "verified_on": "2026-05-10",
   "exposes": {
-    "commands":   "commands.json",
-    "lint_rules": "lint-rules.json",
-    "fmt_rules":  "fmt-rules.json"
+    "commands":   "dist/commands.json",
+    "lint_rules": "dist/lint-rules.json",
+    "fmt_rules":  "dist/fmt-rules.json"
   },
   "consumes": ["tool:tree-sitter-m", "tool:m-standard", "tool:m-test-engine"],
   "verification_commands": ["make check", "m doctor"]
