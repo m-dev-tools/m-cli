@@ -8,22 +8,19 @@
           "name": "paths",
           "help": "Files or directories to compile (default: current directory)",
           "default": null,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--check",
           "help": "After compiling, remove any `.o` files this run produced. Use in CI gates that just want a 'does it compile?' check without polluting the working tree.",
           "default": false,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--quiet",
           "help": "Suppress per-file `ok` lines and the final summary",
           "default": false,
-          "choices": null,
-          "required": false
+          "choices": null
         }
       ],
       "examples": []
@@ -35,8 +32,7 @@
           "name": "--json",
           "help": "Emit JSON (currently the only supported format; accepted for explicitness)",
           "default": false,
-          "choices": null,
-          "required": false
+          "choices": null
         }
       ],
       "examples": []
@@ -44,26 +40,6 @@
     "ci": {
       "purpose": "CI scaffolding (subcommand: `init`)",
       "options": [],
-      "examples": []
-    },
-    "corpus-stats": {
-      "purpose": "Walk an M corpus and report file / line / label counts",
-      "options": [
-        {
-          "name": "corpus",
-          "help": "Directory to walk (recursively). Non-.m files are ignored.",
-          "default": null,
-          "choices": null,
-          "required": true
-        },
-        {
-          "name": "--json",
-          "help": "Emit the summary as JSON instead of the human-readable form.",
-          "default": false,
-          "choices": null,
-          "required": false
-        }
-      ],
       "examples": []
     },
     "coverage": {
@@ -75,29 +51,25 @@
           "default": [
             "."
           ],
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--routines",
           "help": "Explicit production-routines path (repeatable). Skips auto-detect.",
           "default": [],
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--tests",
           "help": "Explicit test-suites path (repeatable). Skips auto-detect.",
           "default": [],
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--suites",
           "help": "Comma-separated suite names to restrict the run (default: all)",
           "default": null,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--format",
@@ -107,43 +79,37 @@
             "text",
             "json",
             "lcov"
-          ],
-          "required": false
+          ]
         },
         {
           "name": "--lines",
           "help": "Show line-level detail in text output. With --uncovered, also lists every uncovered executable line.",
           "default": false,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--uncovered",
           "help": "Print only uncovered labels (text format only)",
           "default": false,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--branch",
           "help": "Collect branch coverage: identify IF/ELSE/FOR/postconditional decisions and report which were reached during the run.",
           "default": false,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--min-percent",
           "help": "Fail with exit 1 if total coverage is below this percent",
           "default": null,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--quiet",
           "help": "Suppress the summary line on stderr",
           "default": false,
-          "choices": null,
-          "required": false
+          "choices": null
         }
       ],
       "examples": []
@@ -155,29 +121,25 @@
           "name": "symbol",
           "help": "Symbol to look up: MODULE, MODULE.label, or bare label name",
           "default": "",
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--short",
           "help": "One-line synopsis instead of full long-form output",
           "default": false,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--json",
           "help": "Emit the raw manifest entry as JSON",
           "default": false,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--manifest",
           "help": "Path to dist/stdlib-manifest.json (default: walk up from cwd)",
           "default": null,
-          "choices": null,
-          "required": false
+          "choices": null
         }
       ],
       "examples": []
@@ -192,8 +154,7 @@
           "choices": [
             "text",
             "json"
-          ],
-          "required": false
+          ]
         }
       ],
       "examples": []
@@ -205,15 +166,13 @@
           "name": "--json",
           "help": "Emit the errors index as JSON (the same shape as dist/errors.json)",
           "default": false,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--manifest",
           "help": "Path to dist/stdlib-manifest.json (default: walk up from cwd)",
           "default": null,
-          "choices": null,
-          "required": false
+          "choices": null
         }
       ],
       "examples": []
@@ -225,15 +184,13 @@
           "name": "module",
           "help": "Module to scope output to (default: every module)",
           "default": "",
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--manifest",
           "help": "Path to dist/stdlib-manifest.json (default: walk up from cwd)",
           "default": null,
-          "choices": null,
-          "required": false
+          "choices": null
         }
       ],
       "examples": []
@@ -245,57 +202,49 @@
           "name": "paths",
           "help": "One or more .m files (or directories \u2014 searched recursively for *.m). Optional only when paired with --list-rules.",
           "default": null,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--rules",
           "help": "Canonical-layout rules to apply: 'none' (identity, default), 'canonical' (SAC hygiene: trim + uppercase), 'pythonic' (expand abbreviations to canonical names: S\u2192SET, $L\u2192$LENGTH), 'pythonic-lower' (same but lowercase output: set, $length), 'compact' (inverse: SET\u2192S, $LENGTH\u2192$L), 'all' (every registered rule \u2014 diagnostic only), or a comma-separated list of rule ids. When unset, falls back to [fmt] rules from .m-cli.toml / pyproject.toml.",
           "default": null,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--check",
           "help": "Don't write; exit 1 if any file is not already formatted",
           "default": false,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--diff",
           "help": "Don't write; print unified diff for each file that would change",
           "default": false,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--stdout",
           "help": "Write formatted output to stdout (single-file mode)",
           "default": false,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--quiet",
           "help": "Suppress per-file progress output",
           "default": false,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--list-rules",
           "help": "Emit the full fmt rule inventory (id, title, description, presets) as JSON and exit. Source of truth for dist/fmt-rules.json.",
           "default": false,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--json",
           "help": "Force JSON output. Currently only meaningful with --list-rules (the rule inventory always emits JSON in Phase 0); accepted for explicit invocation per the tier-1 manifest contract.",
           "default": false,
-          "choices": null,
-          "required": false
+          "choices": null
         }
       ],
       "examples": []
@@ -307,36 +256,31 @@
           "name": "paths",
           "help": "One or more .m files (or directories \u2014 searched recursively for *.m)",
           "default": null,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--rules",
           "help": "Profile name or comma-separated rule IDs (default: 'default', or [lint] rules from .m-cli.toml / pyproject.toml). See --list-profiles for the available named profiles.",
           "default": null,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--list-profiles",
           "help": "List the named lint profiles and exit",
           "default": false,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--list-rules",
           "help": "Emit the full rule inventory (id, severity, category, tags, profiles, fixer_id, description) as JSON and exit. Source of truth for dist/lint-rules.json.",
           "default": false,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--json",
           "help": "Force JSON output. Currently only meaningful with --list-rules (the rule inventory always emits JSON in Phase 0); accepted for explicit invocation per the tier-1 manifest contract.",
           "default": false,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--target-engine",
@@ -346,15 +290,13 @@
             "any",
             "yottadb",
             "iris"
-          ],
-          "required": false
+          ]
         },
         {
           "name": "--threshold",
           "help": "Override a [lint.thresholds] config value. Repeatable. Example: --threshold line_length=120 --threshold routine_lines=2000. Known keys: line_length, code_line_length, routine_lines, label_lines (see m_cli.lint.thresholds.KNOWN_THRESHOLDS).",
           "default": null,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--format",
@@ -364,64 +306,55 @@
             "text",
             "json",
             "tap"
-          ],
-          "required": false
+          ]
         },
         {
           "name": "--error-on",
           "help": "Severity threshold for non-zero exit code: error | warning | style | info (default: warning)",
           "default": "warning",
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--lint-unparseable",
           "help": "Lint files that have parse errors (default: skip them)",
           "default": false,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--jobs",
           "help": "Number of parallel worker processes (default: os.cpu_count(); 1 to disable the pool)",
           "default": null,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--quiet",
           "help": "Suppress summary output",
           "default": false,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--fix",
           "help": "Apply auto-fixes for diagnostics whose rule has a `fixer_id`. Each unique fixer (an `m fmt` rule) runs once per affected file. Files are rewritten in place; remaining (non-fixable) findings are still reported. Combine with --check to preview without writing.",
           "default": false,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--baseline",
           "help": "Path to a baseline file (default: .m-lint-baseline.json in the first ancestor that contains one). Findings present in the baseline are suppressed. Use --update-baseline to regenerate.",
           "default": null,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--no-baseline",
           "help": "Disable baseline filtering even if .m-lint-baseline.json exists.",
           "default": false,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--update-baseline",
           "help": "Write current findings to the baseline file (default: .m-lint-baseline.json in the project root) and exit 0. Existing entries are replaced wholesale.",
           "default": false,
-          "choices": null,
-          "required": false
+          "choices": null
         }
       ],
       "examples": []
@@ -433,22 +366,19 @@
           "name": "--verbose",
           "help": "Enable DEBUG-level logging on stderr",
           "default": false,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--rules",
           "help": "Rule filter for diagnostics \u2014 passed to `m_cli.lint.select_rules`. Examples: `default` (the built-in default profile), `all`, `xindex` (VA VistA Toolkit), `sac`, `M-XINDX-013,M-XINDX-019`.",
           "default": null,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--stdio",
           "help": null,
           "default": false,
-          "choices": null,
-          "required": false
+          "choices": null
         }
       ],
       "examples": []
@@ -460,15 +390,13 @@
           "name": "path",
           "help": "Sub-path to emit (e.g. STDJSON.parse). Empty = whole manifest.",
           "default": "",
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--manifest",
           "help": "Path to dist/stdlib-manifest.json (default: walk up from cwd)",
           "default": null,
-          "choices": null,
-          "required": false
+          "choices": null
         }
       ],
       "examples": []
@@ -480,29 +408,25 @@
           "name": "name",
           "help": "Project name (also drives the M routine name)",
           "default": null,
-          "choices": null,
-          "required": true
+          "choices": null
         },
         {
           "name": "--path",
           "help": "Target directory (default: ./<name>/)",
           "default": null,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--force",
           "help": "Scaffold even if the target directory exists and is non-empty",
           "default": false,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--quiet",
           "help": "Suppress per-file progress output",
           "default": false,
-          "choices": null,
-          "required": false
+          "choices": null
         }
       ],
       "examples": []
@@ -514,8 +438,7 @@
           "name": "--json",
           "help": "Emit the discovered set as JSON",
           "default": false,
-          "choices": null,
-          "required": false
+          "choices": null
         }
       ],
       "examples": []
@@ -527,29 +450,25 @@
           "name": "entryref",
           "help": "ROUTINE or LABEL^ROUTINE to invoke (case-insensitive)",
           "default": null,
-          "choices": null,
-          "required": true
+          "choices": null
         },
         {
           "name": "--routines",
           "help": "Path to prepend to $ydb_routines (repeatable). When unset, the parent env's $ydb_routines is used unchanged.",
           "default": null,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "args",
           "help": "Extra arguments passed to the M program via $ZCMDLINE",
           "default": null,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--quiet",
           "help": "Suppress the `m run: ydb -run ENTRYREF` banner",
           "default": false,
-          "choices": null,
-          "required": false
+          "choices": null
         }
       ],
       "examples": []
@@ -561,22 +480,19 @@
           "name": "query",
           "help": "Search query \u2014 space-separated tokens (AND-style match)",
           "default": "",
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--limit",
           "help": "Max number of matches to print (default: 50)",
           "default": 50,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--manifest",
           "help": "Path to dist/stdlib-manifest.json (default: walk up from cwd)",
           "default": null,
-          "choices": null,
-          "required": false
+          "choices": null
         }
       ],
       "examples": []
@@ -588,22 +504,19 @@
           "name": "paths",
           "help": "Files, directories, or `FILE::tLabel` selectors. With no argument, looks for `./routines/tests/`.",
           "default": null,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--list",
           "help": "List discovered suites and tests without running them",
           "default": false,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--filter",
           "help": "Only run suites whose name contains this substring",
           "default": null,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--format",
@@ -614,71 +527,61 @@
             "tap",
             "json",
             "junit"
-          ],
-          "required": false
+          ]
         },
         {
           "name": "--quiet",
           "help": "Suppress summary output",
           "default": false,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--changed",
           "help": "Run only suites whose source has changed in git (working tree + index + untracked). Combine with --changed-base to diff against a specific revision.",
           "default": false,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--changed-base",
           "help": "With --changed: diff against revision REV (e.g. main) instead of the working tree.",
           "default": null,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--no-isolation",
           "help": "Skip the per-test STDFIX transactional wrapper. Use for legacy ^TESTRUN-style suites that don't want a TSTART / TROLLBACK around each test (default: isolation on).",
           "default": false,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--seed",
           "help": "Load a STDSEED TSV manifest before running each test (`do load^STDSEED(\"PATH\")`). Repeat for multiple seeds; order is preserved.",
           "default": [],
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--env",
           "help": "Load a `.env` file via STDENV before running each suite. Parsed values land in `^STDLIB($JOB,\"env\",KEY)` so test code reads via `$get(^STDLIB($JOB,\"env\",\"KEY\"))`. Repeat for multiple env files; later files override earlier keys.",
           "default": [],
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--update-snapshots",
           "help": "Set the STDSNAP update sentinel before running each suite, so `asserts^STDSNAP` rewrites baselines instead of comparing. Run after an intentional change in test output to regenerate snapshot files.",
           "default": false,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--timings",
           "help": "Show per-suite wall-clock duration in the summary line. Captures the full subprocess invocation (SSH + ydb startup + test execution); useful for spotting suites that are slowing down the inner loop.",
           "default": false,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--timeout",
           "help": "Per-suite (or per-test, in single-test mode) timeout in seconds. The subprocess is killed if it runs past the deadline; the suite is reported as TIMEOUT, distinct from FAIL/0/0 caused by a parse-level zero-assertion result. Pass 0 to disable. Default: 600.",
           "default": 600.0,
-          "choices": null,
-          "required": false
+          "choices": null
         }
       ],
       "examples": []
@@ -690,29 +593,25 @@
           "name": "paths",
           "help": "Files or directories to watch (default: ./routines/tests/)",
           "default": null,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--interval",
           "help": "Polling interval in seconds (default: 0.5)",
           "default": 0.5,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--once",
           "help": "Run the initial pass and exit (no watch loop)",
           "default": false,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--filter",
           "help": "Only watch / run suites whose name contains this substring",
           "default": null,
-          "choices": null,
-          "required": false
+          "choices": null
         },
         {
           "name": "--format",
@@ -722,8 +621,7 @@
             "text",
             "tap",
             "json"
-          ],
-          "required": false
+          ]
         }
       ],
       "examples": []

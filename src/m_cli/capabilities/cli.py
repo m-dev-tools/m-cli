@@ -77,13 +77,19 @@ def _entry_for(sub: argparse.ArgumentParser, short_help: str | None) -> dict[str
             longs = [s for s in action.option_strings if s.startswith("--")]
             opt_name = longs[0] if longs else action.option_strings[0]
         help_text = action.help if action.help is not argparse.SUPPRESS else None
+        # NOTE: deliberately omit `required` — argparse derives it for
+        # positionals from `nargs` in a way that varies across CPython
+        # 3.12.x patch releases (observed: 3.12.13 reports False for
+        # `nargs='*'` positionals; some earlier patches report True).
+        # The drift gate runs in CI on a different patch than the
+        # contributor's local Python, so emitting `required` was
+        # producing spurious manifest drift on every run.
         options.append(
             {
                 "name": opt_name,
                 "help": help_text,
                 "default": _safe_default(action.default),
                 "choices": list(action.choices) if action.choices else None,
-                "required": bool(action.required),
             }
         )
     return {
@@ -95,6 +101,8 @@ def _entry_for(sub: argparse.ArgumentParser, short_help: str | None) -> dict[str
 
 def build_capabilities(
     parser: argparse.ArgumentParser | None = None,
+    *,
+    include_plugins: bool = False,
 ) -> dict[str, Any]:
     """Walk the parser tree and return a JSON-ready capability map.
 
@@ -106,6 +114,13 @@ def build_capabilities(
         instance — this is the common path; tests pass a custom parser
         when they want to verify the walker independent of the live
         dispatcher tree.
+    include_plugins:
+        When False (the default), only the m-cli built-in subcommands
+        appear in the output. The ``dist/commands.json`` drift gate
+        relies on this — otherwise a contributor with extra plugins
+        installed would commit a different manifest than CI regenerates.
+        Set True to introspect everything in the parser, plugins
+        included (useful for ``m doctor`` or ad-hoc inspection).
     """
     if parser is None:
         # Local import to avoid a circular import at module load.
@@ -115,8 +130,15 @@ def build_capabilities(
     subaction = _find_subparsers_action(parser)
     subcommands: dict[str, Any] = {}
     if subaction is not None:
+        builtins = parser.get_default("_m_cli_builtins")
         short_helps = {a.dest: a.help for a in subaction._choices_actions}
         for name in sorted(subaction.choices.keys()):
+            if (
+                not include_plugins
+                and builtins is not None
+                and name not in builtins
+            ):
+                continue
             subcommands[name] = _entry_for(subaction.choices[name], short_helps.get(name))
     return {"version": __version__, "subcommands": subcommands}
 

@@ -164,6 +164,48 @@ def test_plugin_dispatcher_args_are_excluded():
             )
 
 
+def test_plugin_contributed_subcommands_are_excluded_by_default():
+    """Plugin subcommands (registered via the m_cli.plugins entry-point
+    group) must NOT appear in dist/commands.json — the manifest
+    describes m-cli's canonical surface, not whatever plugins happen
+    to be installed on the contributor's machine. Otherwise CI's
+    `make check-manifest` would drift on every plugin install."""
+    import argparse
+
+    parser = argparse.ArgumentParser(prog="m")
+    sub = parser.add_subparsers(dest="command")
+    builtin = sub.add_parser("fmt", help="Format M source files")
+    builtin.add_argument("paths", nargs="*")
+    plugin = sub.add_parser("corpus-stats", help="Walk an M corpus")
+    plugin.add_argument("corpus")
+    parser.set_defaults(_m_cli_builtins=frozenset({"fmt"}))
+
+    caps = build_capabilities(parser=parser)
+    assert "fmt" in caps["subcommands"]
+    assert "corpus-stats" not in caps["subcommands"], (
+        "plugin-contributed subparsers leaked into the capabilities map"
+    )
+
+    # The escape hatch still surfaces them.
+    full = build_capabilities(parser=parser, include_plugins=True)
+    assert "corpus-stats" in full["subcommands"]
+
+
+def test_options_omit_required_field():
+    """The `required` field is intentionally absent — argparse derives
+    it for positionals from `nargs` in a way that varies across CPython
+    3.12.x patch releases. Including it produced spurious manifest
+    drift between local Python and CI Python."""
+    caps = build_capabilities()
+    for entry in caps["subcommands"].values():
+        for opt in entry["options"]:
+            assert "required" not in opt, (
+                f"`required` leaked back into option {opt['name']!r} — "
+                f"its value is patch-version-dependent and breaks the "
+                f"manifest drift gate"
+            )
+
+
 @pytest.mark.parametrize("name", ["fmt", "lint", "test", "coverage", "lsp", "doctor", "new"])
 def test_required_subcommand_purpose_is_helpful(name):
     """Every core subcommand has a non-trivial `purpose` (>= 10 chars)."""

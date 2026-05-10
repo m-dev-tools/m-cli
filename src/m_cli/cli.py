@@ -894,8 +894,16 @@ def build_parser() -> argparse.ArgumentParser:
     _builtins = set(subparsers.choices)
     _registered, _conflicts = register_plugins(subparsers, builtins=_builtins)
     # Stash the discovery result on the parser defaults so the
-    # `m plugins` handler can read them without rediscovering.
-    parser.set_defaults(_plugin_registered=_registered, _plugin_conflicts=_conflicts)
+    # `m plugins` handler can read them without rediscovering. Also stash
+    # the built-in name set so `m capabilities` can filter out
+    # plugin-contributed subparsers — dist/commands.json must describe
+    # m-cli's canonical surface, not whatever happens to be installed
+    # on the contributor's machine.
+    parser.set_defaults(
+        _plugin_registered=_registered,
+        _plugin_conflicts=_conflicts,
+        _m_cli_builtins=frozenset(_builtins),
+    )
 
     return parser
 
