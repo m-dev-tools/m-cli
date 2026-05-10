@@ -46,3 +46,13 @@ jobs:
 
       - name: Test with coverage
         run: uv run pytest --cov --cov-report=term-missing
+
+      - name: Manifest drift gate (Phase 0 / Track D)
+        # Regenerates dist/commands.json, dist/lint-rules.json,
+        # dist/fmt-rules.json from the live argparse / Rule / FmtRule
+        # registries and asserts the working tree is unchanged. If a
+        # contributor adds a subcommand or a rule but forgets to
+        # `make manifest`, this step fails the build. Invokes the
+        # Makefile directly — its targets call `.venv/bin/m`, which
+        # `uv sync --frozen` populated above.
+        run: make check-manifest

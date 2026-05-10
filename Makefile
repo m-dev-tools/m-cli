@@ -1,11 +1,20 @@
-.PHONY: install test test-lf watch lint format mypy cov check lint-modern lint-modern-baseline lint-modern-setup push pull hooks seed unseed test-vista engine-up engine-down engine-status
+.PHONY: install test test-lf watch lint format mypy cov check lint-modern lint-modern-baseline lint-modern-setup push pull hooks seed unseed test-vista engine-up engine-down engine-status manifest check-manifest
 
 PYTHON := .venv/bin/python
 PYTEST := .venv/bin/pytest
 PTW    := .venv/bin/ptw
 RUFF   := .venv/bin/ruff
 MYPY   := .venv/bin/mypy
+M      := .venv/bin/m
 PRECOMMIT := .venv/bin/pre-commit
+
+# Sources that drive each generated dist artifact. The capabilities tree
+# is built from every `cli.py` under src/m_cli/ (one per subcommand
+# package, plus the dispatcher itself), so any change there should
+# regenerate dist/commands.json.
+CLI_SOURCES := $(shell find src/m_cli -name cli.py -type f) src/m_cli/cli.py
+LINT_SOURCES := $(shell find src/m_cli/lint -name '*.py' -type f) src/m_cli/lint/list_rules.py
+FMT_SOURCES  := $(shell find src/m_cli/fmt  -name '*.py' -type f)
 
 # Default corpus for whole-corpus validation gates (round-trip, canonical,
 # lint). Override per-invocation: `make vista CORPUS=/path/to/other/corpus`,
@@ -78,6 +87,36 @@ lint-modern-setup:
 	bash scripts/setup_modern_corpus.sh
 
 check: lint mypy cov
+
+# ── Tier-1 manifest artifacts (Phase 0 / Track D) ────────────────────
+#
+# `make manifest` regenerates every machine-readable view exposed by
+# dist/repo.meta.json. Each artifact is derived from a live registry —
+# capabilities from the argparse parser tree, lint-rules / fmt-rules
+# from the in-process Rule / FmtRule registries — so there is nothing
+# to hand-curate.
+#
+# `make check-manifest` is the drift gate: it regenerates everything
+# and asserts the working tree is clean. CI runs this on every push.
+
+dist/commands.json: $(CLI_SOURCES)
+	@mkdir -p dist
+	$(M) capabilities --json > $@
+
+dist/lint-rules.json: $(LINT_SOURCES)
+	@mkdir -p dist
+	$(M) lint --list-rules --json > $@
+
+dist/fmt-rules.json: $(FMT_SOURCES)
+	@mkdir -p dist
+	$(M) fmt --list-rules --json > $@
+
+manifest: dist/commands.json dist/lint-rules.json dist/fmt-rules.json
+
+check-manifest: manifest
+	git diff --exit-code dist/
+
+
 
 pull:
 	git pull origin main

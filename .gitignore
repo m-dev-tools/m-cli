@@ -6,7 +6,14 @@ __pycache__/
 .env
 !.env.example
 *.log
-/dist/
+# Ignore generated dist/ contents broadly, but keep the tier-1
+# AI-discoverability manifest + its derived JSON artifacts under
+# version control (they are the contract surface for repo.meta.json).
+/dist/*
+!/dist/repo.meta.json
+!/dist/commands.json
+!/dist/lint-rules.json
+!/dist/fmt-rules.json
 /build/
 *.egg-info/
 .mypy_cache/

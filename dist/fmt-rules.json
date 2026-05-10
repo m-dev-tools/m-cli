@@ -1,0 +1,117 @@
+[
+  {
+    "id": "compact-command-keywords",
+    "title": "Compact command keywords to abbreviations (SET \u2192 S)",
+    "description": "Rewrites every canonical command keyword to its standard single- or double-letter abbreviation (SET \u2192 S, WRITE \u2192 W, QUIT \u2192 Q, \u2026). Case-preserving. Inverse of expand-command-keywords. Used by the `compact` preset.",
+    "presets": [
+      "compact",
+      "sac"
+    ]
+  },
+  {
+    "id": "compact-intrinsic-functions",
+    "title": "Compact intrinsic functions to abbreviations ($LENGTH \u2192 $L)",
+    "description": "Rewrites every canonical intrinsic-function keyword to its abbreviation ($LENGTH \u2192 $L, $EXTRACT \u2192 $E, $ZDATE \u2192 $ZD, \u2026). Case-preserving. Inverse of expand-intrinsic-functions.",
+    "presets": [
+      "compact",
+      "sac"
+    ]
+  },
+  {
+    "id": "compact-special-variables",
+    "title": "Compact special variables to abbreviations ($TEST \u2192 $T)",
+    "description": "Rewrites every canonical intrinsic special-variable keyword to its abbreviation ($TEST \u2192 $T, $HOROLOG \u2192 $H, $JOB \u2192 $J, $ZHOROLOG \u2192 $ZH, \u2026). Case-preserving. Inverse of expand-special-variables.",
+    "presets": [
+      "compact",
+      "sac"
+    ]
+  },
+  {
+    "id": "expand-command-keywords",
+    "title": "Expand abbreviated command keywords (S \u2192 SET)",
+    "description": "Rewrites every abbreviated command keyword to its canonical name (S \u2192 SET, W \u2192 WRITE, Q \u2192 QUIT, \u2026). Case-preserving. Inverse of compact-command-keywords. Used by the `pythonic` preset for translating VistA-style compact code.",
+    "presets": [
+      "pythonic",
+      "pythonic-lower"
+    ]
+  },
+  {
+    "id": "expand-intrinsic-functions",
+    "title": "Expand abbreviated intrinsic functions ($L \u2192 $LENGTH)",
+    "description": "Rewrites every abbreviated intrinsic-function keyword to its canonical form ($L \u2192 $LENGTH, $E \u2192 $EXTRACT, $ZD \u2192 $ZDATE, \u2026). Case-preserving. Inverse of compact-intrinsic-functions. Auto-fix companion to lint M-MOD-035.",
+    "presets": [
+      "pythonic",
+      "pythonic-lower"
+    ]
+  },
+  {
+    "id": "expand-special-variables",
+    "title": "Expand abbreviated special variables ($T \u2192 $TEST)",
+    "description": "Rewrites every abbreviated intrinsic special-variable keyword to its canonical form ($T \u2192 $TEST, $H \u2192 $HOROLOG, $J \u2192 $JOB, $ZH \u2192 $ZHOROLOG, \u2026). Case-preserving. Inverse of compact-special-variables.",
+    "presets": [
+      "pythonic",
+      "pythonic-lower"
+    ]
+  },
+  {
+    "id": "lowercase-command-keywords",
+    "title": "Lowercase command keywords (PEP-8 style)",
+    "description": "Rewrites every command keyword (SET, NEW, QUIT, \u2026) and its abbreviations to lower-case ASCII. Inverse of uppercase-command-keywords. Used by the `pythonic-lower` preset for Python-influenced projects.",
+    "presets": [
+      "pythonic-lower"
+    ]
+  },
+  {
+    "id": "lowercase-intrinsic-functions",
+    "title": "Lowercase intrinsic functions ($LENGTH \u2192 $length)",
+    "description": "Rewrites every intrinsic-function keyword ($LENGTH, $EXTRACT, $ZDATE, \u2026) and its abbreviations to lower-case ASCII. Used by the `pythonic-lower` preset.",
+    "presets": [
+      "pythonic-lower"
+    ]
+  },
+  {
+    "id": "lowercase-special-variables",
+    "title": "Lowercase special variables ($TEST \u2192 $test)",
+    "description": "Rewrites every intrinsic special-variable keyword ($TEST, $HOROLOG, $JOB, \u2026) and its abbreviations to lower-case ASCII. Used by the `pythonic-lower` preset.",
+    "presets": [
+      "pythonic-lower"
+    ]
+  },
+  {
+    "id": "trim-trailing-whitespace",
+    "title": "Strip trailing whitespace from every line",
+    "description": "Removes spaces and tabs at the end of each line, preserving line terminators. Auto-fixes lint M-XINDX-013.",
+    "presets": [
+      "canonical",
+      "compact",
+      "pythonic",
+      "pythonic-lower",
+      "sac"
+    ]
+  },
+  {
+    "id": "uppercase-command-keywords",
+    "title": "Uppercase command keywords (SAC \u00a73.3)",
+    "description": "Rewrites every command keyword (NEW, SET, QUIT, \u2026) and its abbreviations to upper-case ASCII. Auto-fixes lint M-XINDX-047.",
+    "presets": [
+      "canonical",
+      "sac"
+    ]
+  },
+  {
+    "id": "uppercase-intrinsic-functions",
+    "title": "Uppercase intrinsic functions ($length \u2192 $LENGTH)",
+    "description": "Rewrites every intrinsic-function keyword ($length, $extract, $zdate, \u2026) and its abbreviations to upper-case ASCII. Mirror of lowercase-intrinsic-functions. Used by the `sac` preset.",
+    "presets": [
+      "sac"
+    ]
+  },
+  {
+    "id": "uppercase-special-variables",
+    "title": "Uppercase special variables ($test \u2192 $TEST)",
+    "description": "Rewrites every intrinsic special-variable keyword ($test, $horolog, $job, \u2026) and its abbreviations to upper-case ASCII. Mirror of lowercase-special-variables. Used by the `sac` preset.",
+    "presets": [
+      "sac"
+    ]
+  }
+]
