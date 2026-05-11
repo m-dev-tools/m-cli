@@ -150,16 +150,17 @@ def test_junit_output_uses_error_element_for_timeout(
 # ---------------------------------------------------------------------------
 
 
-def test_no_paths_and_no_routines_tests_returns_2(
+def test_no_paths_and_no_routines_tests_returns_0(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture,
 ) -> None:
+    # Nothing-to-do is success, not failure (CLI-UX guide §3.2).
     monkeypatch.chdir(tmp_path)
     rc = main(["test"])
-    assert rc == 2
-    err = capsys.readouterr().err
-    assert "no paths" in err.lower() or "no test suites" in err.lower()
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "no suites" in out.lower()
 
 
 def test_selector_with_missing_file(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:

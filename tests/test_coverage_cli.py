@@ -49,17 +49,18 @@ def _patch_runner(monkeypatch: pytest.MonkeyPatch, stdout: str = "", rc: int = 0
     monkeypatch.setattr("m_cli.coverage.runner._default_runner", fake)
 
 
-def test_cli_returns_2_when_no_routines(tmp_path: Path) -> None:
+def test_cli_returns_0_when_no_routines(tmp_path: Path) -> None:
+    # Nothing-to-do is success, not failure (CLI-UX guide §3.2).
     args = _make_args(paths=[tmp_path])
     rc = coverage_command(args)
-    assert rc == 2
+    assert rc == 0
 
 
-def test_cli_returns_2_when_no_suites(tmp_path: Path) -> None:
-    """A routine but no suites → can't run coverage."""
+def test_cli_returns_0_when_no_suites(tmp_path: Path) -> None:
+    """A routine but no suites → nothing to cover, exit 0."""
     (tmp_path / "HELLO.m").write_bytes(b"HELLO ;c\n QUIT\nGREET ;c\n QUIT\n")
     rc = coverage_command(_make_args(paths=[tmp_path]))
-    assert rc == 2
+    assert rc == 0
 
 
 def test_cli_runs_with_full_coverage(

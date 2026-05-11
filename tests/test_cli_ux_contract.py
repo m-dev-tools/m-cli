@@ -283,3 +283,52 @@ class TestDomainFailuresExit1:
         )
         assert r.returncode == 1, (r.stdout, r.stderr)
         assert "ydb" in r.stderr.lower(), r.stderr
+
+
+# ────────────────────────────────────────────────────────────────────────
+# PR 5 — cwd default for fmt/lint/coverage; nothing-to-do exits 0 for
+# test/watch (and the no-files-in-cwd fallback for fmt/lint/coverage)
+# ────────────────────────────────────────────────────────────────────────
+
+
+class TestCwdDefaultsAndNothingToDo:
+    """§3.2 — leaves with a sensible default should run it; "nothing to
+    do" is success, not failure."""
+
+    @pytest.mark.parametrize("cmd", ["fmt", "lint", "coverage"])
+    def test_bare_in_empty_dir_exits_0_with_message(
+        self, cmd: str, tmp_path: Path
+    ) -> None:
+        """Bare invocation in a directory with no .m files: cwd is the
+        default scope, finds nothing, exits 0 with a stdout message — no
+        more confusing exit-2 'no .m files found' error."""
+        r = run(cmd, cwd=str(tmp_path))
+        assert r.returncode == 0, (cmd, r.stdout, r.stderr)
+        # Message goes to stdout (it's a success), not stderr.
+        assert r.stdout, (cmd, r.stdout, r.stderr)
+
+    @pytest.mark.parametrize("cmd", ["fmt", "lint"])
+    def test_bare_in_cwd_with_m_files_processes_them(
+        self, cmd: str, tmp_path: Path
+    ) -> None:
+        """Cwd-default should actually find .m files in cwd."""
+        (tmp_path / "FOO.m").write_text("FOO ; hello\n  QUIT\n")
+        r = run(cmd, cwd=str(tmp_path))
+        # Either 0 (success) or 1 (e.g. lint diagnostics) — but NOT 2
+        # ("no .m files found" usage error).
+        assert r.returncode in (0, 1), (cmd, r.stdout, r.stderr)
+
+    @pytest.mark.parametrize("cmd", ["test", "watch"])
+    def test_no_suites_discoverable_exits_0(
+        self, cmd: str, tmp_path: Path
+    ) -> None:
+        """`m test` / `m watch` in an empty dir: nothing to test is not
+        a failure — exit 0 with a stdout note."""
+        extra: list[str] = ["--once"] if cmd == "watch" else []
+        r = run(cmd, *extra, cwd=str(tmp_path))
+        assert r.returncode == 0, (cmd, r.stdout, r.stderr)
+        assert r.stdout, (cmd, r.stdout, r.stderr)
+        assert "no" in r.stdout.lower() and "suite" in r.stdout.lower(), (
+            cmd,
+            r.stdout,
+        )

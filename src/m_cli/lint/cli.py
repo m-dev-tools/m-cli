@@ -49,8 +49,9 @@ def lint_command(args: argparse.Namespace) -> int:
 
     files = _collect_files(args.paths)
     if not files:
-        print("m lint: no .m files found", file=sys.stderr)
-        return 2
+        # Nothing to lint is success, not failure (CLI-UX guide §3.2).
+        print("m lint: no .m files found", file=sys.stdout)
+        return 0
 
     try:
         config = load_config(Path.cwd())

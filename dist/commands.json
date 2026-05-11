@@ -200,8 +200,10 @@
       "options": [
         {
           "name": "paths",
-          "help": "One or more .m files (or directories \u2014 searched recursively for *.m). Optional only when paired with --list-rules.",
-          "default": null,
+          "help": "One or more .m files (or directories \u2014 searched recursively for *.m). Default: current directory.",
+          "default": [
+            "."
+          ],
           "choices": null
         },
         {
@@ -254,8 +256,10 @@
       "options": [
         {
           "name": "paths",
-          "help": "One or more .m files (or directories \u2014 searched recursively for *.m)",
-          "default": null,
+          "help": "One or more .m files (or directories \u2014 searched recursively for *.m). Default: current directory.",
+          "default": [
+            "."
+          ],
           "choices": null
         },
         {

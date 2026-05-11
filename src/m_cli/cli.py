@@ -66,9 +66,10 @@ def build_parser() -> argparse.ArgumentParser:
         "paths",
         nargs="*",
         type=Path,
+        default=[Path(".")],
         help=(
             "One or more .m files (or directories — searched recursively "
-            "for *.m). Optional only when paired with --list-rules."
+            "for *.m). Default: current directory."
         ),
     )
     fmt_parser.add_argument(
@@ -150,7 +151,11 @@ def build_parser() -> argparse.ArgumentParser:
         "paths",
         nargs="*",
         type=Path,
-        help="One or more .m files (or directories — searched recursively for *.m)",
+        default=[Path(".")],
+        help=(
+            "One or more .m files (or directories — searched recursively "
+            "for *.m). Default: current directory."
+        ),
     )
     lint_parser.add_argument(
         "--rules",

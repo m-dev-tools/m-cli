@@ -30,8 +30,10 @@ def fmt_command(args: argparse.Namespace) -> int:
 
     files = _collect_files(args.paths)
     if not files:
-        print("m fmt: no .m files found", file=sys.stderr)
-        return 2
+        # Nothing to fmt is success, not failure (CLI-UX guide §3.2).
+        # Bare `m fmt` in an empty cwd should not error.
+        print("m fmt: no .m files found", file=sys.stdout)
+        return 0
 
     if args.stdout and len(files) > 1:
         print("m fmt: --stdout requires exactly one file", file=sys.stderr)

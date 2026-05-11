@@ -66,11 +66,12 @@ def test_once_returns_1_when_initial_run_fails(
     assert rc == 1
 
 
-def test_no_suites_returns_2(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+def test_no_suites_returns_0(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+    # Nothing-to-do is success, not failure (CLI-UX guide §3.2).
     rc = main(["watch", "--once", str(tmp_path)])
-    assert rc == 2
-    err = capsys.readouterr().err
-    assert "no test suites" in err.lower()
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "no suites" in out.lower()
 
 
 def test_filter_limits_initial_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

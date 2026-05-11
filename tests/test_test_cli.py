@@ -49,11 +49,12 @@ def test_list_mode_prints_discovered_tests(tmp_path: Path, capsys: pytest.Captur
     assert "tGreetName" in out
 
 
-def test_list_mode_no_suites_returns_2(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+def test_list_mode_no_suites_returns_0(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+    # Nothing-to-do is success, not failure (CLI-UX guide §3.2).
     rc = main(["test", "--list", str(tmp_path)])
-    assert rc == 2
-    err = capsys.readouterr().err
-    assert "no test suites" in err.lower()
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "no suites" in out.lower()
 
 
 def test_run_with_fake_ydb_pass(

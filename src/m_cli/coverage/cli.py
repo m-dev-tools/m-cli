@@ -29,12 +29,14 @@ def coverage_command(args: argparse.Namespace) -> int:
         return 2
 
     routines, suites = discover_routines_and_suites(paths)
+    # "Nothing to cover" is not a failure (CLI-UX guide §3.2). Same
+    # logic as `m test` / `m watch` — empty world exits 0 to stdout.
     if not routines:
-        print("m coverage: no production .m routines found", file=sys.stderr)
-        return 2
+        print("m coverage: no production .m routines found", file=sys.stdout)
+        return 0
     if not suites:
-        print("m coverage: no *TST.m suites found", file=sys.stderr)
-        return 2
+        print("m coverage: no *TST.m suites found", file=sys.stdout)
+        return 0
 
     suite_filter = None
     if args.suites:

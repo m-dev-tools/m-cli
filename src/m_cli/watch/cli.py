@@ -35,18 +35,16 @@ def watch_command(args: argparse.Namespace) -> int:
     """
     paths = list(args.paths) if args.paths else _default_paths()
     if not paths:
-        print(
-            "m watch: no paths given and no routines/tests/ directory found",
-            file=sys.stderr,
-        )
-        return 2
+        # "Nothing to watch" is not a failure (CLI-UX guide §3.2).
+        print("m watch: no suites found", file=sys.stdout)
+        return 0
 
     suites = discover(paths)
     if args.filter:
         suites = [s for s in suites if args.filter in s.name]
     if not suites:
-        print("m watch: no test suites discovered", file=sys.stderr)
-        return 2
+        print("m watch: no suites found", file=sys.stdout)
+        return 0
 
     initial_results = [run_suite(s) for s in suites]
     write_output(initial_results, fmt=args.format)

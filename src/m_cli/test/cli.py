@@ -39,18 +39,16 @@ def test_command(args: argparse.Namespace) -> int:
         return _run_single_case(single_case_selector, args)
 
     if not paths:
-        print(
-            "m test: no paths given and no routines/tests/ directory found",
-            file=sys.stderr,
-        )
-        return 2
+        # "Nothing to test" is not a failure (CLI-UX guide §3.2).
+        print("m test: no suites found", file=sys.stdout)
+        return 0
 
     suites = discover(paths)
     if args.filter:
         suites = [s for s in suites if args.filter in s.name]
     if not suites:
-        print("m test: no test suites discovered", file=sys.stderr)
-        return 2
+        print("m test: no suites found", file=sys.stdout)
+        return 0
 
     if getattr(args, "changed", False):
         base = getattr(args, "changed_base", None)
