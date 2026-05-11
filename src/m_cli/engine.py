@@ -169,7 +169,23 @@ class LocalEngine:
 # ── DockerEngine — YottaDB in a container (m-test-engine) ─────────────
 
 
-_HOST_SHARED_ROOT = Path("/m-work")
+def _host_shared_root() -> Path:
+    """Host-side shared bind-mount root, expanded at call time.
+
+    Defaults to the manifest's ``bind_mount.host`` (today
+    ``$HOME/m-work`` → ``/home/<user>/m-work``). Falls back to the
+    legacy ``/m-work`` if the manifest can't be loaded — keeps a
+    sensible default in test harnesses that don't ship the manifest.
+
+    Recomputed on each call so tests can monkeypatch ``$HOME`` and see
+    the change reflected without mutating module-level state.
+    """
+    try:
+        from m_cli.engine_manifest import load_engine_manifest
+
+        return Path(load_engine_manifest().bind_mount.host)
+    except Exception:
+        return Path("/m-work")
 
 
 @dataclass(frozen=True)
@@ -225,7 +241,7 @@ class DockerEngine:
         """
         root = project_root(start).resolve()
         try:
-            rel = root.relative_to(_HOST_SHARED_ROOT.resolve())
+            rel = root.relative_to(_host_shared_root().resolve())
             in_container_root = self.bind_root / rel
         except ValueError:
             in_container_root = self.bind_root

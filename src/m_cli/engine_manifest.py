@@ -26,8 +26,23 @@ one, with a clear "upgrade m-cli" hint.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
+
+
+def _expand_host_path(raw: str) -> str:
+    """Expand ``$HOME`` / ``~`` in a manifest host-side path.
+
+    Workspace convention (see ``m-dev-tools/CLAUDE.md`` § 6): host paths
+    declared by m-* repos are rooted in ``$HOME`` (e.g.
+    ``$HOME/m-work``). Consumers expand at runtime so the same vendored
+    contract works across users. Container-side paths stay absolute.
+
+    Plain absolute paths (e.g. ``/m-work``) pass through unchanged so
+    legacy / custom layouts still work.
+    """
+    return os.path.expanduser(os.path.expandvars(raw))
 
 # Protocol versions this build of m-cli can consume. Add to this set
 # when a new protocol revision is adopted; never remove an entry until
@@ -105,7 +120,11 @@ def load_engine_manifest(path: Path | None = None) -> EngineManifest:
         )
 
     bm = data["bind_mount"]
-    bind_mount = BindMount(host=bm["host"], container=bm["container"], mode=bm["mode"])
+    bind_mount = BindMount(
+        host=_expand_host_path(bm["host"]),
+        container=bm["container"],
+        mode=bm["mode"],
+    )
 
     ra = data["run_args"]
     volumes = tuple(Volume(name=v["name"], target=v["target"]) for v in ra["volumes"])

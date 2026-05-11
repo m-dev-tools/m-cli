@@ -5,7 +5,7 @@
   "default_tag": "0.1.0",
   "container": "m-test-engine",
   "bind_mount": {
-    "host": "/m-work",
+    "host": "$HOME/m-work",
     "container": "/m-work",
     "mode": "rw"
   },

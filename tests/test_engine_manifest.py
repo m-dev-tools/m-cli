@@ -81,6 +81,64 @@ def test_manifest_bind_mount_is_typed():
     assert m.bind_mount.mode in ("ro", "rw")
 
 
+def test_manifest_bind_mount_host_expands_home_variable(tmp_path, monkeypatch):
+    # Workspace convention: host paths declared as `$HOME/...` must be
+    # expanded at load time so consumers can feed them directly to
+    # docker -v (docker does not expand env vars in volume specs).
+    monkeypatch.setenv("HOME", "/tmp/fake-home")
+    payload = {
+        "protocol": 1,
+        "image": "x",
+        "default_tag": "y",
+        "container": "z",
+        "bind_mount": {"host": "$HOME/m-work", "container": "/m-work", "mode": "rw"},
+        "compose_file": "compose.yml",
+        "repo_url": "https://example.com",
+        "min_docker": "20.10",
+        "ydb_version": "r2.02",
+        "run_args": {
+            "hostname": "x",
+            "working_dir": "/m-work",
+            "restart": "unless-stopped",
+            "volumes": [],
+            "command": ["sleep", "infinity"],
+        },
+        "verified_on": "2026-05-11",
+    }
+    p = tmp_path / "manifest.json"
+    p.write_text(json.dumps(payload))
+    m = load_engine_manifest(p)
+    assert m.bind_mount.host == "/tmp/fake-home/m-work"
+
+
+def test_manifest_bind_mount_host_passes_absolute_paths_through(tmp_path):
+    # Legacy / custom layouts using a literal absolute path must
+    # continue to work — only `$HOME` / `~` get expanded.
+    payload = {
+        "protocol": 1,
+        "image": "x",
+        "default_tag": "y",
+        "container": "z",
+        "bind_mount": {"host": "/m-work", "container": "/m-work", "mode": "rw"},
+        "compose_file": "compose.yml",
+        "repo_url": "https://example.com",
+        "min_docker": "20.10",
+        "ydb_version": "r2.02",
+        "run_args": {
+            "hostname": "x",
+            "working_dir": "/m-work",
+            "restart": "unless-stopped",
+            "volumes": [],
+            "command": ["sleep", "infinity"],
+        },
+        "verified_on": "2026-05-11",
+    }
+    p = tmp_path / "manifest.json"
+    p.write_text(json.dumps(payload))
+    m = load_engine_manifest(p)
+    assert m.bind_mount.host == "/m-work"
+
+
 def test_manifest_compose_file_relative_to_engine_repo():
     m = load_engine_manifest()
     # Compose file path is repo-relative inside m-test-engine, NOT

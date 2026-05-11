@@ -144,22 +144,32 @@ def test_docker_driver_install_pulls_image_ref(manifest, fake_runner):
     assert pulls[0] == ["docker", "pull", manifest.image_ref()]
 
 
-def test_docker_driver_start_uses_compose_when_plugin_available(manifest, fake_runner):
+def test_docker_driver_start_uses_expanded_host_bind_path(manifest, fake_runner):
+    # The host side of the bind mount in `docker run -v <host>:<container>:<mode>`
+    # must be an absolute, $HOME-expanded path — docker does not expand
+    # env vars in volume specs, and the manifest declares `$HOME/m-work`.
     fake_runner.rule(
-        prefix=["docker", "compose", "version"],
-        result=CommandResult(returncode=0),
+        prefix=["docker", "inspect", "--format"],
+        result=CommandResult(returncode=1, stderr="No such object"),
     )
     drv = DockerDriver(manifest=manifest, runner=fake_runner.runner)
     drv.start()
-    compose_ups = [c for c in fake_runner.calls if c[:3] == ["docker", "compose", "-f"]]
-    assert any("up" in c for c in compose_ups)
+    runs = [c for c in fake_runner.calls if c[:2] == ["docker", "run"]]
+    assert len(runs) == 1
+    run = runs[0]
+    bm = manifest.bind_mount
+    assert "$HOME" not in bm.host
+    assert "~" not in bm.host
+    assert bm.host.startswith("/")
+    assert f"{bm.host}:{bm.container}:{bm.mode}" in run
 
 
-def test_docker_driver_start_falls_back_to_docker_run_when_compose_absent(manifest, fake_runner):
-    # docker compose version → nonzero → fall back
+def test_docker_driver_start_creates_container_when_absent(manifest, fake_runner):
+    # `docker inspect` of a missing container fails → state is None →
+    # driver creates the container via `docker run` from manifest data.
     fake_runner.rule(
-        prefix=["docker", "compose", "version"],
-        result=CommandResult(returncode=1),
+        prefix=["docker", "inspect", "--format"],
+        result=CommandResult(returncode=1, stderr="No such object"),
     )
     drv = DockerDriver(manifest=manifest, runner=fake_runner.runner)
     drv.start()
@@ -180,29 +190,69 @@ def test_docker_driver_start_falls_back_to_docker_run_when_compose_absent(manife
     assert manifest.run_args.working_dir in run
 
 
+def test_docker_driver_start_calls_docker_start_when_container_stopped(manifest, fake_runner):
+    # Container exists but exited → driver issues `docker start` rather
+    # than `docker run` (which would error on name conflict).
+    fake_runner.rule(
+        prefix=["docker", "inspect", "--format"],
+        result=CommandResult(returncode=0, stdout="exited\n"),
+    )
+    drv = DockerDriver(manifest=manifest, runner=fake_runner.runner)
+    rc = drv.start()
+    assert rc == 0
+    starts = [c for c in fake_runner.calls if c[:2] == ["docker", "start"]]
+    assert starts == [["docker", "start", manifest.container]]
+    runs = [c for c in fake_runner.calls if c[:2] == ["docker", "run"]]
+    assert runs == []
+
+
+def test_docker_driver_start_is_noop_when_container_already_running(manifest, fake_runner):
+    fake_runner.rule(
+        prefix=["docker", "inspect", "--format"],
+        result=CommandResult(returncode=0, stdout="running\n"),
+    )
+    drv = DockerDriver(manifest=manifest, runner=fake_runner.runner)
+    rc = drv.start()
+    assert rc == 0
+    # No `docker run` or `docker start` calls — just the inspect probe.
+    assert all(c[:2] not in (["docker", "run"], ["docker", "start"]) for c in fake_runner.calls)
+
+
 # ── stop / restart / reset ───────────────────────────────────────────
 
 
-def test_docker_driver_stop_uses_compose_down_when_available(manifest, fake_runner):
+def test_docker_driver_stop_issues_docker_stop_when_running(manifest, fake_runner):
     fake_runner.rule(
-        prefix=["docker", "compose", "version"],
-        result=CommandResult(returncode=0),
+        prefix=["docker", "inspect", "--format"],
+        result=CommandResult(returncode=0, stdout="running\n"),
     )
     drv = DockerDriver(manifest=manifest, runner=fake_runner.runner)
-    drv.stop()
-    downs = [c for c in fake_runner.calls if c[:3] == ["docker", "compose", "-f"] and "down" in c]
-    assert len(downs) == 1
-
-
-def test_docker_driver_stop_falls_back_to_docker_stop(manifest, fake_runner):
-    fake_runner.rule(
-        prefix=["docker", "compose", "version"],
-        result=CommandResult(returncode=1),
-    )
-    drv = DockerDriver(manifest=manifest, runner=fake_runner.runner)
-    drv.stop()
+    rc = drv.stop()
+    assert rc == 0
     stops = [c for c in fake_runner.calls if c[:2] == ["docker", "stop"]]
-    assert stops and manifest.container in stops[0]
+    assert stops == [["docker", "stop", manifest.container]]
+
+
+def test_docker_driver_stop_is_noop_when_container_absent(manifest, fake_runner):
+    fake_runner.rule(
+        prefix=["docker", "inspect", "--format"],
+        result=CommandResult(returncode=1, stderr="No such object"),
+    )
+    drv = DockerDriver(manifest=manifest, runner=fake_runner.runner)
+    rc = drv.stop()
+    assert rc == 0
+    assert [c for c in fake_runner.calls if c[:2] == ["docker", "stop"]] == []
+
+
+def test_docker_driver_stop_is_noop_when_already_stopped(manifest, fake_runner):
+    fake_runner.rule(
+        prefix=["docker", "inspect", "--format"],
+        result=CommandResult(returncode=0, stdout="exited\n"),
+    )
+    drv = DockerDriver(manifest=manifest, runner=fake_runner.runner)
+    rc = drv.stop()
+    assert rc == 0
+    assert [c for c in fake_runner.calls if c[:2] == ["docker", "stop"]] == []
 
 
 def test_docker_driver_reset_refuses_without_confirm(manifest, fake_runner, capsys):
@@ -214,32 +264,35 @@ def test_docker_driver_reset_refuses_without_confirm(manifest, fake_runner, caps
     assert "--confirm" in out
 
 
-def test_docker_driver_reset_with_confirm_drops_volume_via_compose(manifest, fake_runner):
+def test_docker_driver_reset_with_confirm_stops_removes_and_drops_volumes(manifest, fake_runner):
+    # Container running → stop + rm + per-volume rm.
     fake_runner.rule(
-        prefix=["docker", "compose", "version"],
-        result=CommandResult(returncode=0),
+        prefix=["docker", "inspect", "--format"],
+        result=CommandResult(returncode=0, stdout="running\n"),
     )
     drv = DockerDriver(manifest=manifest, runner=fake_runner.runner)
     rc = drv.reset(confirm=True)
     assert rc == 0
-    downs = [
-        c
-        for c in fake_runner.calls
-        if c[:3] == ["docker", "compose", "-f"] and "down" in c and "-v" in c
-    ]
-    assert len(downs) == 1
-
-
-def test_docker_driver_reset_with_confirm_falls_back_to_volume_rm(manifest, fake_runner):
-    fake_runner.rule(
-        prefix=["docker", "compose", "version"],
-        result=CommandResult(returncode=1),
-    )
-    drv = DockerDriver(manifest=manifest, runner=fake_runner.runner)
-    rc = drv.reset(confirm=True)
-    assert rc == 0
+    stops = [c for c in fake_runner.calls if c[:2] == ["docker", "stop"]]
+    rms = [c for c in fake_runner.calls if c[:2] == ["docker", "rm"]]
     vol_rms = [c for c in fake_runner.calls if c[:3] == ["docker", "volume", "rm"]]
-    # One volume rm per declared named volume
+    assert stops == [["docker", "stop", manifest.container]]
+    assert rms == [["docker", "rm", manifest.container]]
+    assert len(vol_rms) == len(manifest.run_args.volumes)
+
+
+def test_docker_driver_reset_with_confirm_skips_stop_when_container_absent(manifest, fake_runner):
+    # Container doesn't exist → just drop the named volumes.
+    fake_runner.rule(
+        prefix=["docker", "inspect", "--format"],
+        result=CommandResult(returncode=1, stderr="No such object"),
+    )
+    drv = DockerDriver(manifest=manifest, runner=fake_runner.runner)
+    rc = drv.reset(confirm=True)
+    assert rc == 0
+    assert [c for c in fake_runner.calls if c[:2] == ["docker", "stop"]] == []
+    assert [c for c in fake_runner.calls if c[:2] == ["docker", "rm"]] == []
+    vol_rms = [c for c in fake_runner.calls if c[:3] == ["docker", "volume", "rm"]]
     assert len(vol_rms) == len(manifest.run_args.volumes)
 
 

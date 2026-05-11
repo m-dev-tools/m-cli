@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 
 import pytest
 
@@ -125,6 +126,55 @@ def test_check_ydb_routines_unset_is_warn(monkeypatch):
 
 def test_check_ydb_routines_set_is_ok(monkeypatch):
     monkeypatch.setenv("ydb_routines", ".")
+    c = check_ydb_routines()
+    assert c.status is Status.OK
+
+
+def test_check_ydb_routines_missing_path_is_warn(monkeypatch, tmp_path):
+    """A path that doesn't exist on disk must not pass silently —
+    otherwise `ydb_routines` flips OK while `ydb_dist` flips FAIL for
+    the same nonexistent directory, contradicting itself.
+
+    The hint must be concrete (cite the bad value and the env var) and
+    a `Fix` must be attached so `m doctor --fix` surfaces a recipe."""
+    missing = tmp_path / "no-such-dir"
+    monkeypatch.setenv("ydb_routines", str(missing))
+    c = check_ydb_routines()
+    assert c.status is Status.WARN
+    assert str(missing) in c.message
+    assert c.hint is not None
+    # Concrete: hint must name the env var and give the exact unset cmd.
+    assert "ydb_routines" in c.hint
+    assert "unset ydb_routines" in c.hint
+    # Auto-fix recipe wired up (printed by `m doctor --fix`).
+    assert c.fix is not None
+    assert c.fix.command == ("unset", "ydb_routines")
+    assert c.fix.engine_verb is None  # not an engine action
+
+
+def test_check_ydb_routines_partial_missing_is_warn(monkeypatch, tmp_path):
+    """Multi-component search path: one missing component → WARN."""
+    real = tmp_path / "real"
+    real.mkdir()
+    missing = tmp_path / "missing"
+    monkeypatch.setenv("ydb_routines", f"{real} {missing}")
+    c = check_ydb_routines()
+    assert c.status is Status.WARN
+    assert str(missing) in c.message
+
+
+def test_check_ydb_routines_wildcard_and_source_grouping_ok(
+    monkeypatch, tmp_path
+):
+    """YDB syntax: trailing `*` (recursive) and `(srcdir)` suffix must
+    not be treated as part of the directory name."""
+    objects = tmp_path / "obj"
+    sources = tmp_path / "src"
+    objects.mkdir()
+    sources.mkdir()
+    monkeypatch.setenv(
+        "ydb_routines", f"{objects}*({sources})"
+    )
     c = check_ydb_routines()
     assert c.status is Status.OK
 
@@ -349,9 +399,10 @@ def test_check_engine_container_warn_with_start_fix_when_stopped(docker_world):
     c = check_engine_container()
     assert c.status is Status.WARN
     assert c.fix is not None
-    # Compose-first per the implementation plan §1.3
-    cmd = " ".join(c.fix.command)
-    assert "compose" in cmd or "docker" in cmd
+    # Drives `m engine start` — m-cli does not invoke docker compose
+    # directly because the upstream compose.yml is dev-facing and
+    # references a different image than the manifest declares.
+    assert c.fix.command == ("m", "engine", "start")
     assert c.fix.destructive is False
 
 
@@ -369,6 +420,22 @@ def test_check_engine_bind_mount_warn_when_missing(docker_world):
     m = load_engine_manifest()
     # Message references the host bind-mount path declared in the manifest
     assert m.bind_mount.host in (c.message or "") or m.bind_mount.host in (c.hint or "")
+
+
+def test_check_engine_bind_mount_under_home_uses_mkdir_no_sudo(docker_world, monkeypatch):
+    # Workspace convention: host paths under $HOME need no sudo. The
+    # fix command should be `mkdir -p`, never `sudo install -d`.
+    from m_cli.engine_manifest import load_engine_manifest
+
+    docker_world.set(path_exists=False)
+    host = load_engine_manifest().bind_mount.host
+    home = os.path.expanduser("~")
+    if not (host == home or host.startswith(home + os.sep)):
+        pytest.skip("manifest host path is not under $HOME in this environment")
+    c = check_engine_bind_mount()
+    assert c.fix is not None
+    assert c.fix.command[0] == "mkdir"
+    assert "sudo" not in c.fix.command
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -394,6 +461,48 @@ def test_run_all_checks_marks_docker_downstream_skipped_when_docker_missing(
         )
         # Skipped reason references the failing prereq
         assert "docker_installed" in (c.message or "")
+
+
+def test_run_all_checks_skips_local_ydb_when_engine_path_operational(
+    docker_world, monkeypatch
+):
+    """Engine container is the canonical runtime. When it's fully
+    operational, the host-side YDB checks ($ydb_dist / $ydb_routines /
+    ydb binary) are not needed — emit SKIPPED instead of WARN/FAIL so
+    the user isn't pestered to install YDB on the host."""
+    # docker_world default: every engine probe returns OK.
+    # Host YDB is broken three ways: stale path, no binary, no $YDB.
+    bad = "/definitely/not/a/real/path"
+    monkeypatch.setenv("ydb_dist", bad)
+    monkeypatch.setenv("ydb_routines", bad)
+    monkeypatch.delenv("YDB", raising=False)
+    monkeypatch.setattr("shutil.which", lambda _: None)
+
+    checks = run_all_checks()
+    by_name = {c.name: c for c in checks}
+
+    for name in ("ydb_dist", "ydb_routines", "ydb_binary"):
+        c = by_name[name]
+        assert c.status is Status.SKIPPED, (
+            f"{name} should be SKIPPED when engine is operational, got {c.status}"
+        )
+        # Reason must explain why — engine container provides YDB.
+        assert "engine" in c.message.lower()
+
+
+def test_run_all_checks_keeps_local_ydb_warnings_when_engine_container_down(
+    docker_world, monkeypatch
+):
+    """Engine container down → host-YDB checks remain the fallback
+    runtime signal and must still surface their problems."""
+    docker_world.set(docker_container_running=False)
+    monkeypatch.setenv("ydb_dist", "/definitely/not/a/real/path")
+    monkeypatch.delenv("YDB", raising=False)
+
+    checks = run_all_checks()
+    by_name = {c.name: c for c in checks}
+
+    assert by_name["ydb_dist"].status is Status.FAIL
 
 
 def test_run_all_checks_marks_engine_chain_skipped_when_daemon_down(docker_world):

@@ -223,8 +223,30 @@ class DockerDriver:
         )
         return result.ok and self.manifest.container in result.stdout.split()
 
-    def _has_compose_plugin(self) -> bool:
-        return self.runner(["docker", "compose", "version"], capture=True, timeout=5).ok
+    def _container_state(self) -> str | None:
+        """Return the canonical container's state, or ``None`` if absent.
+
+        Common values: ``running``, ``exited``, ``created``. Drives the
+        idempotency in :meth:`start` / :meth:`stop` / :meth:`reset`:
+        ``docker run`` fails when a container with the same name already
+        exists, so the lifecycle verbs branch on state rather than
+        assuming a clean slate.
+        """
+        result = self.runner(
+            [
+                "docker",
+                "inspect",
+                "--format",
+                "{{.State.Status}}",
+                self.manifest.container,
+            ],
+            capture=True,
+            timeout=5,
+        )
+        if not result.ok:
+            return None
+        state = result.stdout.strip()
+        return state or None
 
     def _image_labels(self) -> dict[str, str]:
         """Read OCI labels from the pulled image. Empty dict if not present."""
@@ -378,26 +400,15 @@ class DockerDriver:
         )
         return result.returncode
 
-    def _start_via_compose(self) -> int:
-        result = self.runner(
-            [
-                "docker",
-                "compose",
-                "-f",
-                self.manifest.compose_file,
-                "up",
-                "-d",
-            ],
-            capture=False,
-        )
-        return result.returncode
+    def _docker_run(self) -> int:
+        """Create + start the canonical container from manifest data.
 
-    def _start_via_run(self) -> int:
-        """Fallback when the compose plugin is unavailable.
-
-        Constructs an equivalent ``docker run`` from the manifest's
-        ``run_args`` block + ``bind_mount``. Functionally equivalent to
-        compose for the single-service m-test-engine case.
+        Constructs ``docker run`` from the manifest's ``run_args`` block
+        + ``bind_mount``. The manifest is the single source of truth for
+        image, container, volumes, and command — m-cli never reads the
+        upstream m-test-engine compose.yml, which would require the
+        repo to be checked out at a known location AND references a
+        different image (``m-test-engine:latest``) than the manifest.
         """
         bm = self.manifest.bind_mount
         ra = self.manifest.run_args
@@ -424,25 +435,27 @@ class DockerDriver:
         return result.returncode
 
     def start(self) -> int:
-        """Start the engine container; compose-first, ``docker run`` fallback."""
-        if self._has_compose_plugin():
-            return self._start_via_compose()
-        return self._start_via_run()
-
-    def stop(self) -> int:
-        """Stop the engine container. Globals volume preserved."""
-        if self._has_compose_plugin():
+        """Start the engine container — idempotent across container states."""
+        state = self._container_state()
+        if state == "running":
+            print(f"container `{self.manifest.container}` already running")
+            return 0
+        if state is not None:
             result = self.runner(
-                [
-                    "docker",
-                    "compose",
-                    "-f",
-                    self.manifest.compose_file,
-                    "down",
-                ],
+                ["docker", "start", self.manifest.container],
                 capture=False,
             )
             return result.returncode
+        return self._docker_run()
+
+    def stop(self) -> int:
+        """Stop the engine container. Globals volume preserved.
+
+        Idempotent: no-op if the container is absent or already stopped.
+        """
+        state = self._container_state()
+        if state is None or state != "running":
+            return 0
         result = self.runner(
             ["docker", "stop", self.manifest.container],
             capture=False,
@@ -588,22 +601,11 @@ class DockerDriver:
                 flush=True,
             )
             return 2
-        if self._has_compose_plugin():
-            result = self.runner(
-                [
-                    "docker",
-                    "compose",
-                    "-f",
-                    self.manifest.compose_file,
-                    "down",
-                    "-v",
-                ],
-                capture=False,
-            )
-            return result.returncode
-        # docker run fallback: stop + rm + volume rm
-        self.runner(["docker", "stop", self.manifest.container], capture=False)
-        self.runner(["docker", "rm", self.manifest.container], capture=False)
+        state = self._container_state()
+        if state == "running":
+            self.runner(["docker", "stop", self.manifest.container], capture=False)
+        if state is not None:
+            self.runner(["docker", "rm", self.manifest.container], capture=False)
         for vol in self.manifest.run_args.volumes:
             self.runner(["docker", "volume", "rm", vol.name], capture=False)
         return 0

@@ -116,8 +116,51 @@ def check_ydb_dist() -> Check:
     return Check(name="ydb_dist", status=Status.OK, message=val)
 
 
+def _parse_ydb_routines(value: str) -> list[Path]:
+    """Yield each path referenced by ``$ydb_routines``.
+
+    YDB syntax: whitespace-separated components, each `path`, `path*`
+    (recursive), or `path(srcdir1 srcdir2)` (object dir with source dirs
+    in parens). The ``*`` and ``(...)`` suffixes are syntax, not part of
+    the directory name; whitespace inside parens does not split the
+    enclosing component.
+    """
+    components: list[str] = []
+    buf: list[str] = []
+    depth = 0
+    for ch in value:
+        if ch == "(":
+            depth += 1
+            buf.append(ch)
+        elif ch == ")":
+            depth = max(0, depth - 1)
+            buf.append(ch)
+        elif ch.isspace() and depth == 0:
+            if buf:
+                components.append("".join(buf))
+                buf = []
+        else:
+            buf.append(ch)
+    if buf:
+        components.append("".join(buf))
+
+    paths: list[Path] = []
+    for comp in components:
+        if "(" in comp and comp.endswith(")"):
+            head, _, tail = comp.partition("(")
+            srcs = tail[:-1].split()
+        else:
+            head, srcs = comp, []
+        head = head.rstrip("*")
+        for raw in (head, *srcs):
+            if not raw:
+                continue
+            paths.append(Path(os.path.expandvars(os.path.expanduser(raw))))
+    return paths
+
+
 def check_ydb_routines() -> Check:
-    """Check ``$ydb_routines`` is set (the routine search path)."""
+    """Check ``$ydb_routines`` is set and every referenced path exists."""
     val = os.environ.get("ydb_routines")
     if not val:
         return Check(
@@ -129,6 +172,23 @@ def check_ydb_routines() -> Check:
                 "typically containing your project's `routines/` and "
                 "`$ydb_dist/libyottadbutil.so`."
             ),
+        )
+    missing = [p for p in _parse_ydb_routines(val) if not p.exists()]
+    if missing:
+        joined = ", ".join(str(p) for p in missing)
+        hint = (
+            f"$ydb_routines={val!r} points at a path that does not exist. "
+            "If you don't have YottaDB installed on this host (the engine "
+            "container ships its own), drop the variable: "
+            "`unset ydb_routines` — and the same for `ydb_dist` if it's "
+            "also stale. Otherwise set it to your real YDB install path."
+        )
+        return Check(
+            name="ydb_routines",
+            status=Status.WARN,
+            message=f"missing path(s): {joined}",
+            hint=hint,
+            fix=Fix(command=("unset", "ydb_routines")),
         )
     return Check(name="ydb_routines", status=Status.OK, message=val)
 
@@ -347,12 +407,10 @@ def check_engine_container() -> Check:
         name="engine_container",
         status=Status.WARN,
         message=f"container `{m.container}` not running",
-        hint=(
-            f"Start it from the m-test-engine checkout: `docker compose -f {m.compose_file} up -d`."
-        ),
+        hint="Start it with `m engine start`.",
         prerequisites=("docker_installed", "docker_daemon"),
         fix=Fix(
-            command=("docker", "compose", "-f", m.compose_file, "up", "-d"),
+            command=("m", "engine", "start"),
             destructive=False,
             engine_verb="start",
         ),
@@ -380,20 +438,29 @@ def check_engine_bind_mount() -> Check:
             status=Status.OK,
             message=f"host {host} exists",
         )
-    return Check(
-        name="engine_bind_mount",
-        status=Status.WARN,
-        message=f"host {host} does not exist",
-        hint=(
+    home = os.path.expanduser("~")
+    under_home = host == home or host.startswith(home + os.sep)
+    if under_home:
+        hint = (
+            f"Create the shared m-* working dir: `mkdir -p {host}` then "
+            f"`cd {host} && git clone <repo>` for each m-* repo you want "
+            "available inside the engine."
+        )
+        fix_cmd: tuple[str, ...] = ("mkdir", "-p", host)
+    else:
+        hint = (
             f"Create the shared m-* working dir: "
             f"`sudo install -d -o $USER -g $USER {host}` then "
             f"`cd {host} && git clone <repo>` for each m-* repo you "
             "want available inside the engine."
-        ),
-        fix=Fix(
-            command=("sudo", "install", "-d", "-o", "$USER", "-g", "$USER", host),
-            destructive=False,
-        ),
+        )
+        fix_cmd = ("sudo", "install", "-d", "-o", "$USER", "-g", "$USER", host)
+    return Check(
+        name="engine_bind_mount",
+        status=Status.WARN,
+        message=f"host {host} does not exist",
+        hint=hint,
+        fix=Fix(command=fix_cmd, destructive=False),
     )
 
 
@@ -413,6 +480,25 @@ _CHECKS: tuple[Callable[[], Check], ...] = (
     check_parser,
     check_keywords,
     check_ydb_binary,
+)
+
+
+# Checks that constitute "the engine path is operational." When every one
+# of these is OK, the host doesn't need a local YDB install at all — the
+# container ships its own — so we suppress the fallback-runtime warnings.
+_ENGINE_PATH_CHECKS: tuple[str, ...] = (
+    "docker_installed",
+    "docker_daemon",
+    "engine_image",
+    "engine_container",
+    "engine_bind_mount",
+)
+
+# Host-side YDB checks that are not needed when the engine path is up.
+_LOCAL_YDB_CHECKS: tuple[str, ...] = (
+    "ydb_dist",
+    "ydb_routines",
+    "ydb_binary",
 )
 
 
@@ -455,4 +541,19 @@ def run_all_checks() -> list[Check]:
             results[provisional.name] = skipped
         else:
             results[provisional.name] = provisional
+
+    engine_ok = all(
+        results.get(n) is not None and results[n].status is Status.OK
+        for n in _ENGINE_PATH_CHECKS
+    )
+    if engine_ok:
+        for name in _LOCAL_YDB_CHECKS:
+            c = results.get(name)
+            if c is not None and c.status is not Status.OK:
+                results[name] = Check(
+                    name=name,
+                    status=Status.SKIPPED,
+                    message="not needed — engine container provides YottaDB",
+                )
+
     return list(results.values())
