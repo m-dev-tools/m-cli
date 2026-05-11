@@ -169,18 +169,29 @@ class LocalEngine:
 # ── DockerEngine — YottaDB in a container (m-test-engine) ─────────────
 
 
+_HOST_SHARED_ROOT = Path("/m-work")
+
+
 @dataclass(frozen=True)
 class DockerEngine:
     """Runs ``mumps`` via ``docker exec`` against a long-running container.
 
     The container is typically ``m-test-engine`` started via
     ``m-dev-tools/m-test-engine``'s compose file. The compose file
-    bind-mounts the consumer project's root as ``/work``, so the
-    in-container path for any project file is ``/work/<rel-path>``.
+    bind-mounts the host's ``/m-work`` directory (containing every
+    participating m-* repo checkout) as ``/m-work`` inside the
+    container. A consumer project at ``/m-work/m-cli/`` on the host is
+    therefore visible at ``/m-work/m-cli/`` inside the container — the
+    mapping is identity once you're under ``/m-work``.
+
+    Consumers whose project root is **not** under host ``/m-work`` fall
+    through to the legacy single-mount path: ``bind_root`` is assumed
+    to be the project root in the container, so the user is responsible
+    for arranging that bind separately (e.g. via M_TEST_ENGINE_BIND).
     """
 
     container: str = "m-test-engine"
-    bind_root: Path = field(default_factory=lambda: Path("/work"))
+    bind_root: Path = field(default_factory=lambda: Path("/m-work"))
 
     def _exec_prefix(self) -> list[str]:
         return ["docker", "exec", self.container]
@@ -205,19 +216,25 @@ class DockerEngine:
         return [*self._exec_prefix(), "bash", "-lc", script]
 
     def stage_routines(self, start: Path) -> str:
-        """Return the in-container path the host project root is bound to.
+        """Return the in-container routine path(s) for the host project.
 
-        Assumes the project root mounts to ``self.bind_root`` (the
-        m-test-engine compose default). Routine dirs under it are
-        space-separated, mirroring LocalEngine semantics.
+        Shared-mount model: when the host project root lives under
+        ``/m-work``, the in-container path is ``self.bind_root /
+        <project-relative-to-/m-work>``. Otherwise falls back to
+        ``self.bind_root`` directly (legacy single-mount).
         """
-        root = project_root(start)
+        root = project_root(start).resolve()
+        try:
+            rel = root.relative_to(_HOST_SHARED_ROOT.resolve())
+            in_container_root = self.bind_root / rel
+        except ValueError:
+            in_container_root = self.bind_root
         dirs = [
-            str(self.bind_root / sub)
+            str(in_container_root / sub)
             for sub in _ROUTINE_DIRS
             if (root / sub).is_dir()
         ]
-        return " ".join(dirs) if dirs else str(self.bind_root)
+        return " ".join(dirs) if dirs else str(in_container_root)
 
 
 # ── SSHEngine — remote YottaDB over SSH (legacy / vista-meta) ─────────

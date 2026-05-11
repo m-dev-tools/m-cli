@@ -159,6 +159,11 @@
       ],
       "examples": []
     },
+    "engine": {
+      "purpose": "Manage the m-test-engine container (install/start/stop/...)",
+      "options": [],
+      "examples": []
+    },
     "errors": {
       "purpose": "List every U-STD* error code and the labels that raise it",
       "options": [

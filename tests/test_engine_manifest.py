@@ -61,6 +61,18 @@ def test_manifest_container_name_matches_existing_DockerEngine_default():
     assert m.container == DockerEngine.container
 
 
+def test_manifest_bind_mount_container_matches_DockerEngine_default():
+    # Same drift gate but for bind_root — manifest's bind_mount.container
+    # must match DockerEngine's default bind_root. Otherwise a fresh
+    # DockerEngine() builds routine paths that don't exist inside the
+    # actual running container.
+    from m_cli.engine import DockerEngine
+
+    m = load_engine_manifest()
+    eng = DockerEngine()
+    assert str(eng.bind_root) == m.bind_mount.container
+
+
 def test_manifest_bind_mount_is_typed():
     m = load_engine_manifest()
     assert isinstance(m.bind_mount, BindMount)
