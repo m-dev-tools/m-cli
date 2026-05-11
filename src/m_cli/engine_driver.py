@@ -109,22 +109,11 @@ class EngineStatus:
     daemon_reachable: bool  # docker info reachable (or n/a)
     image_present: bool  # image is pulled locally
     container_running: bool  # canonical container is up
-    container_healthy: bool | None  # None until Phase 3 healthcheck lands
+    container_healthy: bool | None  # True/False from docker healthcheck; None when no healthcheck
     image_ref: str
     container: str
-    # Phase 3b: OCI labels read from `docker image inspect`. Empty when
-    # no image is pulled. `mismatches` lists classifications of
-    # label-vs-manifest discrepancies; consumers (m doctor, m engine
-    # status) render each as a WARN with an actionable fix.
     image_labels: dict[str, str] = field(default_factory=dict)
     mismatches: tuple[str, ...] = ()
-    # Phase 4b: container-side introspection from `mte status --json`.
-    # Populated only when `--verbose` is set on `m engine status`; None
-    # otherwise. Adds a `runtime_ydb_version_drift` entry to
-    # `mismatches` if the live `release` field disagrees with the
-    # manifest's `ydb_version` declaration (closes followup #14 — the
-    # static LABEL check can't catch upstream-base drift).
-    mte: dict | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -138,7 +127,6 @@ class EngineStatus:
             "container": self.container,
             "image_labels": dict(self.image_labels),
             "mismatches": list(self.mismatches),
-            "mte": self.mte,
         }
 
 
@@ -161,7 +149,7 @@ class EngineDriver(Protocol):
 
     name: str  # e.g. "docker"
 
-    def status(self, *, verbose: bool = False) -> EngineStatus: ...
+    def status(self) -> EngineStatus: ...
     def install(self) -> int: ...
     def start(self) -> int: ...
     def stop(self) -> int: ...
@@ -169,10 +157,8 @@ class EngineDriver(Protocol):
     def logs(self, follow: bool = False) -> int: ...
     def shell(self) -> int: ...
     def exec(self, m_cmd: str) -> int: ...
-    def version(self) -> int: ...
-    def upgrade(self) -> int: ...
+    def version(self, *, as_json: bool = False) -> int: ...
     def reset(self, *, confirm: bool = False) -> int: ...
-    def mte_status(self) -> dict | None: ...
 
 
 # ── DockerDriver — the only built-in driver ─────────────────────────
@@ -321,62 +307,43 @@ class DockerDriver:
 
         return tuple(out)
 
-    def mte_status(self) -> dict | None:
-        """Run ``mte status --json`` inside the container, parse the result.
+    def _container_health(self) -> bool | None:
+        """Read the container's healthcheck status from ``docker inspect``.
 
-        Returns the parsed payload (a dict) on success; ``None`` if the
-        container isn't running, the ``mte`` script is absent, or the
-        output fails to parse. Phase 4 — see m-test-engine
-        ``docker/mte`` for the JSON shape.
+        Returns True for "healthy", False for "unhealthy", None for
+        "starting" / "none" / container missing / docker error.
         """
-        import json as _json
-
         result = self.runner(
-            ["docker", "exec", self.manifest.container, "mte", "status", "--json"],
+            [
+                "docker",
+                "inspect",
+                "--format",
+                "{{.State.Health.Status}}",
+                self.manifest.container,
+            ],
             capture=True,
-            timeout=10,
+            timeout=5,
         )
-        if not result.ok or not result.stdout.strip():
+        if not result.ok:
             return None
-        try:
-            data = _json.loads(result.stdout)
-        except _json.JSONDecodeError:
-            return None
-        if not isinstance(data, dict):
-            return None
-        return data
+        status = result.stdout.strip()
+        if status == "healthy":
+            return True
+        if status == "unhealthy":
+            return False
+        return None
 
     # ── lifecycle verbs ──────────────────────────────────────────────
 
-    def status(self, *, verbose: bool = False) -> EngineStatus:
-        """Snapshot the engine state.
-
-        ``verbose=True`` additionally runs ``mte status --json`` inside
-        the container (Phase 4b) and folds the payload into
-        ``EngineStatus.mte``. Drift between the live ``release`` field
-        and ``manifest.ydb_version`` adds ``runtime_ydb_version_drift``
-        to ``mismatches`` — catches upstream-base drift that the static
-        LABEL check in :meth:`_classify_mismatches` can't see.
-        """
+    def status(self) -> EngineStatus:
+        """Snapshot the engine state."""
         installed = self._docker_available()
         daemon = installed and self._daemon_reachable()
         image = daemon and self._image_present()
         running = daemon and self._container_running()
         labels = self._image_labels() if image else {}
-        mismatches = list(self._classify_mismatches(labels)) if labels else []
-
-        mte: dict | None = None
-        if verbose and running:
-            mte = self.mte_status()
-            if mte is not None:
-                runtime_release = mte.get("release")
-                if (
-                    isinstance(runtime_release, str)
-                    and runtime_release != self.manifest.ydb_version
-                    and "ydb_version_drift" not in mismatches
-                    and "runtime_ydb_version_drift" not in mismatches
-                ):
-                    mismatches.append("runtime_ydb_version_drift")
+        mismatches = self._classify_mismatches(labels) if labels else ()
+        healthy = self._container_health() if running else None
 
         return EngineStatus(
             driver=self.name,
@@ -384,12 +351,11 @@ class DockerDriver:
             daemon_reachable=daemon,
             image_present=image,
             container_running=running,
-            container_healthy=None,  # Phase 4 will source this from HEALTHCHECK
+            container_healthy=healthy,
             image_ref=self.manifest.image_ref(),
             container=self.manifest.container,
             image_labels=labels,
-            mismatches=tuple(mismatches),
-            mte=mte,
+            mismatches=mismatches,
         )
 
     def install(self) -> int:
@@ -463,10 +429,33 @@ class DockerDriver:
         return result.returncode
 
     def restart(self) -> int:
-        rc = self.stop()
-        if rc != 0:
-            return rc
-        return self.start()
+        state = self._container_state()
+        if state == "running":
+            result = self.runner(
+                ["docker", "stop", self.manifest.container],
+                capture=True,
+                timeout=30,
+            )
+            if not result.ok:
+                if result.stderr:
+                    print(result.stderr, end="")
+                return result.returncode
+        if state is not None:
+            result = self.runner(
+                ["docker", "start", self.manifest.container],
+                capture=True,
+                timeout=30,
+            )
+            if not result.ok:
+                if result.stderr:
+                    print(result.stderr, end="")
+                return result.returncode
+        else:
+            rc = self._docker_run()
+            if rc != 0:
+                return rc
+        print(f"restarted {self.manifest.container}")
+        return 0
 
     def logs(self, follow: bool = False) -> int:
         argv = ["docker", "logs"]
@@ -506,86 +495,93 @@ class DockerDriver:
         )
         return result.returncode
 
-    def version(self) -> int:
+    def version(self, *, as_json: bool = False) -> int:
         """Print manifest-declared vs image-reported labels side-by-side.
 
-        Phase 3b.2: each comparable field renders with ✓ (match) or ✗
-        (mismatch), so version-skew between vendored manifest and pulled
-        image is visible at a glance.
+        Text output renders each comparable field with ✓ (match) or ✗
+        (mismatch) so version-skew between vendored manifest and pulled
+        image is visible at a glance. ``as_json=True`` emits the same
+        data as a structured JSON document for tooling.
         """
+        import json as _json
+
         m = self.manifest
         labels = self._image_labels()
 
-        print(f"image:     {m.image_ref()}")
-        print()
-        print("                    manifest          image")
-        print("                    ----------------  ----------------")
-
-        comparisons = (
+        fields = [
             (
                 "protocol",
                 str(m.protocol),
-                labels.get("org.m-dev-tools.m-test-engine.protocol", "—"),
+                labels.get("org.m-dev-tools.m-test-engine.protocol", ""),
             ),
             (
                 "ydb-version",
                 m.ydb_version,
-                labels.get("org.m-dev-tools.m-test-engine.ydb-version", "—"),
+                labels.get("org.m-dev-tools.m-test-engine.ydb-version", ""),
             ),
             (
                 "bind-mount",
                 m.bind_mount.container,
-                labels.get("org.m-dev-tools.m-test-engine.bind-mount", "—"),
+                labels.get("org.m-dev-tools.m-test-engine.bind-mount", ""),
             ),
-        )
-        any_mismatch = False
-        for name, declared, reported in comparisons:
-            # "—" means the image isn't pulled / has no label; not a
-            # mismatch per se, just an absence of data.
-            if reported == "—":
-                mark = "-"
-            elif declared == reported:
-                mark = "✓"
-            else:
-                mark = "✗"
-                any_mismatch = True
-            print(f"  {mark} {name:<16}  {declared:<16}  {reported}")
+        ]
+        image_rev = labels.get("org.m-dev-tools.m-test-engine.image-rev", "")
 
-        # image-rev has no manifest counterpart — show it standalone.
-        image_rev = labels.get("org.m-dev-tools.m-test-engine.image-rev", "—")
-        print(f"    {'image-rev':<16}  {'(none)':<16}  {image_rev}")
-
-        # Container's currently-running image-id (separate from labels).
         result = self.runner(
             ["docker", "inspect", "--format", "{{.Image}}", m.container],
             capture=True,
             timeout=5,
         )
+        running_image_id = result.stdout.strip() if (result.ok and result.stdout.strip()) else None
+
+        any_mismatch = any(
+            reported and declared != reported for _, declared, reported in fields
+        )
+
+        if as_json:
+            payload = {
+                "image_ref": m.image_ref(),
+                "fields": [
+                    {
+                        "name": name,
+                        "manifest": declared,
+                        "image": reported or None,
+                        "match": (declared == reported) if reported else None,
+                    }
+                    for name, declared, reported in fields
+                ],
+                "image_rev": image_rev or None,
+                "container_image_id": running_image_id,
+                "any_mismatch": any_mismatch,
+            }
+            print(_json.dumps(payload, indent=2))
+            return 0
+
+        print(f"image:     {m.image_ref()}")
         print()
-        if result.ok and result.stdout.strip():
-            print(f"container: image-id={result.stdout.strip()}")
+        print("                    manifest          image")
+        print("                    ----------------  ----------------")
+        for name, declared, reported in fields:
+            if not reported:
+                mark = "-"
+                display = "—"
+            elif declared == reported:
+                mark = "✓"
+                display = reported
+            else:
+                mark = "✗"
+                display = reported
+            print(f"  {mark} {name:<16}  {declared:<16}  {display}")
+        print(f"    {'image-rev':<16}  {'(none)':<16}  {image_rev or '—'}")
+        print()
+        if running_image_id:
+            print(f"container: image-id={running_image_id}")
         else:
             print("container: not running")
-
         if any_mismatch:
             print()
-            print("⚠ mismatch detected — run `m engine upgrade` to refresh.")
-
+            print("⚠ mismatch detected — run `m engine install` then recreate the container.")
         return 0
-
-    def upgrade(self) -> int:
-        """Pull latest image and recreate container.
-
-        Equivalent to ``install`` + ``stop`` + ``start``. Globals
-        volume is preserved.
-        """
-        rc = self.install()
-        if rc != 0:
-            return rc
-        rc = self.stop()
-        if rc != 0:
-            return rc
-        return self.start()
 
     def reset(self, *, confirm: bool = False) -> int:
         """Destructive: stop + remove + drop globals volume.
