@@ -1,3 +1,10 @@
+---
+created: 2026-05-09
+last_modified: 2026-05-09
+revisions: 1
+doc_type: [GUIDE, SPEC]
+---
+
 # Plugin development
 
 m-cli's built-in subcommands (`m fmt`, `m lint`, `m test`, `m doc`, …)

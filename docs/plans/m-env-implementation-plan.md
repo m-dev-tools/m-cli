@@ -1,3 +1,10 @@
+---
+created: 2026-05-07
+last_modified: 2026-05-10
+revisions: 4
+doc_type: [PLAN]
+---
+
 # `m-env` Implementation Plan
 
 **Document type:** self-contained implementation guide

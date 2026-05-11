@@ -1,3 +1,10 @@
+---
+created: 2026-04-30
+last_modified: 2026-05-10
+revisions: 4
+doc_type: [STATUS, POSTMORTEM]
+---
+
 # `m lint` — Status & Audit Report
 
 **Date:** 2026-04-30 *(filename was requested as `m-linter-status-2024-04-40.md`; date corrected — 2024 was a typo and `04-40` is not a valid date)*

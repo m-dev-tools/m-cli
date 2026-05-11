@@ -1,3 +1,10 @@
+---
+created: 2026-04-30
+last_modified: 2026-05-10
+revisions: 4
+doc_type: [PLAN, BUILD-LOG]
+---
+
 # M Linting Implementation Plan
 
 **Status:** working plan, derived from [`docs/m-linting-survey.md`](m-linting-survey.md) §7 (greenfield rule list) and §8 (roadmap), informed by [`docs/m-corpus-catalog.md`](m-corpus-catalog.md) for the regression gate.

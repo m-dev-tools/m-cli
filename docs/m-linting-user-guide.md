@@ -1,3 +1,10 @@
+---
+created: 2026-04-30
+last_modified: 2026-05-10
+revisions: 2
+doc_type: [GUIDE]
+---
+
 # m lint — User Guide
 
 The `m lint` command checks `.m` source for engine-neutral logic, style,

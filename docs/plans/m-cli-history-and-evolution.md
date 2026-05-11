@@ -3,6 +3,10 @@ title: m-cli — history and evolution
 status: live (2026-05-06)
 audience: anyone trying to understand how m-cli came to exist, what its precursors were, and where it sits among the M-language tooling sibling projects
 companion: ../README.md (current capability surface)
+created: 2026-05-06
+last_modified: 2026-05-10
+revisions: 3
+doc_type: [HISTORY, EXPLAINER]
 ---
 
 # m-cli — history and evolution

@@ -1,3 +1,10 @@
+---
+created: 2026-05-10
+last_modified: 2026-05-10
+revisions: 1
+doc_type: [HISTORY, EXPLAINER]
+---
+
 # vista-meta bootstrap — and why m-cli is independent of it now
 
 This document records how the `vista-meta` YottaDB container was used during

@@ -1,3 +1,10 @@
+---
+created: 2026-05-07
+last_modified: 2026-05-10
+revisions: 4
+doc_type: [PROPOSAL, DESIGN]
+---
+
 # `m environment` / `m doctor` / `m init` — Engine Environment Strategy
 
 **Document type:** design proposal

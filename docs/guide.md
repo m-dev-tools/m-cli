@@ -1,3 +1,10 @@
+---
+created: 2026-04-27
+last_modified: 2026-05-10
+revisions: 12
+doc_type: [GUIDE, REFERENCE]
+---
+
 # m-cli — Comprehensive Guide
 
 **Document type:** Reference + roadmap

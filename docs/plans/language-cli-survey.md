@@ -1,3 +1,10 @@
+---
+created: 2026-04-30
+last_modified: 2026-05-10
+revisions: 4
+doc_type: [SURVEY, GAP-ANALYSIS]
+---
+
 # Language CLI Survey — Tooling Landscape and `m-cli` Gap Analysis
 
 > **Purpose.** A comprehensive survey of the CLI toolchains shipped by five of the
@@ -5,6 +12,10 @@
 > developer productivity, code quality, and maintainability across the full
 > software development life cycle (SDLC). Closes with a rank-ordered gap analysis
 > for `m-cli` — the canonical CLI for the M (MUMPS) language.
+>
+> **Implementation:** the actionable punch list for Phase 3b/3c (with
+> dependencies, priorities, and exit criteria) lives in
+> [`phase-3-plan.md`](phase-3-plan.md). Phase 3a is shipped.
 >
 > **Scope.** Five languages: **Rust, Go, Python, JavaScript/TypeScript, Java.**
 > Chosen for top consistent rankings (TIOBE / Stack Overflow / GitHub Octoverse

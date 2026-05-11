@@ -1,3 +1,10 @@
+---
+created: 2026-05-06
+last_modified: 2026-05-10
+revisions: 2
+doc_type: [DESIGN, PROPOSAL]
+---
+
 # Linter Profiles Guide
 
 **Status:** design / review artifact. **Drafted 2026-05-06**, rewritten same day after the realization that the right organizing axis for SAC rules is *which gatekeeper enforces them*, not *which era they came from*. This doc proposes splitting today's `sac` profile into four mechanism-grounded profiles and reorganizing tags accordingly.
