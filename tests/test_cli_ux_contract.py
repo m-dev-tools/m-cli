@@ -174,3 +174,56 @@ def test_unknown_subcommand_exits_2_named() -> None:
     assert r.returncode == 2
     assert "__bogus__" in r.stderr
     assert "usage: m" in r.stderr.lower()
+
+
+# ────────────────────────────────────────────────────────────────────────
+# PR 3 — unknown flag at a leaf shows that leaf's usage (not root)
+# ────────────────────────────────────────────────────────────────────────
+
+
+class TestUnknownFlagRoutesToSubparser:
+    """§3.4 — unknown flag → the *node's* error/usage, not root's.
+
+    Before PR 3, 13 of 18 leaves printed root usage when given a bogus
+    flag — argparse's default behavior bubbles unknown args to the top.
+    Two-pass parsing routes them to the resolved subparser instead.
+    """
+
+    @pytest.mark.parametrize(
+        "leaf",
+        [
+            "fmt",
+            "lint",
+            "test",
+            "watch",
+            "coverage",
+            "lsp",
+            "doctor",
+            "build",
+            "doc",
+            "search",
+            "manifest",
+            "examples",
+            "errors",
+            "plugins",
+            "capabilities",
+        ],
+    )
+    def test_leaf_unknown_flag_shows_leaf_usage(self, leaf: str) -> None:
+        r = run(leaf, "--__bogus__")
+        assert r.returncode == 2, (leaf, r.stdout, r.stderr)
+        # Lowercase compare keeps this robust to "Usage:" vs "usage:".
+        stderr_lc = r.stderr.lower()
+        assert f"usage: m {leaf}" in stderr_lc, (leaf, r.stderr)
+        # And NOT the root synopsis (regression guard for the old bug).
+        assert "usage: m [-h]" not in stderr_lc, (leaf, r.stderr)
+
+    def test_root_unknown_flag_still_shows_root_usage(self) -> None:
+        r = run("--__bogus__")
+        assert r.returncode == 2, r.stderr
+        assert "usage: m" in r.stderr.lower()
+
+    def test_nested_ci_init_unknown_flag_shows_init_usage(self) -> None:
+        r = run("ci", "init", "--__bogus__")
+        assert r.returncode == 2, r.stderr
+        assert "usage: m ci init" in r.stderr.lower(), r.stderr

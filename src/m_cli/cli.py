@@ -935,8 +935,44 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args(argv)
+    # Two-pass parsing so unknown flags surface at the *resolved
+    # subparser*'s error() — not bubbled to the root parser. Argparse's
+    # default routing prints root usage for any unknown arg, which is
+    # actively unhelpful when the bogus flag was attached to a leaf (the
+    # user can't read off which leaf rejected what). See CLI-UX guide §3.4.
+    args, unknown = parser.parse_known_args(argv)
+    if unknown:
+        leaf = _resolve_leaf_parser(parser, args)
+        # parser.error() prints usage to stderr and SystemExits with rc=2.
+        leaf.error(f"unrecognized arguments: {' '.join(unknown)}")
     return args.func(args)
+
+
+def _resolve_leaf_parser(
+    parser: argparse.ArgumentParser, args: argparse.Namespace
+) -> argparse.ArgumentParser:
+    """Walk down `parser` following the chain of matched subcommands in
+    `args`, returning the deepest parser the user actually reached.
+
+    For `m fmt …` this returns the `fmt` subparser. For `m ci init …`
+    this walks `m → ci → init`. For bare `m`, it returns the root.
+    """
+    current = parser
+    while True:
+        sub_action = next(
+            (
+                a
+                for a in current._actions
+                if isinstance(a, argparse._SubParsersAction)
+            ),
+            None,
+        )
+        if sub_action is None:
+            return current
+        sub_name = getattr(args, sub_action.dest, None)
+        if not sub_name or sub_name not in sub_action.choices:
+            return current
+        current = sub_action.choices[sub_name]
 
 
 if __name__ == "__main__":
