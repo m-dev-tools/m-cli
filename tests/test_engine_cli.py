@@ -42,9 +42,15 @@ class FakeDriver:
         self.calls.append((name, args, kw))
         return self.rc
 
-    def status(self):
-        self.calls.append(("status", (), {}))
+    def status(self, *, verbose: bool = False):
+        self.calls.append(("status", (), {"verbose": verbose}))
         return self._status
+
+    def mte_status(self):
+        self.calls.append(("mte_status", (), {}))
+        return self._mte_payload
+
+    _mte_payload: dict | None = None
 
     def install(self):
         return self._record("install")
@@ -273,4 +279,127 @@ def test_main_dispatches_engine_status_via_argparse(monkeypatch, capsys):
     finally:
         from m_cli.engine_cli import _default_driver_factory
 
+        set_driver_factory(_default_driver_factory)
+
+
+# ── Phase 4b: --verbose folds mte + watch streams ────────────────────
+
+
+def test_status_verbose_passes_through_to_driver(fake_driver):
+    """--verbose CLI flag propagates to driver.status(verbose=True)."""
+    from m_cli.engine_cli import _cmd_status
+
+    _cmd_status(_ns(json=False, verbose=True))
+    status_calls = [c for c in fake_driver.calls if c[0] == "status"]
+    assert status_calls
+    assert status_calls[-1][2]["verbose"] is True
+
+
+def test_status_default_passes_verbose_false_to_driver(fake_driver):
+    from m_cli.engine_cli import _cmd_status
+
+    _cmd_status(_ns(json=False))
+    status_calls = [c for c in fake_driver.calls if c[0] == "status"]
+    assert status_calls
+    assert status_calls[-1][2]["verbose"] is False
+
+
+def test_status_verbose_text_output_includes_mte_summary(capsys):
+    from m_cli.engine_cli import _cmd_status, _default_driver_factory
+
+    drv = FakeDriver(
+        status_payload=EngineStatus(
+            driver="docker",
+            installed=True,
+            daemon_reachable=True,
+            image_present=True,
+            container_running=True,
+            container_healthy=None,
+            image_ref="x:y",
+            container="m-test-engine",
+            mte={
+                "ok": True,
+                "release": "V7.1-002",
+                "uptime_s": 99,
+                "globals_count": 0,
+                "routines_count": 5,
+                "mounted_repos": ["m-cli"],
+            },
+        )
+    )
+    set_driver_factory(lambda: drv)
+    try:
+        _cmd_status(_ns(json=False, verbose=True))
+        out = capsys.readouterr().out
+        assert "inside container" in out
+        assert "V7.1-002" in out
+        assert "99s" in out
+        assert "m-cli" in out
+    finally:
+        set_driver_factory(_default_driver_factory)
+
+
+def test_status_verbose_json_output_includes_mte_block(capsys):
+    from m_cli.engine_cli import _cmd_status, _default_driver_factory
+
+    drv = FakeDriver(
+        status_payload=EngineStatus(
+            driver="docker",
+            installed=True,
+            daemon_reachable=True,
+            image_present=True,
+            container_running=True,
+            container_healthy=None,
+            image_ref="x:y",
+            container="m-test-engine",
+            mte={"ok": True, "release": "V7.1-002"},
+        )
+    )
+    set_driver_factory(lambda: drv)
+    try:
+        _cmd_status(_ns(json=True, verbose=True))
+        out = capsys.readouterr().out
+        payload = json.loads(out)
+        assert payload["mte"] is not None
+        assert payload["mte"]["release"] == "V7.1-002"
+    finally:
+        set_driver_factory(_default_driver_factory)
+
+
+# ── watch ────────────────────────────────────────────────────────────
+
+
+def test_watch_emits_one_jsonl_per_poll(capsys):
+    from m_cli.engine_cli import _cmd_watch, _default_driver_factory
+
+    drv = FakeDriver()
+    drv._mte_payload = {"ok": True, "release": "V7.1-002", "uptime_s": 1}
+    set_driver_factory(lambda: drv)
+    try:
+        rc = _cmd_watch(_ns(interval=0.001, count=3))
+        out = capsys.readouterr().out
+        lines = [ln for ln in out.splitlines() if ln.strip()]
+        assert rc == 0
+        assert len(lines) == 3
+        for ln in lines:
+            rec = json.loads(ln)
+            assert "ts" in rec
+            assert rec.get("release") == "V7.1-002"
+    finally:
+        set_driver_factory(_default_driver_factory)
+
+
+def test_watch_emits_error_line_when_mte_unavailable(capsys):
+    from m_cli.engine_cli import _cmd_watch, _default_driver_factory
+
+    drv = FakeDriver()
+    drv._mte_payload = None  # mte returned None
+    set_driver_factory(lambda: drv)
+    try:
+        _cmd_watch(_ns(interval=0.001, count=1))
+        out = capsys.readouterr().out
+        rec = json.loads(out.strip())
+        assert "error" in rec
+        assert "ts" in rec
+    finally:
         set_driver_factory(_default_driver_factory)

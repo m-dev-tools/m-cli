@@ -205,6 +205,12 @@ def test_doctor_cli_exits_zero_when_all_ok(monkeypatch, tmp_path, capsys):
 
 
 def test_doctor_cli_exits_one_when_any_fail(monkeypatch, tmp_path, capsys):
+    # Force the engine path unavailable so the demote-when-engine-OK
+    # path (which would otherwise SKIP this FAIL on hosts where docker
+    # is healthy) doesn't override the test's intent.
+    from m_cli.doctor import _runtime
+
+    monkeypatch.setattr(_runtime, "docker_available", lambda: False)
     bogus = tmp_path / "no-such-dir"
     monkeypatch.setenv("ydb_dist", str(bogus))
     rc = doctor_command(_ns())

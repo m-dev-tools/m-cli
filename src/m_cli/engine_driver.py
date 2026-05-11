@@ -118,6 +118,13 @@ class EngineStatus:
     # status) render each as a WARN with an actionable fix.
     image_labels: dict[str, str] = field(default_factory=dict)
     mismatches: tuple[str, ...] = ()
+    # Phase 4b: container-side introspection from `mte status --json`.
+    # Populated only when `--verbose` is set on `m engine status`; None
+    # otherwise. Adds a `runtime_ydb_version_drift` entry to
+    # `mismatches` if the live `release` field disagrees with the
+    # manifest's `ydb_version` declaration (closes followup #14 — the
+    # static LABEL check can't catch upstream-base drift).
+    mte: dict | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -131,6 +138,7 @@ class EngineStatus:
             "container": self.container,
             "image_labels": dict(self.image_labels),
             "mismatches": list(self.mismatches),
+            "mte": self.mte,
         }
 
 
@@ -153,7 +161,7 @@ class EngineDriver(Protocol):
 
     name: str  # e.g. "docker"
 
-    def status(self) -> EngineStatus: ...
+    def status(self, *, verbose: bool = False) -> EngineStatus: ...
     def install(self) -> int: ...
     def start(self) -> int: ...
     def stop(self) -> int: ...
@@ -164,6 +172,7 @@ class EngineDriver(Protocol):
     def version(self) -> int: ...
     def upgrade(self) -> int: ...
     def reset(self, *, confirm: bool = False) -> int: ...
+    def mte_status(self) -> dict | None: ...
 
 
 # ── DockerDriver — the only built-in driver ─────────────────────────
@@ -290,15 +299,63 @@ class DockerDriver:
 
         return tuple(out)
 
+    def mte_status(self) -> dict | None:
+        """Run ``mte status --json`` inside the container, parse the result.
+
+        Returns the parsed payload (a dict) on success; ``None`` if the
+        container isn't running, the ``mte`` script is absent, or the
+        output fails to parse. Phase 4 — see m-test-engine
+        ``docker/mte`` for the JSON shape.
+        """
+        import json as _json
+
+        result = self.runner(
+            ["docker", "exec", self.manifest.container, "mte", "status", "--json"],
+            capture=True,
+            timeout=10,
+        )
+        if not result.ok or not result.stdout.strip():
+            return None
+        try:
+            data = _json.loads(result.stdout)
+        except _json.JSONDecodeError:
+            return None
+        if not isinstance(data, dict):
+            return None
+        return data
+
     # ── lifecycle verbs ──────────────────────────────────────────────
 
-    def status(self) -> EngineStatus:
+    def status(self, *, verbose: bool = False) -> EngineStatus:
+        """Snapshot the engine state.
+
+        ``verbose=True`` additionally runs ``mte status --json`` inside
+        the container (Phase 4b) and folds the payload into
+        ``EngineStatus.mte``. Drift between the live ``release`` field
+        and ``manifest.ydb_version`` adds ``runtime_ydb_version_drift``
+        to ``mismatches`` — catches upstream-base drift that the static
+        LABEL check in :meth:`_classify_mismatches` can't see.
+        """
         installed = self._docker_available()
         daemon = installed and self._daemon_reachable()
         image = daemon and self._image_present()
         running = daemon and self._container_running()
         labels = self._image_labels() if image else {}
-        mismatches = self._classify_mismatches(labels) if labels else ()
+        mismatches = list(self._classify_mismatches(labels)) if labels else []
+
+        mte: dict | None = None
+        if verbose and running:
+            mte = self.mte_status()
+            if mte is not None:
+                runtime_release = mte.get("release")
+                if (
+                    isinstance(runtime_release, str)
+                    and runtime_release != self.manifest.ydb_version
+                    and "ydb_version_drift" not in mismatches
+                    and "runtime_ydb_version_drift" not in mismatches
+                ):
+                    mismatches.append("runtime_ydb_version_drift")
+
         return EngineStatus(
             driver=self.name,
             installed=installed,
@@ -309,7 +366,8 @@ class DockerDriver:
             image_ref=self.manifest.image_ref(),
             container=self.manifest.container,
             image_labels=labels,
-            mismatches=mismatches,
+            mismatches=tuple(mismatches),
+            mte=mte,
         )
 
     def install(self) -> int:

@@ -512,3 +512,162 @@ def test_docker_driver_version_highlights_mismatch_in_protocol(manifest, fake_ru
     out = capsys.readouterr().out
     # Some visible mismatch indicator — `mismatch`, `✗`, or both
     assert "mismatch" in out.lower() or "✗" in out
+
+
+# ── Phase 4b: mte_status() + status(verbose=True) ────────────────────
+
+
+def _mte_payload(manifest, **overrides) -> str:
+    """Canned mte status --json output."""
+    import json as _json
+
+    base = {
+        "ok": True,
+        "ydb_dist": "/opt/yottadb/current",
+        "release": manifest.ydb_version,
+        "uptime_s": 42,
+        "globals_count": 0,
+        "routines_count": 5,
+        "mounted_repos": ["m-cli", "m-stdlib"],
+    }
+    base.update(overrides)
+    return _json.dumps(base) + "\n"
+
+
+def test_docker_driver_mte_status_parses_payload(manifest, fake_runner):
+    fake_runner.rule(
+        prefix=["docker", "exec", manifest.container, "mte", "status", "--json"],
+        result=CommandResult(returncode=0, stdout=_mte_payload(manifest)),
+    )
+    drv = DockerDriver(manifest=manifest, runner=fake_runner.runner)
+    out = drv.mte_status()
+    assert out is not None
+    assert out["ok"] is True
+    assert out["release"] == manifest.ydb_version
+    assert out["mounted_repos"] == ["m-cli", "m-stdlib"]
+
+
+def test_docker_driver_mte_status_returns_none_on_nonzero_rc(manifest, fake_runner):
+    fake_runner.rule(
+        prefix=["docker", "exec", manifest.container, "mte", "status", "--json"],
+        result=CommandResult(returncode=1, stderr="not found"),
+    )
+    drv = DockerDriver(manifest=manifest, runner=fake_runner.runner)
+    assert drv.mte_status() is None
+
+
+def test_docker_driver_mte_status_returns_none_on_garbage_output(manifest, fake_runner):
+    fake_runner.rule(
+        prefix=["docker", "exec", manifest.container, "mte", "status", "--json"],
+        result=CommandResult(returncode=0, stdout="not json at all"),
+    )
+    drv = DockerDriver(manifest=manifest, runner=fake_runner.runner)
+    assert drv.mte_status() is None
+
+
+def test_docker_status_verbose_folds_mte_payload(manifest, fake_runner):
+    """verbose=True populates EngineStatus.mte from mte_status()."""
+    labels = _matching_labels(manifest)
+    fake_runner.rule(prefix=["docker", "info"], result=CommandResult(returncode=0))
+    fake_runner.rule(
+        prefix=["docker", "image", "inspect", manifest.image_ref()],
+        result=CommandResult(returncode=0),
+    )
+    fake_runner.rule(
+        prefix=["docker", "image", "inspect", "--format"],
+        result=CommandResult(returncode=0, stdout=_labels_stdout(labels)),
+    )
+    fake_runner.rule(
+        prefix=["docker", "ps"],
+        result=CommandResult(returncode=0, stdout=f"{manifest.container}\n"),
+    )
+    fake_runner.rule(
+        prefix=["docker", "exec", manifest.container, "mte", "status", "--json"],
+        result=CommandResult(returncode=0, stdout=_mte_payload(manifest)),
+    )
+    drv = DockerDriver(manifest=manifest, runner=fake_runner.runner)
+    s = drv.status(verbose=True)
+    assert s.mte is not None
+    assert s.mte["mounted_repos"] == ["m-cli", "m-stdlib"]
+
+
+def test_docker_status_non_verbose_omits_mte_payload(manifest, fake_runner):
+    """verbose=False (default) keeps EngineStatus.mte == None."""
+    labels = _matching_labels(manifest)
+    fake_runner.rule(prefix=["docker", "info"], result=CommandResult(returncode=0))
+    fake_runner.rule(
+        prefix=["docker", "image", "inspect", manifest.image_ref()],
+        result=CommandResult(returncode=0),
+    )
+    fake_runner.rule(
+        prefix=["docker", "image", "inspect", "--format"],
+        result=CommandResult(returncode=0, stdout=_labels_stdout(labels)),
+    )
+    fake_runner.rule(
+        prefix=["docker", "ps"],
+        result=CommandResult(returncode=0, stdout=f"{manifest.container}\n"),
+    )
+    drv = DockerDriver(manifest=manifest, runner=fake_runner.runner)
+    s = drv.status()
+    assert s.mte is None
+    # The mte exec call must NOT fire when verbose=False
+    assert not any(
+        c[:5] == ["docker", "exec", manifest.container, "mte", "status"]
+        for c in fake_runner.calls
+    )
+
+
+def test_docker_status_verbose_detects_runtime_ydb_drift(manifest, fake_runner):
+    """If mte.release != manifest.ydb_version, add runtime_ydb_version_drift."""
+    labels = _matching_labels(manifest)
+    fake_runner.rule(prefix=["docker", "info"], result=CommandResult(returncode=0))
+    fake_runner.rule(
+        prefix=["docker", "image", "inspect", manifest.image_ref()],
+        result=CommandResult(returncode=0),
+    )
+    fake_runner.rule(
+        prefix=["docker", "image", "inspect", "--format"],
+        result=CommandResult(returncode=0, stdout=_labels_stdout(labels)),
+    )
+    fake_runner.rule(
+        prefix=["docker", "ps"],
+        result=CommandResult(returncode=0, stdout=f"{manifest.container}\n"),
+    )
+    # Live release diverges from the manifest's declared ydb_version
+    fake_runner.rule(
+        prefix=["docker", "exec", manifest.container, "mte", "status", "--json"],
+        result=CommandResult(
+            returncode=0, stdout=_mte_payload(manifest, release="V7.1-002")
+        ),
+    )
+    drv = DockerDriver(manifest=manifest, runner=fake_runner.runner)
+    s = drv.status(verbose=True)
+    assert "runtime_ydb_version_drift" in s.mismatches
+
+
+def test_docker_status_verbose_skipped_when_container_not_running(manifest, fake_runner):
+    """When container is down, --verbose doesn't bother calling mte."""
+    fake_runner.rule(prefix=["docker", "info"], result=CommandResult(returncode=0))
+    fake_runner.rule(
+        prefix=["docker", "image", "inspect", manifest.image_ref()],
+        result=CommandResult(returncode=0),
+    )
+    fake_runner.rule(
+        prefix=["docker", "image", "inspect", "--format"],
+        result=CommandResult(
+            returncode=0, stdout=_labels_stdout(_matching_labels(manifest))
+        ),
+    )
+    # Container NOT running
+    fake_runner.rule(
+        prefix=["docker", "ps"],
+        result=CommandResult(returncode=0, stdout=""),
+    )
+    drv = DockerDriver(manifest=manifest, runner=fake_runner.runner)
+    s = drv.status(verbose=True)
+    assert s.container_running is False
+    assert s.mte is None
+    assert not any(
+        c[:5] == ["docker", "exec", manifest.container, "mte", "status"]
+        for c in fake_runner.calls
+    )

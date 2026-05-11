@@ -75,6 +75,17 @@ def add_engine_arguments(subparsers: argparse._SubParsersAction) -> None:
         help="Print container/image/daemon state",
     )
     status_p.add_argument("--json", action="store_true", help="Emit JSON")
+    status_p.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help=(
+            "Additionally run `mte status --json` inside the container "
+            "and fold release / uptime / globals / routines / mounted-"
+            "repos into the report. Surfaces runtime YDB-version drift "
+            "that the static-label check can't catch."
+        ),
+    )
     status_p.set_defaults(func=_cmd_status)
 
     # install
@@ -162,6 +173,32 @@ def add_engine_arguments(subparsers: argparse._SubParsersAction) -> None:
     )
     reset_p.set_defaults(func=_cmd_reset)
 
+    # watch — long-running poll of mte status --json
+    watch_p = actions.add_parser(
+        "watch",
+        help="Stream mte status --json on an interval (Ctrl+C to stop)",
+        description=(
+            "Long-running poll of `mte status --json` inside the "
+            "container. Emits one JSON-lines record per poll. Useful "
+            "for live monitoring during long test runs or for tailing "
+            "engine state from a CI log. Ctrl+C exits cleanly."
+        ),
+    )
+    watch_p.add_argument(
+        "--interval",
+        "-n",
+        type=float,
+        default=5.0,
+        help="Seconds between polls (default: 5.0)",
+    )
+    watch_p.add_argument(
+        "--count",
+        type=int,
+        default=0,
+        help="Stop after N polls. 0 (default) = run until Ctrl+C.",
+    )
+    watch_p.set_defaults(func=_cmd_watch)
+
     # capabilities — mirrors top-level `m capabilities`
     caps_p = actions.add_parser(
         "capabilities",
@@ -181,7 +218,8 @@ def engine_command(args: argparse.Namespace) -> int:
 
 def _cmd_status(args: argparse.Namespace) -> int:
     driver = select_driver()
-    status = driver.status()
+    verbose = getattr(args, "verbose", False)
+    status = driver.status(verbose=verbose)
     if getattr(args, "json", False):
         print(json.dumps(status.to_dict(), indent=2))
     else:
@@ -194,6 +232,19 @@ def _cmd_status(args: argparse.Namespace) -> int:
         print(f"  image present:  {marks[status.image_present]}")
         print(f"  container up:   {marks[status.container_running]}")
         print(f"  healthy:        {marks[status.container_healthy]}")
+        # Phase 4b: fold mte status payload when --verbose.
+        if verbose and status.mte is not None:
+            print()
+            print("inside container (mte):")
+            print(f"  release:        {status.mte.get('release', '?')}")
+            print(f"  uptime:         {status.mte.get('uptime_s', '?')}s")
+            print(f"  globals_count:  {status.mte.get('globals_count', '?')}")
+            print(f"  routines_count: {status.mte.get('routines_count', '?')}")
+            repos = status.mte.get("mounted_repos", []) or []
+            print(f"  mounted_repos:  {', '.join(repos) if repos else '(none)'}")
+        elif verbose and status.container_running:
+            print()
+            print("⚠ mte status --json failed inside the container (script missing or error)")
         # Phase 3b: surface label-vs-manifest mismatches as WARN lines.
         # Each mismatch class has an actionable next step.
         if status.mismatches:
@@ -244,6 +295,42 @@ def _cmd_reset(args: argparse.Namespace) -> int:
     return select_driver().reset(confirm=args.confirm)
 
 
+def _cmd_watch(args: argparse.Namespace) -> int:
+    """Long-running poll of ``mte status --json``.
+
+    Emits one JSON-lines record per poll (each line is a self-contained
+    ``mte`` payload plus a ``ts`` field with the wall-clock timestamp).
+    Exits cleanly on Ctrl+C / SIGINT. ``--count N`` caps the poll loop
+    at N iterations (useful for tests + bounded CI checks); the default
+    ``0`` means "run until interrupted".
+
+    Phase 4b.2 of the m-engine plan.
+    """
+    import time
+
+    driver = select_driver()
+    interval = max(0.1, float(getattr(args, "interval", 5.0)))
+    count = int(getattr(args, "count", 0))
+    emitted = 0
+    try:
+        while count == 0 or emitted < count:
+            payload = driver.mte_status()
+            line: dict = {"ts": time.time()}
+            if payload is None:
+                line["error"] = "mte_status returned no payload (container down or mte missing)"
+            else:
+                line.update(payload)
+            print(json.dumps(line), flush=True)
+            emitted += 1
+            if count and emitted >= count:
+                break
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        # Clean exit — stop without traceback or rc-130.
+        return 0
+    return 0
+
+
 def _cmd_capabilities(args: argparse.Namespace) -> int:
     """Emit the engine namespace as JSON. Mirrors `m capabilities --json`."""
     manifest = load_engine_manifest()
@@ -275,6 +362,7 @@ def _cmd_capabilities(args: argparse.Namespace) -> int:
             {"name": "version", "destructive": False, "read_only": True},
             {"name": "upgrade", "destructive": False, "read_only": False},
             {"name": "reset", "destructive": True, "read_only": False, "requires_confirm": True},
+            {"name": "watch", "destructive": False, "read_only": True},
             {"name": "capabilities", "destructive": False, "read_only": True},
         ],
     }
