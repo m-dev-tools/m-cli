@@ -56,3 +56,10 @@ jobs:
         # Makefile directly — its targets call `.venv/bin/m`, which
         # `uv sync --frozen` populated above.
         run: make check-manifest
+
+      - name: docs/ prose-only gate
+        # Cross-repo guardrail: docs/ holds only human-readable prose.
+        # Non-prose artifacts (data, examples, scaffolding templates)
+        # belong under dist/, examples/, templates/, or a top-level
+        # domain dir. Engine-free find-based check.
+        run: make check-docs-prose
