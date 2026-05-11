@@ -6,6 +6,10 @@
 > software development life cycle (SDLC). Closes with a rank-ordered gap analysis
 > for `m-cli` — the canonical CLI for the M (MUMPS) language.
 >
+> **Implementation:** the actionable punch list for Phase 3b/3c (with
+> dependencies, priorities, and exit criteria) lives in
+> [`phase-3-plan.md`](phase-3-plan.md). Phase 3a is shipped.
+>
 > **Scope.** Five languages: **Rust, Go, Python, JavaScript/TypeScript, Java.**
 > Chosen for top consistent rankings (TIOBE / Stack Overflow / GitHub Octoverse
 > 2024–2026) and for spanning the design space — single-binary unified CLIs
