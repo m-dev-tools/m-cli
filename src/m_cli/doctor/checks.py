@@ -1,7 +1,22 @@
 """Environment-health checks for ``m doctor``.
 
-Each ``check_*`` function is independent and returns a :class:`Check`.
-``run_all_checks()`` runs them in a stable order and returns the list.
+Two paths share this surface:
+
+1. **Docker engine path** (canonical for m-cli users without local
+   YottaDB) — driven by the vendored manifest in
+   ``dist/m-test-engine.json`` (see ``m_cli.engine_manifest``). Probes
+   live in :mod:`m_cli.doctor._runtime`; checks declare prerequisites
+   so downstream checks emit ``SKIPPED`` instead of redundant ``WARN``
+   when an upstream cause has already been reported.
+
+2. **Local YottaDB path** (alternative, for hosts with a system-level
+   YDB install) — the original five checks. These do **not** declare
+   prerequisites because each handles its own missing-input case
+   gracefully (e.g. ``check_ydb_binary`` falls back to ``$PATH`` when
+   ``$ydb_dist`` is unset).
+
+Each ``check_*`` function is independent. Prerequisite handling lives
+in :func:`run_all_checks`.
 """
 
 from __future__ import annotations
@@ -9,15 +24,27 @@ from __future__ import annotations
 import enum
 import os
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
+
+from m_cli.doctor import _runtime
+from m_cli.engine_manifest import EngineManifest, load_engine_manifest
 
 
 class Status(enum.Enum):
     OK = "OK"
     WARN = "WARN"
     FAIL = "FAIL"
+    SKIPPED = "SKIPPED"
+
+
+@dataclass(frozen=True)
+class Fix:
+    """A copy-pasteable fix command derived from manifest data."""
+
+    command: tuple[str, ...]
+    destructive: bool = False
 
 
 @dataclass(frozen=True)
@@ -26,10 +53,15 @@ class Check:
     status: Status
     message: str
     hint: str | None = None
+    prerequisites: tuple[str, ...] = field(default_factory=tuple)
+    fix: Fix | None = None
+
+
+# ── Local YDB path (legacy, unchanged behaviour) ─────────────────────
 
 
 def check_ydb_dist() -> Check:
-    """Check `$ydb_dist` env var: set, exists, contains a `ydb` binary."""
+    """Check ``$ydb_dist`` env var: set, exists, contains a ``ydb`` binary."""
     val = os.environ.get("ydb_dist")
     if not val:
         return Check(
@@ -72,7 +104,7 @@ def check_ydb_dist() -> Check:
 
 
 def check_ydb_routines() -> Check:
-    """Check `$ydb_routines` is set (the routine search path)."""
+    """Check ``$ydb_routines`` is set (the routine search path)."""
     val = os.environ.get("ydb_routines")
     if not val:
         return Check(
@@ -144,7 +176,7 @@ def check_keywords() -> Check:
 
 
 def check_ydb_binary() -> Check:
-    """Locate the `ydb` binary via `$YDB`, `$ydb_dist/ydb`, or PATH."""
+    """Locate the ``ydb`` binary via ``$YDB``, ``$ydb_dist/ydb``, or PATH."""
     explicit = os.environ.get("YDB")
     if explicit:
         path = Path(explicit)
@@ -187,7 +219,177 @@ def check_ydb_binary() -> Check:
     )
 
 
+# ── Docker engine path (canonical for m-cli users) ───────────────────
+
+
+def _manifest() -> EngineManifest | None:
+    """Best-effort manifest load — None if vendoring hasn't happened."""
+    try:
+        return load_engine_manifest()
+    except (FileNotFoundError, ValueError, KeyError):
+        return None
+
+
+def check_docker_installed() -> Check:
+    """Top of the Docker chain: is the ``docker`` CLI on ``$PATH``?"""
+    if _runtime.docker_available():
+        return Check(
+            name="docker_installed",
+            status=Status.OK,
+            message="docker CLI on PATH",
+        )
+    return Check(
+        name="docker_installed",
+        status=Status.WARN,
+        message="docker CLI not found on PATH",
+        hint=(
+            "Install Docker Engine (linux) or Docker Desktop (mac/win). "
+            "See https://docs.docker.com/engine/install/ for distro-"
+            "specific instructions."
+        ),
+    )
+
+
+def check_docker_daemon() -> Check:
+    """``docker info`` succeeds — the daemon is up and the user can reach it."""
+    if _runtime.docker_daemon_reachable():
+        return Check(
+            name="docker_daemon",
+            status=Status.OK,
+            message="docker daemon reachable",
+            prerequisites=("docker_installed",),
+        )
+    return Check(
+        name="docker_daemon",
+        status=Status.WARN,
+        message="docker daemon not reachable",
+        hint=(
+            "Start the daemon: `sudo systemctl start docker` (linux) or "
+            "launch Docker Desktop (mac/win). Also verify your user is in "
+            "the `docker` group: `groups | grep docker`."
+        ),
+        prerequisites=("docker_installed",),
+        fix=Fix(
+            command=("sudo", "systemctl", "start", "docker"),
+            destructive=False,
+        ),
+    )
+
+
+def check_engine_image() -> Check:
+    """The canonical m-test-engine image is pulled locally."""
+    m = _manifest()
+    if m is None:
+        return Check(
+            name="engine_image",
+            status=Status.WARN,
+            message="manifest dist/m-test-engine.json not loadable",
+            hint=(
+                "Re-vendor the engine contract: "
+                "`make manifest M_TEST_ENGINE=/path/to/m-test-engine`."
+            ),
+            prerequisites=("docker_installed", "docker_daemon"),
+        )
+    ref = m.image_ref()
+    if _runtime.docker_image_present(ref):
+        return Check(
+            name="engine_image",
+            status=Status.OK,
+            message=f"image {ref} present",
+            prerequisites=("docker_installed", "docker_daemon"),
+        )
+    return Check(
+        name="engine_image",
+        status=Status.WARN,
+        message=f"image {ref} not pulled",
+        hint=f"Pull the canonical engine image: `docker pull {ref}`.",
+        prerequisites=("docker_installed", "docker_daemon"),
+        fix=Fix(command=("docker", "pull", ref), destructive=False),
+    )
+
+
+def check_engine_container() -> Check:
+    """The canonical m-test-engine container is running."""
+    m = _manifest()
+    if m is None:
+        return Check(
+            name="engine_container",
+            status=Status.WARN,
+            message="manifest dist/m-test-engine.json not loadable",
+            hint="See engine_image hint.",
+            prerequisites=("docker_installed", "docker_daemon"),
+        )
+    if _runtime.docker_container_running(m.container):
+        return Check(
+            name="engine_container",
+            status=Status.OK,
+            message=f"container `{m.container}` running",
+            prerequisites=("docker_installed", "docker_daemon"),
+        )
+    return Check(
+        name="engine_container",
+        status=Status.WARN,
+        message=f"container `{m.container}` not running",
+        hint=(
+            f"Start it from the m-test-engine checkout: `docker compose -f {m.compose_file} up -d`."
+        ),
+        prerequisites=("docker_installed", "docker_daemon"),
+        fix=Fix(
+            command=("docker", "compose", "-f", m.compose_file, "up", "-d"),
+            destructive=False,
+        ),
+    )
+
+
+def check_engine_bind_mount() -> Check:
+    """Host bind-mount directory exists.
+
+    Independent of the rest of the Docker chain — the user can create
+    the bind-mount directory before docker is installed (and should).
+    """
+    m = _manifest()
+    if m is None:
+        return Check(
+            name="engine_bind_mount",
+            status=Status.WARN,
+            message="manifest dist/m-test-engine.json not loadable",
+            hint="See engine_image hint.",
+        )
+    host = m.bind_mount.host
+    if _runtime.path_exists(host):
+        return Check(
+            name="engine_bind_mount",
+            status=Status.OK,
+            message=f"host {host} exists",
+        )
+    return Check(
+        name="engine_bind_mount",
+        status=Status.WARN,
+        message=f"host {host} does not exist",
+        hint=(
+            f"Create the shared m-* working dir: "
+            f"`sudo install -d -o $USER -g $USER {host}` then "
+            f"`cd {host} && git clone <repo>` for each m-* repo you "
+            "want available inside the engine."
+        ),
+        fix=Fix(
+            command=("sudo", "install", "-d", "-o", "$USER", "-g", "$USER", host),
+            destructive=False,
+        ),
+    )
+
+
+# ── Registry + dependency-aware runner ───────────────────────────────
+
+
 _CHECKS: tuple[Callable[[], Check], ...] = (
+    # Docker engine path first — canonical runtime
+    check_docker_installed,
+    check_docker_daemon,
+    check_engine_image,
+    check_engine_container,
+    check_engine_bind_mount,
+    # Local YDB path second — alternative runtime
     check_ydb_dist,
     check_ydb_routines,
     check_parser,
@@ -196,6 +398,43 @@ _CHECKS: tuple[Callable[[], Check], ...] = (
 )
 
 
+def _skip_for(prereq_name: str) -> Check:
+    """SKIPPED placeholder check pointing at the failed prerequisite."""
+    return Check(
+        name="",  # caller fills this in
+        status=Status.SKIPPED,
+        message=f"skipped — waiting on {prereq_name}",
+    )
+
+
 def run_all_checks() -> list[Check]:
-    """Run every registered check in order and return the results."""
-    return [fn() for fn in _CHECKS]
+    """Run every registered check, honouring prerequisite chains.
+
+    A check is SKIPPED (not run) when any of its declared prerequisites
+    landed in a non-OK status. This implements the root-cause grouping
+    pattern: one warning per cause instead of N warnings per N
+    downstream effects.
+
+    Local YDB checks declare no prerequisites and behave exactly as
+    before. Only the Docker chain participates in the SKIPPED grouping.
+    """
+    results: dict[str, Check] = {}
+    for fn in _CHECKS:
+        # Peek at the function's first-pass output to discover its
+        # declared prerequisites and its own name. (The check function
+        # is the source of truth — registry has no separate metadata.)
+        provisional = fn()
+        prereqs = provisional.prerequisites
+        blockers = [p for p in prereqs if p in results and results[p].status is not Status.OK]
+        if blockers:
+            # One pointer is enough — the user follows the chain up.
+            skipped = Check(
+                name=provisional.name,
+                status=Status.SKIPPED,
+                message=f"skipped — waiting on {blockers[0]}",
+                prerequisites=prereqs,
+            )
+            results[provisional.name] = skipped
+        else:
+            results[provisional.name] = provisional
+    return list(results.values())

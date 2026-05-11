@@ -111,7 +111,23 @@ dist/fmt-rules.json: $(FMT_SOURCES)
 	@mkdir -p dist
 	$(M) fmt --list-rules --json > $@
 
-manifest: dist/commands.json dist/lint-rules.json dist/fmt-rules.json
+# Vendored from m-dev-tools/m-test-engine. The source of truth is
+# $(M_TEST_ENGINE)/dist/m-test-engine.json — copied here at release
+# time so a fresh `pip install m-cli` carries the engine contract
+# without needing network access. The drift gate (`git diff --exit-code
+# dist/` below) catches missed re-vendoring after an upstream bump.
+#
+# If M_TEST_ENGINE is not a local checkout, the rule is a no-op — the
+# vendored copy already in git is treated as authoritative.
+M_TE_MANIFEST := $(wildcard $(M_TEST_ENGINE)/dist/m-test-engine.json)
+ifneq ($(M_TE_MANIFEST),)
+dist/m-test-engine.json: $(M_TE_MANIFEST)
+	@mkdir -p dist
+	cp $< $@
+	@echo "vendored dist/m-test-engine.json from $(M_TEST_ENGINE)"
+endif
+
+manifest: dist/commands.json dist/lint-rules.json dist/fmt-rules.json dist/m-test-engine.json
 
 check-manifest: manifest
 	git diff --exit-code dist/
