@@ -1,4 +1,4 @@
-.PHONY: install test test-lf watch lint format mypy cov check lint-modern lint-modern-baseline lint-modern-setup push pull hooks seed unseed test-vista engine-up engine-down engine-status manifest check-manifest check-docs-prose
+.PHONY: install test test-lf watch lint format mypy cov check lint-modern lint-modern-baseline lint-modern-setup push pull hooks seed unseed test-vista engine-up engine-down engine-status manifest check-manifest check-docs-prose scope-check
 
 PYTHON := .venv/bin/python
 PYTEST := .venv/bin/pytest
@@ -111,7 +111,23 @@ dist/fmt-rules.json: $(FMT_SOURCES)
 	@mkdir -p dist
 	$(M) fmt --list-rules --json > $@
 
-manifest: dist/commands.json dist/lint-rules.json dist/fmt-rules.json
+# Vendored from m-dev-tools/m-test-engine. The source of truth is
+# $(M_TEST_ENGINE)/dist/m-test-engine.json — copied here at release
+# time so a fresh `pip install m-cli` carries the engine contract
+# without needing network access. The drift gate (`git diff --exit-code
+# dist/` below) catches missed re-vendoring after an upstream bump.
+#
+# If M_TEST_ENGINE is not a local checkout, the rule is a no-op — the
+# vendored copy already in git is treated as authoritative.
+M_TE_MANIFEST := $(wildcard $(M_TEST_ENGINE)/dist/m-test-engine.json)
+ifneq ($(M_TE_MANIFEST),)
+dist/m-test-engine.json: $(M_TE_MANIFEST)
+	@mkdir -p dist
+	cp $< $@
+	@echo "vendored dist/m-test-engine.json from $(M_TEST_ENGINE)"
+endif
+
+manifest: dist/commands.json dist/lint-rules.json dist/fmt-rules.json dist/m-test-engine.json
 
 check-manifest: manifest
 	git diff --exit-code dist/
@@ -123,6 +139,34 @@ pull:
 
 push: check
 	git push origin main
+
+# ── Multi-repo scope check ──────────────────────────────────────────
+#
+# Workspace-wide sanity check before committing. Warns if any sibling
+# repo under ~/m-dev-tools/ has pending changes that this session may
+# have leaked into, or that another parallel session left dirty. See
+# .github/docs/dev-practices/parallel-multi-repo-git-hygiene.md.
+.PHONY: scope-check
+scope-check:
+	@bad=0; \
+	for r in $(HOME)/m-dev-tools/m-* $(HOME)/m-dev-tools/tree-sitter-* $(HOME)/m-dev-tools/.github; do \
+	  [ -d "$$r/.git" ] || continue; \
+	  case "$$(realpath $$r)" in "$(CURDIR)") continue;; esac; \
+	  out=$$(git -C "$$r" status --porcelain 2>/dev/null); \
+	  if [ -n "$$out" ]; then \
+	    echo "PENDING in $$(basename $$r):"; \
+	    echo "$$out" | sed 's/^/    /'; \
+	    bad=1; \
+	  fi; \
+	done; \
+	if [ $$bad -eq 1 ]; then \
+	  echo ""; \
+	  echo "A sibling repo has uncommitted edits."; \
+	  echo "Confirm those edits are intentional (and owned by a different session)"; \
+	  echo "before committing here. See .github/docs/dev-practices/."; \
+	fi; \
+	echo ""; echo "THIS repo ($(notdir $(CURDIR))):"; \
+	git status --porcelain | sed 's/^/    /' || true
 
 # ── Engine lifecycle (m-test-engine container) ──────────────────────
 #

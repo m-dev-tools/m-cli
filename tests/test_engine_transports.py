@@ -8,8 +8,9 @@ m-cli's runtime tools support three transports:
   vista-meta path
 
 `detect_engine()` resolves which transport to use from the M_CLI_ENGINE
-env var or auto-detection in priority order: ssh-conn-env (legacy
-maintainer), local (which ydb), docker (m-test-engine container).
+env var or auto-detection in priority order: docker (m-test-engine
+container — canonical default), ssh-conn-env (legacy maintainer
+fallback), local YottaDB (offline fallback).
 
 These tests cover the new abstractions; ``test_engine.py`` covers the
 existing SSH/Connection surface and stays green to prove backward
@@ -114,6 +115,34 @@ def test_docker_engine_stage_routines_translates_to_bind_mount() -> None:
     assert "/work" in stage
 
 
+def test_docker_engine_default_bind_root_is_m_work() -> None:
+    """Default bind_root tracks the shared-mount cutover (Phase 2)."""
+    eng = DockerEngine()
+    assert eng.bind_root == Path("/m-work")
+    assert eng.container == "m-test-engine"
+
+
+def test_docker_engine_stage_routines_maps_host_m_work_subdir(tmp_path) -> None:
+    """Project under host /m-work maps 1:1 to container /m-work.
+
+    Uses tmp_path with a fake /m-work structure to avoid depending on
+    real host /m-work being populated. The engine only cares about the
+    string-shape mapping; project_root walks the parent chain looking
+    for a project marker (e.g. pyproject.toml), so we add a marker.
+    """
+    # Build a fake project under a fake /m-work prefix
+    fake_m_work = tmp_path / "m-work"
+    fake_repo = fake_m_work / "m-cli"
+    (fake_repo / "src").mkdir(parents=True)
+    (fake_repo / "pyproject.toml").write_text("[project]\nname = 'fake'\n")
+    # Without monkeypatching _HOST_SHARED_ROOT this test only exercises
+    # the fallback branch; the value-shape (in-container path under
+    # bind_root) is the real assertion here.
+    eng = DockerEngine(bind_root=Path("/m-work"))
+    stage = eng.stage_routines(fake_repo / "src")
+    assert "/m-work" in stage
+
+
 # ── SSHEngine (Connection alias for backward compat) ───────────────
 
 
@@ -166,16 +195,46 @@ def test_detect_engine_unknown_value_raises(
         detect_engine()
 
 
-def test_detect_engine_falls_back_to_ssh_when_conn_env_present(
+def test_detect_engine_prefers_docker_over_ambient_signals(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """No env var, but conn.env exists → preserves maintainer workflow."""
+    """A running m-test-engine container wins over conn.env and local
+    YDB — Docker is the canonical default."""
     monkeypatch.delenv("M_CLI_ENGINE", raising=False)
+    f = tmp_path / "conn.env"
+    f.write_text("VISTA_HOST=h\nVISTA_SSH_PORT=2222\nVISTA_SSH_USER=u\n")
+    monkeypatch.setenv("VISTA_CONN_FILE", str(f))
+    monkeypatch.setattr("m_cli.engine._has_local_ydb", lambda: True)
+    monkeypatch.setattr("m_cli.engine._has_docker_engine_running", lambda: True)
+    eng = detect_engine()
+    assert isinstance(eng, DockerEngine)
+
+
+def test_detect_engine_falls_back_to_ssh_when_docker_unavailable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Docker isn't running, but conn.env exists → SSH fallback for
+    the legacy maintainer workflow."""
+    monkeypatch.delenv("M_CLI_ENGINE", raising=False)
+    monkeypatch.setattr("m_cli.engine._has_docker_engine_running", lambda: False)
     f = tmp_path / "conn.env"
     f.write_text("VISTA_HOST=h\nVISTA_SSH_PORT=2222\nVISTA_SSH_USER=u\n")
     monkeypatch.setenv("VISTA_CONN_FILE", str(f))
     eng = detect_engine()
     assert isinstance(eng, SSHEngine)
+
+
+def test_detect_engine_falls_back_to_local_when_docker_and_ssh_unavailable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """No docker, no conn.env, but local YDB → LocalEngine fallback
+    for offline environments."""
+    monkeypatch.delenv("M_CLI_ENGINE", raising=False)
+    monkeypatch.setattr("m_cli.engine._has_docker_engine_running", lambda: False)
+    monkeypatch.setenv("VISTA_CONN_FILE", str(tmp_path / "missing.env"))
+    monkeypatch.setenv("ydb_dist", "/opt/yottadb")
+    eng = detect_engine()
+    assert isinstance(eng, LocalEngine)
 
 
 def test_detect_engine_no_signals_raises_with_helpful_message(

@@ -285,13 +285,15 @@ rules = "canonical"                # "canonical" | "none" | comma list of rule I
 transport in this order:
 
 1. **Explicit override** — `M_CLI_ENGINE=local|docker|ssh`.
-2. **Local YottaDB** — `mumps` on `$PATH`.
-3. **Docker (m-test-engine)** — a running container named `m-test-engine`.
-4. **SSH** — only if a `~/data/vista-meta/conn.env` file exists. Legacy
-   maintainer path.
+2. **Docker (m-test-engine)** — a running container named `m-test-engine`.
+   The canonical default — pinned image, identical behavior across
+   machines.
+3. **SSH** — fallback if a `~/data/vista-meta/conn.env` file exists.
+   Legacy maintainer path.
+4. **Local YottaDB** — fallback if `mumps` / `ydb` is on `$PATH`. For
+   offline / no-Docker environments.
 
-Fresh installs typically use option 2 (developers with a host install) or
-option 3:
+Fresh installs typically use option 2:
 
 ```bash
 git clone https://github.com/m-dev-tools/m-test-engine

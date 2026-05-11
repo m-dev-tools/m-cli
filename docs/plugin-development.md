@@ -131,6 +131,28 @@ def my_command(args):
 if no transport is available — let the exception propagate; the user
 gets a useful message.
 
+## Engine drivers (out-of-tree)
+
+A second, narrower entry-point group exists for engine lifecycle
+drivers: **`m_cli_engines`**. Out-of-tree drivers implement the
+[`m_cli.engine_driver.EngineDriver`][] Protocol and register the class
+(not a function) under their name:
+
+```toml
+[project.entry-points."m_cli_engines"]
+iris = "m_cli_iris_engine.driver:IrisDriver"
+podman = "m_cli_podman_engine.driver:PodmanDriver"
+```
+
+The built-in `docker` driver is **not** registered through this group —
+m-cli always falls back to `DockerDriver` when no override is
+requested. The group is the seam for adding non-Docker engines without
+forking core. `m_cli.engine_driver.discover_drivers()` walks the group
+for `m engine`'s capability output and future driver-selection UX.
+
+Same `PLUGIN_API_VERSION = 1` envelope: the group name + the
+`EngineDriver` Protocol shape are part of the v1 contract.
+
 ## Versioning
 
 `m_cli.plugins.PLUGIN_API_VERSION` is currently `1`. We bump it on a

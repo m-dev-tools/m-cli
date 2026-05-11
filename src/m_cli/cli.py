@@ -22,6 +22,7 @@ from m_cli.doc.examples import examples_command
 from m_cli.doc.manifest import manifest_command
 from m_cli.doc.search import search_command
 from m_cli.doctor import doctor_command
+from m_cli.engine_cli import add_engine_arguments
 from m_cli.fmt import fmt_command
 from m_cli.lint import lint_command
 from m_cli.lsp import lsp_command
@@ -509,16 +510,26 @@ def build_parser() -> argparse.ArgumentParser:
     )
     lsp_parser.set_defaults(func=lsp_command)
 
+    # `m engine` — lifecycle for m-test-engine container
+    add_engine_arguments(subparsers)
+
     # `m doctor`
     doctor_parser = subparsers.add_parser(
         "doctor",
         help="Diagnose the M development environment",
         description=(
-            "Run a sequence of environment-health checks: $ydb_dist, "
-            "$ydb_routines, the tree-sitter-m parser, m-standard "
-            "keyword TSVs, and the `ydb` binary. Each check reports "
-            "OK / WARN / FAIL with an actionable hint on failure. "
-            "Exits 1 if any check is FAIL (WARN does not fail the run)."
+            "Run environment-health checks for the active transport. "
+            "Default is the m-test-engine Docker container — the "
+            "canonical, reliable, consistent M engine environment. "
+            "$M_CLI_ENGINE (local|docker|ssh) overrides the default to "
+            "validate the local YottaDB or legacy SSH path instead. "
+            "The Docker engine path checks the docker daemon, the "
+            "m-test-engine image and container, and the host bind-mount; "
+            "the local path checks $ydb_dist, $ydb_routines, and the "
+            "`ydb` binary. The parser and m-standard keyword loaders "
+            "are checked on every transport. Each check reports OK / "
+            "WARN / FAIL with an actionable hint on failure. Exits 1 "
+            "if any check is FAIL (WARN does not fail the run)."
         ),
     )
     doctor_parser.add_argument(
@@ -526,6 +537,24 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("text", "json"),
         default="text",
         help="Output format (default: text)",
+    )
+    doctor_parser.add_argument(
+        "--fix",
+        action="store_true",
+        help=(
+            "After running checks, invoke `m engine <verb>` for every "
+            "WARN whose fix is an engine verb (install / start / ...). "
+            "Non-engine fixes (sudo'd system commands) are NOT auto-run "
+            "— a manual: line prints instead."
+        ),
+    )
+    doctor_parser.add_argument(
+        "--confirm",
+        action="store_true",
+        help=(
+            "Required to run destructive engine verbs (e.g. `reset`) "
+            "via --fix. No-op without --fix."
+        ),
     )
     doctor_parser.set_defaults(func=doctor_command)
 

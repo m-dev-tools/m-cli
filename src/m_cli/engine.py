@@ -3,21 +3,22 @@
 m-cli's runtime tools (`m test`, `m coverage`, etc.) execute M code on a
 YottaDB engine. Three transports are supported:
 
-- :class:`LocalEngine` — locally-installed YottaDB; runs ``mumps`` via
-  subprocess. Lightest; preferred default if available.
 - :class:`DockerEngine` — YottaDB running in a Docker container
   (typically `m-dev-tools/m-test-engine`). Runs ``mumps`` via
-  ``docker exec``. Cross-platform (Mac, no native YDB needed).
+  ``docker exec``. The canonical default — pinned image, identical
+  behavior across machines.
+- :class:`LocalEngine` — locally-installed YottaDB; runs ``mumps`` via
+  subprocess. Fallback for offline / no-Docker environments.
 - :class:`SSHEngine` (= :class:`Connection` for backward compat) —
-  remote YottaDB reachable over SSH. The legacy vista-meta path; kept
-  for the maintainer's existing setup.
+  remote YottaDB reachable over SSH. The legacy vista-meta path.
 
 :func:`detect_engine` picks the right transport from the
 ``M_CLI_ENGINE`` env var (``local`` | ``docker`` | ``ssh``) or
-auto-detects: if ``vista-meta``'s ``conn.env`` exists, use SSH (preserves
-the existing maintainer workflow); else try local YottaDB; else try
-Docker; else raise :class:`EngineNotConfigured` with guidance for all
-three paths.
+auto-detects: a running ``m-test-engine`` container wins (the
+canonical reliable environment); else fall back to ``vista-meta``'s
+``conn.env`` (SSH) for the legacy maintainer workflow; else local
+YottaDB if installed; else raise :class:`EngineNotConfigured` with
+guidance for all three paths.
 
 Pure-source tools (``m fmt``, ``m lint``) don't touch this module.
 """
@@ -169,18 +170,45 @@ class LocalEngine:
 # ── DockerEngine — YottaDB in a container (m-test-engine) ─────────────
 
 
+def _host_shared_root() -> Path:
+    """Host-side shared bind-mount root, expanded at call time.
+
+    Defaults to the manifest's ``bind_mount.host`` (today
+    ``$HOME/m-work`` → ``/home/<user>/m-work``). Falls back to the
+    legacy ``/m-work`` if the manifest can't be loaded — keeps a
+    sensible default in test harnesses that don't ship the manifest.
+
+    Recomputed on each call so tests can monkeypatch ``$HOME`` and see
+    the change reflected without mutating module-level state.
+    """
+    try:
+        from m_cli.engine_manifest import load_engine_manifest
+
+        return Path(load_engine_manifest().bind_mount.host)
+    except Exception:
+        return Path("/m-work")
+
+
 @dataclass(frozen=True)
 class DockerEngine:
     """Runs ``mumps`` via ``docker exec`` against a long-running container.
 
     The container is typically ``m-test-engine`` started via
     ``m-dev-tools/m-test-engine``'s compose file. The compose file
-    bind-mounts the consumer project's root as ``/work``, so the
-    in-container path for any project file is ``/work/<rel-path>``.
+    bind-mounts the host's ``/m-work`` directory (containing every
+    participating m-* repo checkout) as ``/m-work`` inside the
+    container. A consumer project at ``/m-work/m-cli/`` on the host is
+    therefore visible at ``/m-work/m-cli/`` inside the container — the
+    mapping is identity once you're under ``/m-work``.
+
+    Consumers whose project root is **not** under host ``/m-work`` fall
+    through to the legacy single-mount path: ``bind_root`` is assumed
+    to be the project root in the container, so the user is responsible
+    for arranging that bind separately (e.g. via M_TEST_ENGINE_BIND).
     """
 
     container: str = "m-test-engine"
-    bind_root: Path = field(default_factory=lambda: Path("/work"))
+    bind_root: Path = field(default_factory=lambda: Path("/m-work"))
 
     def _exec_prefix(self) -> list[str]:
         return ["docker", "exec", self.container]
@@ -205,19 +233,25 @@ class DockerEngine:
         return [*self._exec_prefix(), "bash", "-lc", script]
 
     def stage_routines(self, start: Path) -> str:
-        """Return the in-container path the host project root is bound to.
+        """Return the in-container routine path(s) for the host project.
 
-        Assumes the project root mounts to ``self.bind_root`` (the
-        m-test-engine compose default). Routine dirs under it are
-        space-separated, mirroring LocalEngine semantics.
+        Shared-mount model: when the host project root lives under
+        ``/m-work``, the in-container path is ``self.bind_root /
+        <project-relative-to-/m-work>``. Otherwise falls back to
+        ``self.bind_root`` directly (legacy single-mount).
         """
-        root = project_root(start)
+        root = project_root(start).resolve()
+        try:
+            rel = root.relative_to(_host_shared_root().resolve())
+            in_container_root = self.bind_root / rel
+        except ValueError:
+            in_container_root = self.bind_root
         dirs = [
-            str(self.bind_root / sub)
+            str(in_container_root / sub)
             for sub in _ROUTINE_DIRS
             if (root / sub).is_dir()
         ]
-        return " ".join(dirs) if dirs else str(self.bind_root)
+        return " ".join(dirs) if dirs else str(in_container_root)
 
 
 # ── SSHEngine — remote YottaDB over SSH (legacy / vista-meta) ─────────
@@ -368,12 +402,13 @@ def detect_engine() -> Engine:
     Order of resolution:
 
     1. If ``M_CLI_ENGINE`` is set, use that (``local`` | ``docker`` | ``ssh``).
-    2. If a vista-meta conn.env exists, use SSHEngine — preserves the
-       maintainer's existing workflow without forcing a new transport.
-    3. If a local YottaDB is detectable (``$ydb_dist`` or ``which ydb``),
-       use LocalEngine.
-    4. If a running ``m-test-engine`` container is detectable, use
-       DockerEngine.
+    2. If a running ``m-test-engine`` container is detectable, use
+       DockerEngine. This is the canonical default — pinned image,
+       identical behavior across machines.
+    3. If a vista-meta conn.env exists, use SSHEngine — preserves the
+       legacy maintainer workflow on machines without Docker.
+    4. If a local YottaDB is detectable (``$ydb_dist`` or ``which ydb``),
+       use LocalEngine. Last-resort fallback for offline environments.
     5. Otherwise raise :class:`EngineNotConfigured` with guidance for
        all three paths.
     """
@@ -389,13 +424,14 @@ def detect_engine() -> Engine:
             f"M_CLI_ENGINE={forced!r} unrecognized; expected local | docker | ssh"
         )
 
-    # Auto-detect.
+    # Auto-detect: Docker is the canonical default. SSH and Local are
+    # graceful fallbacks for machines without a running m-test-engine.
+    if _has_docker_engine_running():
+        return DockerEngine()
     if conn_file_path().exists():
         return read_connection()
     if _has_local_ydb():
         return LocalEngine.detect()
-    if _has_docker_engine_running():
-        return DockerEngine()
     raise EngineNotConfigured(
         "No engine transport detected. Pick one:\n"
         "  - local:  install YottaDB locally (apt install yottadb on Linux)\n"

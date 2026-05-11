@@ -1,0 +1,48 @@
+{
+  "$schema": "https://raw.githubusercontent.com/m-dev-tools/m-test-engine/main/dist/m-test-engine.schema.json",
+  "protocol": 1,
+  "image": "ghcr.io/m-dev-tools/m-test-engine",
+  "default_tag": "0.1.0",
+  "container": "m-test-engine",
+  "bind_mount": {
+    "host": "$HOME/m-work",
+    "container": "/m-work",
+    "mode": "rw"
+  },
+  "compose_file": "docker/compose.yml",
+  "repo_url": "https://github.com/m-dev-tools/m-test-engine",
+  "min_docker": "20.10",
+  "ydb_version": "r2.02",
+  "run_args": {
+    "hostname": "m-test-engine",
+    "working_dir": "/m-work",
+    "restart": "unless-stopped",
+    "volumes": [
+      {
+        "name": "m-test-engine-globals",
+        "target": "/data"
+      }
+    ],
+    "command": [
+      "tail",
+      "-f",
+      "/dev/null"
+    ]
+  },
+  "verbs": {
+    "status":       { "destructive": false, "read_only": true  },
+    "install":      { "destructive": false, "read_only": false },
+    "start":        { "destructive": false, "read_only": false },
+    "stop":         { "destructive": false, "read_only": false },
+    "restart":      { "destructive": false, "read_only": false },
+    "logs":         { "destructive": false, "read_only": true  },
+    "shell":        { "destructive": false, "read_only": false },
+    "exec":         { "destructive": false, "read_only": false },
+    "version":      { "destructive": false, "read_only": true  },
+    "upgrade":      { "destructive": false, "read_only": false },
+    "reset":        { "destructive": true,  "read_only": false, "requires_confirm": true },
+    "watch":        { "destructive": false, "read_only": true  },
+    "capabilities": { "destructive": false, "read_only": true  }
+  },
+  "verified_on": "2026-05-11"
+}

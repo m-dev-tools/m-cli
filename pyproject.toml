@@ -81,6 +81,11 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v --tb=short"
+# Pin cache inside this repo so pytest never walks up to ~/m-dev-tools/
+# and writes a shared .pytest_cache that parallel sessions in sibling
+# repos would all stomp on. See .github/docs/dev-practices/
+# parallel-multi-repo-git-hygiene.md.
+cache_dir = ".pytest_cache"
 
 [tool.coverage.run]
 source = ["src"]
