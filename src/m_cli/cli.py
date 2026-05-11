@@ -518,16 +518,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Diagnose the M development environment",
         description=(
             "Run environment-health checks for the active transport. "
-            "$M_CLI_ENGINE (local|docker|ssh) selects which check set "
-            "to run; otherwise doctor auto-detects via the same priority "
-            "as `m test` / `m coverage`. The Docker engine path checks "
-            "the docker daemon, the m-test-engine image and container, "
-            "and the host bind-mount; the local path checks $ydb_dist, "
-            "$ydb_routines, and the `ydb` binary. The parser and "
-            "m-standard keyword loaders are checked on every transport. "
-            "Each check reports OK / WARN / FAIL with an actionable hint "
-            "on failure. Exits 1 if any check is FAIL (WARN does not "
-            "fail the run)."
+            "Default is the m-test-engine Docker container — the "
+            "canonical, reliable, consistent M engine environment. "
+            "$M_CLI_ENGINE (local|docker|ssh) overrides the default to "
+            "validate the local YottaDB or legacy SSH path instead. "
+            "The Docker engine path checks the docker daemon, the "
+            "m-test-engine image and container, and the host bind-mount; "
+            "the local path checks $ydb_dist, $ydb_routines, and the "
+            "`ydb` binary. The parser and m-standard keyword loaders "
+            "are checked on every transport. Each check reports OK / "
+            "WARN / FAIL with an actionable hint on failure. Exits 1 "
+            "if any check is FAIL (WARN does not fail the run)."
         ),
     )
     doctor_parser.add_argument(

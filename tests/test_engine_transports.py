@@ -8,8 +8,9 @@ m-cli's runtime tools support three transports:
   vista-meta path
 
 `detect_engine()` resolves which transport to use from the M_CLI_ENGINE
-env var or auto-detection in priority order: ssh-conn-env (legacy
-maintainer), local (which ydb), docker (m-test-engine container).
+env var or auto-detection in priority order: docker (m-test-engine
+container — canonical default), ssh-conn-env (legacy maintainer
+fallback), local YottaDB (offline fallback).
 
 These tests cover the new abstractions; ``test_engine.py`` covers the
 existing SSH/Connection surface and stays green to prove backward
@@ -194,16 +195,46 @@ def test_detect_engine_unknown_value_raises(
         detect_engine()
 
 
-def test_detect_engine_falls_back_to_ssh_when_conn_env_present(
+def test_detect_engine_prefers_docker_over_ambient_signals(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """No env var, but conn.env exists → preserves maintainer workflow."""
+    """A running m-test-engine container wins over conn.env and local
+    YDB — Docker is the canonical default."""
     monkeypatch.delenv("M_CLI_ENGINE", raising=False)
+    f = tmp_path / "conn.env"
+    f.write_text("VISTA_HOST=h\nVISTA_SSH_PORT=2222\nVISTA_SSH_USER=u\n")
+    monkeypatch.setenv("VISTA_CONN_FILE", str(f))
+    monkeypatch.setattr("m_cli.engine._has_local_ydb", lambda: True)
+    monkeypatch.setattr("m_cli.engine._has_docker_engine_running", lambda: True)
+    eng = detect_engine()
+    assert isinstance(eng, DockerEngine)
+
+
+def test_detect_engine_falls_back_to_ssh_when_docker_unavailable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Docker isn't running, but conn.env exists → SSH fallback for
+    the legacy maintainer workflow."""
+    monkeypatch.delenv("M_CLI_ENGINE", raising=False)
+    monkeypatch.setattr("m_cli.engine._has_docker_engine_running", lambda: False)
     f = tmp_path / "conn.env"
     f.write_text("VISTA_HOST=h\nVISTA_SSH_PORT=2222\nVISTA_SSH_USER=u\n")
     monkeypatch.setenv("VISTA_CONN_FILE", str(f))
     eng = detect_engine()
     assert isinstance(eng, SSHEngine)
+
+
+def test_detect_engine_falls_back_to_local_when_docker_and_ssh_unavailable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """No docker, no conn.env, but local YDB → LocalEngine fallback
+    for offline environments."""
+    monkeypatch.delenv("M_CLI_ENGINE", raising=False)
+    monkeypatch.setattr("m_cli.engine._has_docker_engine_running", lambda: False)
+    monkeypatch.setenv("VISTA_CONN_FILE", str(tmp_path / "missing.env"))
+    monkeypatch.setenv("ydb_dist", "/opt/yottadb")
+    eng = detect_engine()
+    assert isinstance(eng, LocalEngine)
 
 
 def test_detect_engine_no_signals_raises_with_helpful_message(

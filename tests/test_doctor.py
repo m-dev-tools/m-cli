@@ -791,25 +791,35 @@ def test_transport_intent_auto_defaults_to_docker_when_nothing_detected(monkeypa
     assert _transport_intent() == "docker"
 
 
-def test_transport_intent_auto_picks_ssh_when_conn_env_exists(monkeypatch, tmp_path):
+def test_transport_intent_ignores_ambient_conn_env(monkeypatch, tmp_path):
+    """Docker is the assumed default. A stray vista-meta ``conn.env`` on
+    disk must NOT silently flip doctor away from validating the Docker
+    environment — that was a footgun. The user must opt in via
+    ``M_CLI_ENGINE=ssh`` explicitly."""
     from m_cli.doctor.checks import _transport_intent
 
     _clean_transport_env(monkeypatch)
     conn = tmp_path / "conn.env"
     conn.write_text("VISTA_HOST=h\nVISTA_SSH_PORT=22\nVISTA_SSH_USER=u\n")
     monkeypatch.setenv("VISTA_CONN_FILE", str(conn))
-    assert _transport_intent() == "ssh"
+    assert _transport_intent() == "docker"
 
 
-def test_transport_intent_auto_picks_local_when_ydb_dist_set(monkeypatch):
+def test_transport_intent_ignores_ambient_ydb_dist(monkeypatch):
+    """A stray ``$ydb_dist`` on the host must not flip doctor away from
+    the Docker default. Set ``M_CLI_ENGINE=local`` to validate the
+    local-YDB path explicitly."""
     from m_cli.doctor.checks import _transport_intent
 
     _clean_transport_env(monkeypatch)
     monkeypatch.setenv("ydb_dist", "/some/path")
-    assert _transport_intent() == "local"
+    assert _transport_intent() == "docker"
 
 
-def test_transport_intent_auto_picks_local_when_ydb_on_path(monkeypatch):
+def test_transport_intent_ignores_ambient_ydb_on_path(monkeypatch):
+    """``ydb`` on ``$PATH`` is not enough to flip away from the Docker
+    default — that was the source of the silent intent-flip footgun.
+    Use ``M_CLI_ENGINE=local`` to validate a host install."""
     from m_cli.doctor.checks import _transport_intent
 
     _clean_transport_env(monkeypatch)
@@ -818,7 +828,7 @@ def test_transport_intent_auto_picks_local_when_ydb_on_path(monkeypatch):
         return "/usr/local/bin/ydb" if name == "ydb" else None
 
     monkeypatch.setattr("shutil.which", _which)
-    assert _transport_intent() == "local"
+    assert _transport_intent() == "docker"
 
 
 def test_run_all_checks_docker_mode_excludes_host_ydb_checks(

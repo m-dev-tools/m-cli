@@ -3,21 +3,22 @@
 m-cli's runtime tools (`m test`, `m coverage`, etc.) execute M code on a
 YottaDB engine. Three transports are supported:
 
-- :class:`LocalEngine` — locally-installed YottaDB; runs ``mumps`` via
-  subprocess. Lightest; preferred default if available.
 - :class:`DockerEngine` — YottaDB running in a Docker container
   (typically `m-dev-tools/m-test-engine`). Runs ``mumps`` via
-  ``docker exec``. Cross-platform (Mac, no native YDB needed).
+  ``docker exec``. The canonical default — pinned image, identical
+  behavior across machines.
+- :class:`LocalEngine` — locally-installed YottaDB; runs ``mumps`` via
+  subprocess. Fallback for offline / no-Docker environments.
 - :class:`SSHEngine` (= :class:`Connection` for backward compat) —
-  remote YottaDB reachable over SSH. The legacy vista-meta path; kept
-  for the maintainer's existing setup.
+  remote YottaDB reachable over SSH. The legacy vista-meta path.
 
 :func:`detect_engine` picks the right transport from the
 ``M_CLI_ENGINE`` env var (``local`` | ``docker`` | ``ssh``) or
-auto-detects: if ``vista-meta``'s ``conn.env`` exists, use SSH (preserves
-the existing maintainer workflow); else try local YottaDB; else try
-Docker; else raise :class:`EngineNotConfigured` with guidance for all
-three paths.
+auto-detects: a running ``m-test-engine`` container wins (the
+canonical reliable environment); else fall back to ``vista-meta``'s
+``conn.env`` (SSH) for the legacy maintainer workflow; else local
+YottaDB if installed; else raise :class:`EngineNotConfigured` with
+guidance for all three paths.
 
 Pure-source tools (``m fmt``, ``m lint``) don't touch this module.
 """
@@ -401,12 +402,13 @@ def detect_engine() -> Engine:
     Order of resolution:
 
     1. If ``M_CLI_ENGINE`` is set, use that (``local`` | ``docker`` | ``ssh``).
-    2. If a vista-meta conn.env exists, use SSHEngine — preserves the
-       maintainer's existing workflow without forcing a new transport.
-    3. If a local YottaDB is detectable (``$ydb_dist`` or ``which ydb``),
-       use LocalEngine.
-    4. If a running ``m-test-engine`` container is detectable, use
-       DockerEngine.
+    2. If a running ``m-test-engine`` container is detectable, use
+       DockerEngine. This is the canonical default — pinned image,
+       identical behavior across machines.
+    3. If a vista-meta conn.env exists, use SSHEngine — preserves the
+       legacy maintainer workflow on machines without Docker.
+    4. If a local YottaDB is detectable (``$ydb_dist`` or ``which ydb``),
+       use LocalEngine. Last-resort fallback for offline environments.
     5. Otherwise raise :class:`EngineNotConfigured` with guidance for
        all three paths.
     """
@@ -422,13 +424,14 @@ def detect_engine() -> Engine:
             f"M_CLI_ENGINE={forced!r} unrecognized; expected local | docker | ssh"
         )
 
-    # Auto-detect.
+    # Auto-detect: Docker is the canonical default. SSH and Local are
+    # graceful fallbacks for machines without a running m-test-engine.
+    if _has_docker_engine_running():
+        return DockerEngine()
     if conn_file_path().exists():
         return read_connection()
     if _has_local_ydb():
         return LocalEngine.detect()
-    if _has_docker_engine_running():
-        return DockerEngine()
     raise EngineNotConfigured(
         "No engine transport detected. Pick one:\n"
         "  - local:  install YottaDB locally (apt install yottadb on Linux)\n"

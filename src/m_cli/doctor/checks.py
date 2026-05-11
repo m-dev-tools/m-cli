@@ -22,11 +22,15 @@ only checks today are the source-tool-agnostic parser + keyword
 loaders. Transport-specific SSH health (conn.env, remote ydb_dist)
 is future work.
 
-:func:`_transport_intent` resolves the active transport by mirroring
-``m_cli.engine.detect_engine``'s priority: ``$M_CLI_ENGINE`` env
-override → vista-meta conn.env → local YDB on PATH/env → docker
-default. :func:`run_all_checks` then runs only the relevant set —
-irrelevant checks do not appear in the output, not even as SKIPPED.
+:func:`_transport_intent` resolves the active transport: ``$M_CLI_ENGINE``
+env override (``local`` | ``docker`` | ``ssh``) wins; otherwise Docker
+is the canonical default. Doctor's job is to validate the assumed
+default environment, so we *don't* silently flip away from Docker
+based on ambient signals like a stray ``conn.env`` or ``ydb`` on
+``$PATH`` — if Docker isn't running, the Docker checks will say so
+and offer a fix. :func:`run_all_checks` then runs only the relevant
+set — irrelevant checks do not appear in the output, not even as
+SKIPPED.
 
 Each ``check_*`` function is independent. Prerequisite handling lives
 in :func:`run_all_checks`.
@@ -513,27 +517,25 @@ _CHECKS_BY_INTENT: dict[str, tuple[Callable[[], Check], ...]] = {
 def _transport_intent() -> str:
     """Resolve the active runtime transport: local | docker | ssh.
 
-    Order of resolution mirrors :func:`m_cli.engine.detect_engine` so
-    doctor validates the same path that ``m test`` / ``m coverage``
-    would actually use:
+    Doctor's job is to validate the *assumed default* environment, not
+    to mirror runtime fallback behavior. Docker is the canonical
+    default — pinned image, identical behavior across machines — and
+    everything depends on having a reliable, consistent M engine. So:
 
-    1. ``$M_CLI_ENGINE`` if set to ``local`` | ``docker`` | ``ssh``
-       (case- and whitespace-insensitive).
-    2. SSH if vista-meta's ``conn.env`` exists.
-    3. Local if ``$ydb_dist`` is set or ``ydb`` / ``mumps`` is on PATH.
-    4. Docker — canonical default.
+    1. ``$M_CLI_ENGINE`` (``local`` | ``docker`` | ``ssh``,
+       case-/whitespace-insensitive) wins if set — explicit user
+       override.
+    2. Otherwise: ``docker``.
+
+    Ambient signals (``conn.env`` lying around, ``ydb`` on ``$PATH``)
+    are intentionally *not* probed here. They were a footgun: a stray
+    YottaDB install on the host would silently flip doctor away from
+    the Docker checks the user actually depends on. Set
+    ``M_CLI_ENGINE=local|ssh`` explicitly to validate those paths.
     """
     forced = os.environ.get("M_CLI_ENGINE", "").strip().lower()
     if forced in ("local", "docker", "ssh"):
         return forced
-    from m_cli.engine import conn_file_path
-
-    if conn_file_path().exists():
-        return "ssh"
-    if os.environ.get("ydb_dist") or os.environ.get("YDB_DIST"):
-        return "local"
-    if shutil.which("ydb") or shutil.which("mumps"):
-        return "local"
     return "docker"
 
 
