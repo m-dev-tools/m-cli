@@ -146,6 +146,21 @@ Matches `verification_commands` in `dist/repo.meta.json`.
 - No mocks unless unavoidable — fixtures are real `.m` source strings.
 - Lint and fmt rules are registered via `register(Rule(...))` / `_register(FmtRule(...))` in `src/m_cli/lint/rules.py` and `src/m_cli/fmt/rules.py`. New rules ship in their own module-level `register(...)` block; the `m capabilities` / `m lint --list-rules --json` / `m fmt --list-rules --json` outputs read from the same registries — never hand-curate the JSON.
 
+## Layout conventions
+
+`docs/` holds **only** human-readable prose. Technical artifacts live elsewhere — m-cli's top-level layout:
+
+| Path | Contents |
+|---|---|
+| `docs/` | Guides (lint user guide, plugin development, pre-commit), `evolution.md` (history), `plans/`, worked-example writeups |
+| `dist/` | Phase 0 `repo.meta.json` + `commands.json` / `lint-rules.json` / `fmt-rules.json` (manifest drift gate) |
+| `examples/` | Worked-example artifacts (e.g. `vista-lint-presets/m-cli.toml.example`) |
+| `scripts/` | Shell helpers (seed/unseed, bench drivers, corpus validation) |
+| `src/m_cli/` | Python source |
+| `tests/` | Pytest — one file per source module |
+
+Enforced by `make check-docs-prose` (CI gate). Org-level rule: [`.github/CONTRIBUTING.md` § Layout conventions](https://github.com/m-dev-tools/.github/blob/main/CONTRIBUTING.md#layout-conventions).
+
 ---
 
 ## Dev workflow
