@@ -1,3 +1,10 @@
+---
+created: 2026-05-09
+last_modified: 2026-05-09
+revisions: 2
+doc_type: [WORKED-EXAMPLE, TUTORIAL]
+---
+
 # Worked example — building `accsum` with `m`, TDD, and m-stdlib
 
 **Document type:** end-to-end walkthrough

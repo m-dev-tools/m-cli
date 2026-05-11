@@ -4,6 +4,10 @@ purpose: Candidate corpora for m-cli's modern-rule-set regression gate
 inventory_date: 2026-04-29
 inventoried_by: research pass for m-cli M-MOD-NN rule design
 scope: Public, post-2010-active, NOT VistA-derived, substantial enough to surface real lint findings
+created: 2026-04-30
+last_modified: 2026-05-10
+revisions: 2
+doc_type: [REFERENCE, RESEARCH]
 ---
 
 # Catalog: open-source M / MUMPS / ObjectScript corpora (non-VistA)

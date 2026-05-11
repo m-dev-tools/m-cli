@@ -1,3 +1,10 @@
+---
+created: 2026-05-10
+last_modified: 2026-05-10
+revisions: 1
+doc_type: [HISTORY, BUILD-LOG]
+---
+
 # m-cli — evolution
 
 How m-cli was built, in chronological order. This is **archaeology** — read the

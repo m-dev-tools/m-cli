@@ -1,3 +1,10 @@
+---
+created: 2026-04-30
+last_modified: 2026-05-10
+revisions: 4
+doc_type: [SURVEY, GAP-ANALYSIS]
+---
+
 # Language CLI Survey — Tooling Landscape and `m-cli` Gap Analysis
 
 > **Purpose.** A comprehensive survey of the CLI toolchains shipped by five of the

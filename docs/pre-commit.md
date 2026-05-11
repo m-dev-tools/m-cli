@@ -1,3 +1,10 @@
+---
+created: 2026-04-27
+last_modified: 2026-05-07
+revisions: 2
+doc_type: [GUIDE, INTEGRATION]
+---
+
 # Pre-commit integration
 
 `m-cli` ships a [pre-commit](https://pre-commit.com) hook scaffold so

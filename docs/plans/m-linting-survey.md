@@ -1,3 +1,10 @@
+---
+created: 2026-04-30
+last_modified: 2026-05-10
+revisions: 2
+doc_type: [SURVEY, GAP-ANALYSIS]
+---
+
 # M Linting Survey & Greenfield Recommendations
 
 **Status:** the four open questions in the original draft (§9) are now

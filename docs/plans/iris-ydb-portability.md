@@ -1,3 +1,10 @@
+---
+created: 2026-04-30
+last_modified: 2026-05-10
+revisions: 2
+doc_type: [PLAN, RESEARCH]
+---
+
 # IRIS ↔ YottaDB CLI Comparison — Portability Plan for `m-cli`
 
 > **Purpose.** A function-by-function comparison of the command-line surface
