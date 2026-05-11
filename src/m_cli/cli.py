@@ -21,6 +21,7 @@ from m_cli.doc.examples import examples_command
 from m_cli.doc.manifest import manifest_command
 from m_cli.doc.search import search_command
 from m_cli.doctor import doctor_command
+from m_cli.engine_cli import add_engine_arguments
 from m_cli.fmt import fmt_command
 from m_cli.lint import lint_command
 from m_cli.lsp import lsp_command
@@ -507,6 +508,9 @@ def build_parser() -> argparse.ArgumentParser:
         help=argparse.SUPPRESS,
     )
     lsp_parser.set_defaults(func=lsp_command)
+
+    # `m engine` — lifecycle for m-test-engine container
+    add_engine_arguments(subparsers)
 
     # `m doctor`
     doctor_parser = subparsers.add_parser(

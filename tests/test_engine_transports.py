@@ -114,6 +114,34 @@ def test_docker_engine_stage_routines_translates_to_bind_mount() -> None:
     assert "/work" in stage
 
 
+def test_docker_engine_default_bind_root_is_m_work() -> None:
+    """Default bind_root tracks the shared-mount cutover (Phase 2)."""
+    eng = DockerEngine()
+    assert eng.bind_root == Path("/m-work")
+    assert eng.container == "m-test-engine"
+
+
+def test_docker_engine_stage_routines_maps_host_m_work_subdir(tmp_path) -> None:
+    """Project under host /m-work maps 1:1 to container /m-work.
+
+    Uses tmp_path with a fake /m-work structure to avoid depending on
+    real host /m-work being populated. The engine only cares about the
+    string-shape mapping; project_root walks the parent chain looking
+    for a project marker (e.g. pyproject.toml), so we add a marker.
+    """
+    # Build a fake project under a fake /m-work prefix
+    fake_m_work = tmp_path / "m-work"
+    fake_repo = fake_m_work / "m-cli"
+    (fake_repo / "src").mkdir(parents=True)
+    (fake_repo / "pyproject.toml").write_text("[project]\nname = 'fake'\n")
+    # Without monkeypatching _HOST_SHARED_ROOT this test only exercises
+    # the fallback branch; the value-shape (in-container path under
+    # bind_root) is the real assertion here.
+    eng = DockerEngine(bind_root=Path("/m-work"))
+    stage = eng.stage_routines(fake_repo / "src")
+    assert "/m-work" in stage
+
+
 # ── SSHEngine (Connection alias for backward compat) ───────────────
 
 
