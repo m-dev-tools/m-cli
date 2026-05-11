@@ -17,6 +17,23 @@ def ci_command(args: argparse.Namespace) -> int:
 
     target = Path(args.path) if args.path else Path.cwd()
     workflow_path = target / ".github" / "workflows" / "m-ci.yml"
+    workflow = render_workflow()
+
+    # Preview mode (default): never mutate state. Print the planned path
+    # and the workflow YAML to stdout and exit 0. The user opts into the
+    # write with `--write` (CLI-UX guide §3.2; anti-pattern #4).
+    if not getattr(args, "write", False):
+        if not getattr(args, "quiet", False):
+            rel = (
+                workflow_path.relative_to(target)
+                if workflow_path.is_relative_to(target)
+                else workflow_path
+            )
+            print(f"# preview: would write {rel}")
+            print("# pass --write to scaffold the file")
+            print(f"# ----- {workflow_path.name} -----")
+            print(workflow, end="" if workflow.endswith("\n") else "\n")
+        return 0
 
     if workflow_path.exists() and not getattr(args, "force", False):
         print(
@@ -26,7 +43,7 @@ def ci_command(args: argparse.Namespace) -> int:
         return 1
 
     workflow_path.parent.mkdir(parents=True, exist_ok=True)
-    workflow_path.write_text(render_workflow())
+    workflow_path.write_text(workflow)
 
     if not getattr(args, "quiet", False):
         if workflow_path.is_relative_to(target):

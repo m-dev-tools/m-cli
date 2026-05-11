@@ -120,6 +120,38 @@ class TestHelpOutput:
 
 
 # ────────────────────────────────────────────────────────────────────────
+# PR 2 — `m ci init` requires `--write`; bare = preview
+# ────────────────────────────────────────────────────────────────────────
+
+
+class TestCiInitPreviewVsWrite:
+    """Anti-pattern #4 / guide §3.2 — bare leaf must not mutate state."""
+
+    def test_ci_init_bare_does_not_write(self, tmp_path: Path) -> None:
+        r = run("ci", "init", "--path", str(tmp_path))
+        assert r.returncode == 0, r.stderr
+        assert not (tmp_path / ".github" / "workflows" / "m-ci.yml").exists()
+
+    def test_ci_init_bare_preview_shows_yaml_on_stdout(self, tmp_path: Path) -> None:
+        r = run("ci", "init", "--path", str(tmp_path))
+        assert r.returncode == 0
+        # Preview includes the would-be path and at least one workflow gate.
+        assert "m-ci.yml" in r.stdout
+        assert "m fmt --check" in r.stdout
+
+    def test_ci_init_bare_preview_tells_user_how_to_opt_in(
+        self, tmp_path: Path
+    ) -> None:
+        r = run("ci", "init", "--path", str(tmp_path))
+        assert "--write" in r.stdout
+
+    def test_ci_init_write_creates_file(self, tmp_path: Path) -> None:
+        r = run("ci", "init", "--write", "--path", str(tmp_path))
+        assert r.returncode == 0, r.stderr
+        assert (tmp_path / ".github" / "workflows" / "m-ci.yml").is_file()
+
+
+# ────────────────────────────────────────────────────────────────────────
 # §3.5 — `--version` to stdout, exit 0 (already compliant; pinned)
 # ────────────────────────────────────────────────────────────────────────
 

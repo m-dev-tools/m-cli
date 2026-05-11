@@ -571,7 +571,21 @@ def build_parser() -> argparse.ArgumentParser:
     ci_actions = ci_parser.add_subparsers(dest="ci_action", metavar="<action>")
     ci_init_parser = ci_actions.add_parser(
         "init",
-        help="Write .github/workflows/m-ci.yml",
+        help="Preview (or with --write, scaffold) .github/workflows/m-ci.yml",
+        description=(
+            "Scaffold .github/workflows/m-ci.yml. Without --write, prints "
+            "the planned file path and workflow YAML to stdout and exits 0 "
+            "(preview mode — never mutates state). Pass --write to actually "
+            "create the file."
+        ),
+    )
+    ci_init_parser.add_argument(
+        "--write",
+        action="store_true",
+        help=(
+            "Write the workflow file. Without this, prints the planned "
+            "path and workflow YAML to stdout and exits 0 (preview mode)."
+        ),
     )
     ci_init_parser.add_argument(
         "--path",
@@ -582,7 +596,7 @@ def build_parser() -> argparse.ArgumentParser:
     ci_init_parser.add_argument(
         "--force",
         action="store_true",
-        help="Overwrite an existing workflow file",
+        help="Overwrite an existing workflow file (with --write)",
     )
     ci_init_parser.add_argument(
         "-q",

@@ -48,9 +48,35 @@ def test_render_workflow_checks_out_with_actions_checkout():
 
 
 def _ns(**kw) -> argparse.Namespace:
-    base = {"path": None, "force": False, "quiet": True, "ci_action": "init"}
+    """Default to write=True so existing unit tests exercise the mutation
+    path. Preview-mode (write=False) is exercised by the CLI-UX contract
+    suite via the installed `m` binary, and by `test_ci_init_bare_does_not_write_by_default` below.
+    """
+    base = {
+        "path": None,
+        "force": False,
+        "quiet": True,
+        "ci_action": "init",
+        "write": True,
+    }
     base.update(kw)
     return argparse.Namespace(**base)
+
+
+def test_ci_init_bare_does_not_write_by_default(tmp_path):
+    rc = ci_command(_ns(path=tmp_path, write=False))
+    assert rc == 0
+    # No mutation when --write is not passed.
+    assert not (tmp_path / ".github" / "workflows" / "m-ci.yml").exists()
+
+
+def test_ci_init_bare_preview_emits_yaml(tmp_path, capsys):
+    rc = ci_command(_ns(path=tmp_path, write=False, quiet=False))
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "m fmt --check" in out
+    assert "m-ci.yml" in out
+    assert "--write" in out
 
 
 def test_ci_init_creates_workflow_file(tmp_path):
