@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/m-dev-tools/m-test-engine/main/dist/m-test-engine.schema.json",
   "protocol": 1,
   "image": "ghcr.io/m-dev-tools/m-test-engine",
-  "default_tag": "r2.02",
+  "default_tag": "0.1.0",
   "container": "m-test-engine",
   "bind_mount": {
     "host": "/m-work",
