@@ -1,6 +1,7 @@
 """Environment-health checks for ``m doctor``.
 
-Two paths share this surface:
+Two runtime transports are supported, each with its own check set
+(see :data:`_CHECKS_BY_INTENT`):
 
 1. **Docker engine path** (canonical for m-cli users without local
    YottaDB) — driven by the vendored manifest in
@@ -10,10 +11,22 @@ Two paths share this surface:
    when an upstream cause has already been reported.
 
 2. **Local YottaDB path** (alternative, for hosts with a system-level
-   YDB install) — the original five checks. These do **not** declare
-   prerequisites because each handles its own missing-input case
-   gracefully (e.g. ``check_ydb_binary`` falls back to ``$PATH`` when
-   ``$ydb_dist`` is unset).
+   YDB install) — checks ``$ydb_dist``, ``$ydb_routines``, and the
+   ``ydb`` binary. These do **not** declare prerequisites because each
+   handles its own missing-input case gracefully (e.g.
+   ``check_ydb_binary`` falls back to ``$PATH`` when ``$ydb_dist`` is
+   unset).
+
+SSH transport is recognised by :func:`_transport_intent` but its
+only checks today are the source-tool-agnostic parser + keyword
+loaders. Transport-specific SSH health (conn.env, remote ydb_dist)
+is future work.
+
+:func:`_transport_intent` resolves the active transport by mirroring
+``m_cli.engine.detect_engine``'s priority: ``$M_CLI_ENGINE`` env
+override → vista-meta conn.env → local YDB on PATH/env → docker
+default. :func:`run_all_checks` then runs only the relevant set —
+irrelevant checks do not appear in the output, not even as SKIPPED.
 
 Each ``check_*`` function is independent. Prerequisite handling lives
 in :func:`run_all_checks`.
@@ -464,74 +477,89 @@ def check_engine_bind_mount() -> Check:
     )
 
 
-# ── Registry + dependency-aware runner ───────────────────────────────
+# ── Transport-aware check selection ──────────────────────────────────
 
 
-_CHECKS: tuple[Callable[[], Check], ...] = (
-    # Docker engine path first — canonical runtime
-    check_docker_installed,
-    check_docker_daemon,
-    check_engine_image,
-    check_engine_container,
-    check_engine_bind_mount,
-    # Local YDB path second — alternative runtime
-    check_ydb_dist,
-    check_ydb_routines,
-    check_parser,
-    check_keywords,
-    check_ydb_binary,
-)
+# Checks per transport intent. Selection avoids running irrelevant
+# checks entirely (vs. running and post-filtering to SKIPPED) so the
+# output reflects only the user's actual runtime.
+_CHECKS_BY_INTENT: dict[str, tuple[Callable[[], Check], ...]] = {
+    "docker": (
+        check_docker_installed,
+        check_docker_daemon,
+        check_engine_image,
+        check_engine_container,
+        check_engine_bind_mount,
+        check_parser,
+        check_keywords,
+    ),
+    "local": (
+        check_ydb_dist,
+        check_ydb_routines,
+        check_parser,
+        check_keywords,
+        check_ydb_binary,
+    ),
+    "ssh": (
+        # SSH transport health is its own concern (vista-meta conn.env,
+        # remote ydb_dist). Until those checks exist, only the source-
+        # tool-agnostic checks run.
+        check_parser,
+        check_keywords,
+    ),
+}
 
 
-# Checks that constitute "the engine path is operational." When every one
-# of these is OK, the host doesn't need a local YDB install at all — the
-# container ships its own — so we suppress the fallback-runtime warnings.
-_ENGINE_PATH_CHECKS: tuple[str, ...] = (
-    "docker_installed",
-    "docker_daemon",
-    "engine_image",
-    "engine_container",
-    "engine_bind_mount",
-)
+def _transport_intent() -> str:
+    """Resolve the active runtime transport: local | docker | ssh.
 
-# Host-side YDB checks that are not needed when the engine path is up.
-_LOCAL_YDB_CHECKS: tuple[str, ...] = (
-    "ydb_dist",
-    "ydb_routines",
-    "ydb_binary",
-)
+    Order of resolution mirrors :func:`m_cli.engine.detect_engine` so
+    doctor validates the same path that ``m test`` / ``m coverage``
+    would actually use:
 
+    1. ``$M_CLI_ENGINE`` if set to ``local`` | ``docker`` | ``ssh``
+       (case- and whitespace-insensitive).
+    2. SSH if vista-meta's ``conn.env`` exists.
+    3. Local if ``$ydb_dist`` is set or ``ydb`` / ``mumps`` is on PATH.
+    4. Docker — canonical default.
+    """
+    forced = os.environ.get("M_CLI_ENGINE", "").strip().lower()
+    if forced in ("local", "docker", "ssh"):
+        return forced
+    from m_cli.engine import conn_file_path
 
-def _skip_for(prereq_name: str) -> Check:
-    """SKIPPED placeholder check pointing at the failed prerequisite."""
-    return Check(
-        name="",  # caller fills this in
-        status=Status.SKIPPED,
-        message=f"skipped — waiting on {prereq_name}",
-    )
+    if conn_file_path().exists():
+        return "ssh"
+    if os.environ.get("ydb_dist") or os.environ.get("YDB_DIST"):
+        return "local"
+    if shutil.which("ydb") or shutil.which("mumps"):
+        return "local"
+    return "docker"
 
 
 def run_all_checks() -> list[Check]:
-    """Run every registered check, honouring prerequisite chains.
+    """Run the checks relevant to the active transport.
 
-    A check is SKIPPED (not run) when any of its declared prerequisites
-    landed in a non-OK status. This implements the root-cause grouping
-    pattern: one warning per cause instead of N warnings per N
-    downstream effects.
+    Transport intent (see :func:`_transport_intent`) selects the check
+    set. Checks irrelevant to that transport are not run at all — they
+    do not appear in the output, not even as SKIPPED.
 
-    Local YDB checks declare no prerequisites and behave exactly as
-    before. Only the Docker chain participates in the SKIPPED grouping.
+    Within the selected set, a check is SKIPPED (not run) when any of
+    its declared prerequisites landed in a non-OK status. This
+    implements root-cause grouping: one warning per cause instead of
+    N warnings per N downstream effects.
     """
+    intent = _transport_intent()
+    checks = _CHECKS_BY_INTENT[intent]
+
     results: dict[str, Check] = {}
-    for fn in _CHECKS:
-        # Peek at the function's first-pass output to discover its
-        # declared prerequisites and its own name. (The check function
-        # is the source of truth — registry has no separate metadata.)
+    for fn in checks:
         provisional = fn()
         prereqs = provisional.prerequisites
-        blockers = [p for p in prereqs if p in results and results[p].status is not Status.OK]
+        blockers = [
+            p for p in prereqs if p in results and results[p].status is not Status.OK
+        ]
         if blockers:
-            # One pointer is enough — the user follows the chain up.
             skipped = Check(
                 name=provisional.name,
                 status=Status.SKIPPED,
@@ -541,19 +569,5 @@ def run_all_checks() -> list[Check]:
             results[provisional.name] = skipped
         else:
             results[provisional.name] = provisional
-
-    engine_ok = all(
-        results.get(n) is not None and results[n].status is Status.OK
-        for n in _ENGINE_PATH_CHECKS
-    )
-    if engine_ok:
-        for name in _LOCAL_YDB_CHECKS:
-            c = results.get(name)
-            if c is not None and c.status is not Status.OK:
-                results[name] = Check(
-                    name=name,
-                    status=Status.SKIPPED,
-                    message="not needed — engine container provides YottaDB",
-                )
 
     return list(results.values())

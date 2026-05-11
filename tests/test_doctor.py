@@ -214,11 +214,12 @@ def test_check_ydb_binary_via_explicit_YDB(monkeypatch, tmp_path):
 # ----------------------------------------------------------- run_all_checks()
 
 
-def test_run_all_checks_returns_list_of_checks():
+def test_run_all_checks_returns_list_of_checks(monkeypatch):
+    # Force local intent so all five legacy host-side checks are present.
+    monkeypatch.setenv("M_CLI_ENGINE", "local")
     checks = run_all_checks()
     assert isinstance(checks, list)
     assert all(isinstance(c, Check) for c in checks)
-    # At least the five named checks
     names = {c.name for c in checks}
     assert {
         "ydb_dist",
@@ -240,7 +241,8 @@ def _ns(format: str = "text", **kw) -> argparse.Namespace:
 
 
 def test_doctor_cli_exits_zero_when_all_ok(monkeypatch, tmp_path, capsys):
-    # Force every check to OK by setting a clean env.
+    # Local intent: force every host-side check to OK by setting a clean env.
+    monkeypatch.setenv("M_CLI_ENGINE", "local")
     binary = tmp_path / "ydb"
     binary.write_text("#!/bin/sh\nexit 0\n")
     binary.chmod(0o755)
@@ -255,12 +257,7 @@ def test_doctor_cli_exits_zero_when_all_ok(monkeypatch, tmp_path, capsys):
 
 
 def test_doctor_cli_exits_one_when_any_fail(monkeypatch, tmp_path, capsys):
-    # Force the engine path unavailable so the demote-when-engine-OK
-    # path (which would otherwise SKIP this FAIL on hosts where docker
-    # is healthy) doesn't override the test's intent.
-    from m_cli.doctor import _runtime
-
-    monkeypatch.setattr(_runtime, "docker_available", lambda: False)
+    monkeypatch.setenv("M_CLI_ENGINE", "local")
     bogus = tmp_path / "no-such-dir"
     monkeypatch.setenv("ydb_dist", str(bogus))
     rc = doctor_command(_ns())
@@ -270,7 +267,8 @@ def test_doctor_cli_exits_one_when_any_fail(monkeypatch, tmp_path, capsys):
 
 
 def test_doctor_cli_warn_does_not_fail_run(monkeypatch, capsys):
-    # Unset ydb_dist → WARN, but no FAIL anywhere.
+    # Local intent + unset ydb_dist → WARN, but no FAIL anywhere.
+    monkeypatch.setenv("M_CLI_ENGINE", "local")
     monkeypatch.delenv("ydb_dist", raising=False)
     monkeypatch.delenv("ydb_routines", raising=False)
     monkeypatch.delenv("YDB", raising=False)
@@ -279,6 +277,7 @@ def test_doctor_cli_warn_does_not_fail_run(monkeypatch, capsys):
 
 
 def test_doctor_cli_json_format(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("M_CLI_ENGINE", "local")
     monkeypatch.setenv("ydb_dist", str(tmp_path))
     monkeypatch.setenv("ydb_routines", ".")
     rc = doctor_command(_ns(format="json"))
@@ -302,8 +301,15 @@ def docker_world(monkeypatch):
     Tests adjust individual probes via ``world.set(...)`` to model the
     cell of the truth table they're exercising. No actual docker /
     filesystem calls fire.
+
+    Forces ``M_CLI_ENGINE=docker`` so the transport-aware check
+    selector in :func:`m_cli.doctor.checks.run_all_checks` always
+    picks the Docker check set, regardless of ambient ``$ydb_dist``
+    or other env state on the test host.
     """
     from m_cli.doctor import _runtime
+
+    monkeypatch.setenv("M_CLI_ENGINE", "docker")
 
     state = {
         "docker_available": True,
@@ -463,45 +469,36 @@ def test_run_all_checks_marks_docker_downstream_skipped_when_docker_missing(
         assert "docker_installed" in (c.message or "")
 
 
-def test_run_all_checks_skips_local_ydb_when_engine_path_operational(
+def test_run_all_checks_docker_default_omits_host_ydb_even_when_stale(
     docker_world, monkeypatch
 ):
-    """Engine container is the canonical runtime. When it's fully
-    operational, the host-side YDB checks ($ydb_dist / $ydb_routines /
-    ydb binary) are not needed — emit SKIPPED instead of WARN/FAIL so
-    the user isn't pestered to install YDB on the host."""
-    # docker_world default: every engine probe returns OK.
-    # Host YDB is broken three ways: stale path, no binary, no $YDB.
+    """Under canonical (docker) intent, stale host-YDB env vars are
+    irrelevant: the engine container provides YDB. Doctor must not
+    show host-YDB rows at all — neither WARN/FAIL nor SKIPPED.
+    """
+    # docker_world default: every engine probe returns OK; M_CLI_ENGINE
+    # unset → auto-resolve to docker. But the test machine may have
+    # host YDB present which would flip auto to local — force docker.
+    monkeypatch.setenv("M_CLI_ENGINE", "docker")
     bad = "/definitely/not/a/real/path"
     monkeypatch.setenv("ydb_dist", bad)
     monkeypatch.setenv("ydb_routines", bad)
     monkeypatch.delenv("YDB", raising=False)
-    monkeypatch.setattr("shutil.which", lambda _: None)
 
-    checks = run_all_checks()
-    by_name = {c.name: c for c in checks}
-
-    for name in ("ydb_dist", "ydb_routines", "ydb_binary"):
-        c = by_name[name]
-        assert c.status is Status.SKIPPED, (
-            f"{name} should be SKIPPED when engine is operational, got {c.status}"
-        )
-        # Reason must explain why — engine container provides YDB.
-        assert "engine" in c.message.lower()
+    names = {c.name for c in run_all_checks()}
+    assert names.isdisjoint({"ydb_dist", "ydb_routines", "ydb_binary"})
 
 
-def test_run_all_checks_keeps_local_ydb_warnings_when_engine_container_down(
+def test_run_all_checks_local_intent_surfaces_host_ydb_failure(
     docker_world, monkeypatch
 ):
-    """Engine container down → host-YDB checks remain the fallback
-    runtime signal and must still surface their problems."""
-    docker_world.set(docker_container_running=False)
+    """In explicit local mode, host-YDB checks run regardless of the
+    Docker engine's state — they are the primary signal for that user."""
+    monkeypatch.setenv("M_CLI_ENGINE", "local")
     monkeypatch.setenv("ydb_dist", "/definitely/not/a/real/path")
     monkeypatch.delenv("YDB", raising=False)
 
-    checks = run_all_checks()
-    by_name = {c.name: c for c in checks}
-
+    by_name = {c.name: c for c in run_all_checks()}
     assert by_name["ydb_dist"].status is Status.FAIL
 
 
@@ -754,4 +751,123 @@ def test_doctor_command_fix_flag_default_off(docker_world, fake_fix_driver):
 
     docker_world.set(docker_image_present=False)
     doctor_command(_ns(format="text"))
-    assert fake_fix_driver.calls == []
+
+
+# ─────────────────────────────────────────────────────────────────
+# Phase 2 — Transport-aware check selection
+# ─────────────────────────────────────────────────────────────────
+
+
+def _clean_transport_env(monkeypatch):
+    """Common setup: no transport override, no conn.env, no host YDB."""
+    monkeypatch.delenv("M_CLI_ENGINE", raising=False)
+    monkeypatch.delenv("ydb_dist", raising=False)
+    monkeypatch.delenv("YDB_DIST", raising=False)
+    monkeypatch.delenv("ydb_routines", raising=False)
+    monkeypatch.delenv("YDB", raising=False)
+    monkeypatch.setenv("VISTA_CONN_FILE", "/definitely/no/such/file/conn.env")
+    monkeypatch.setattr("shutil.which", lambda _: None)
+
+
+def test_transport_intent_respects_explicit_override(monkeypatch):
+    from m_cli.doctor.checks import _transport_intent
+
+    for value in ("local", "docker", "ssh"):
+        monkeypatch.setenv("M_CLI_ENGINE", value)
+        assert _transport_intent() == value
+
+
+def test_transport_intent_normalizes_case_and_whitespace(monkeypatch):
+    from m_cli.doctor.checks import _transport_intent
+
+    monkeypatch.setenv("M_CLI_ENGINE", "  DOCKER  ")
+    assert _transport_intent() == "docker"
+
+
+def test_transport_intent_auto_defaults_to_docker_when_nothing_detected(monkeypatch):
+    from m_cli.doctor.checks import _transport_intent
+
+    _clean_transport_env(monkeypatch)
+    assert _transport_intent() == "docker"
+
+
+def test_transport_intent_auto_picks_ssh_when_conn_env_exists(monkeypatch, tmp_path):
+    from m_cli.doctor.checks import _transport_intent
+
+    _clean_transport_env(monkeypatch)
+    conn = tmp_path / "conn.env"
+    conn.write_text("VISTA_HOST=h\nVISTA_SSH_PORT=22\nVISTA_SSH_USER=u\n")
+    monkeypatch.setenv("VISTA_CONN_FILE", str(conn))
+    assert _transport_intent() == "ssh"
+
+
+def test_transport_intent_auto_picks_local_when_ydb_dist_set(monkeypatch):
+    from m_cli.doctor.checks import _transport_intent
+
+    _clean_transport_env(monkeypatch)
+    monkeypatch.setenv("ydb_dist", "/some/path")
+    assert _transport_intent() == "local"
+
+
+def test_transport_intent_auto_picks_local_when_ydb_on_path(monkeypatch):
+    from m_cli.doctor.checks import _transport_intent
+
+    _clean_transport_env(monkeypatch)
+
+    def _which(name):
+        return "/usr/local/bin/ydb" if name == "ydb" else None
+
+    monkeypatch.setattr("shutil.which", _which)
+    assert _transport_intent() == "local"
+
+
+def test_run_all_checks_docker_mode_excludes_host_ydb_checks(
+    docker_world, monkeypatch
+):
+    """Under docker intent, the three host-YDB checks are not run at all
+    — not as SKIPPED, not at any status. They are noise that distracts
+    from the canonical engine path.
+    """
+    _clean_transport_env(monkeypatch)
+    monkeypatch.setenv("M_CLI_ENGINE", "docker")
+    names = {c.name for c in run_all_checks()}
+    assert names.isdisjoint({"ydb_dist", "ydb_routines", "ydb_binary"})
+    assert {"docker_installed", "engine_container", "parser", "keywords"} <= names
+
+
+def test_run_all_checks_local_mode_excludes_docker_engine_checks(monkeypatch):
+    """Under local intent, the Docker engine chain is irrelevant and
+    must not appear in the output."""
+    _clean_transport_env(monkeypatch)
+    monkeypatch.setenv("M_CLI_ENGINE", "local")
+    names = {c.name for c in run_all_checks()}
+    assert names.isdisjoint(
+        {
+            "docker_installed",
+            "docker_daemon",
+            "engine_image",
+            "engine_container",
+            "engine_bind_mount",
+        }
+    )
+    assert {"ydb_dist", "ydb_routines", "ydb_binary", "parser", "keywords"} <= names
+
+
+def test_run_all_checks_ssh_mode_runs_only_parser_and_keywords(monkeypatch):
+    """SSH intent: transport health is out of scope for now; the only
+    transport-neutral checks are parser + keywords."""
+    _clean_transport_env(monkeypatch)
+    monkeypatch.setenv("M_CLI_ENGINE", "ssh")
+    names = {c.name for c in run_all_checks()}
+    assert names == {"parser", "keywords"}
+
+
+def test_run_all_checks_local_mode_surfaces_stale_ydb_dist_as_fail(monkeypatch):
+    """In explicit local mode, a missing $ydb_dist directory FAILs —
+    same behavior as before the transport refactor, just no longer
+    overridden by an engine-OK post-pass."""
+    _clean_transport_env(monkeypatch)
+    monkeypatch.setenv("M_CLI_ENGINE", "local")
+    monkeypatch.setenv("ydb_dist", "/definitely/not/a/real/path")
+    by_name = {c.name: c for c in run_all_checks()}
+    assert by_name["ydb_dist"].status is Status.FAIL

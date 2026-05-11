@@ -517,11 +517,17 @@ def build_parser() -> argparse.ArgumentParser:
         "doctor",
         help="Diagnose the M development environment",
         description=(
-            "Run a sequence of environment-health checks: $ydb_dist, "
-            "$ydb_routines, the tree-sitter-m parser, m-standard "
-            "keyword TSVs, and the `ydb` binary. Each check reports "
-            "OK / WARN / FAIL with an actionable hint on failure. "
-            "Exits 1 if any check is FAIL (WARN does not fail the run)."
+            "Run environment-health checks for the active transport. "
+            "$M_CLI_ENGINE (local|docker|ssh) selects which check set "
+            "to run; otherwise doctor auto-detects via the same priority "
+            "as `m test` / `m coverage`. The Docker engine path checks "
+            "the docker daemon, the m-test-engine image and container, "
+            "and the host bind-mount; the local path checks $ydb_dist, "
+            "$ydb_routines, and the `ydb` binary. The parser and "
+            "m-standard keyword loaders are checked on every transport. "
+            "Each check reports OK / WARN / FAIL with an actionable hint "
+            "on failure. Exits 1 if any check is FAIL (WARN does not "
+            "fail the run)."
         ),
     )
     doctor_parser.add_argument(
