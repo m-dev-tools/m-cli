@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 from m_cli import __version__
+from m_cli._overview import print_overview
 from m_cli.build import build_command
 from m_cli.capabilities import capabilities_command
 from m_cli.ci import ci_command
@@ -41,12 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
     """
     parser = argparse.ArgumentParser(
         prog="m",
-        description=(
-            "M (MUMPS) source-level toolchain. Subcommands: "
-            "fmt (format), lint (lint), test (run test suites), "
-            "watch (re-run suites on save), coverage (test coverage), "
-            "lsp (Language Server)."
-        ),
+        description="M (MUMPS) source-level toolchain.",
     )
     parser.add_argument(
         "-V",
@@ -54,7 +50,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="version",
         version=f"m-cli {__version__}",
     )
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers = parser.add_subparsers(dest="command", metavar="<command>")
 
     # `m fmt`
     fmt_parser = subparsers.add_parser(
@@ -570,14 +566,9 @@ def build_parser() -> argparse.ArgumentParser:
     ci_parser = subparsers.add_parser(
         "ci",
         help="CI scaffolding (subcommand: `init`)",
-        description=(
-            "Scaffold CI configuration. Currently supports a single "
-            "action: `m ci init` writes `.github/workflows/m-ci.yml` "
-            "running m fmt --check + m lint --error-on=fatal + m test + "
-            "m coverage --format=lcov on every push and pull request."
-        ),
+        description="Scaffold CI configuration for m-cli projects.",
     )
-    ci_actions = ci_parser.add_subparsers(dest="ci_action", required=True)
+    ci_actions = ci_parser.add_subparsers(dest="ci_action", metavar="<action>")
     ci_init_parser = ci_actions.add_parser(
         "init",
         help="Write .github/workflows/m-ci.yml",
@@ -903,6 +894,26 @@ def build_parser() -> argparse.ArgumentParser:
         _plugin_registered=_registered,
         _plugin_conflicts=_conflicts,
         _m_cli_builtins=frozenset(_builtins),
+    )
+
+    # ── Bare-dispatcher overviews (gh-style two-line desc + COMMANDS) ──
+    # Must come *after* plugin registration so plugin-contributed
+    # subcommands appear in the bare `m` listing alongside built-ins.
+    _ROOT_TAGLINE = (
+        "Engine-neutral source tooling (fmt/lint/doc); "
+        "runtime tools (test/coverage/build) target YottaDB."
+    )
+    parser.set_defaults(
+        func=lambda _a: print_overview(parser, subparsers, tagline=_ROOT_TAGLINE),
+    )
+    _CI_TAGLINE = (
+        "Writes `.github/workflows/m-ci.yml` "
+        "(fmt --check + lint + test + coverage)."
+    )
+    ci_parser.set_defaults(
+        func=lambda _a: print_overview(
+            ci_parser, ci_actions, tagline=_CI_TAGLINE, word="action"
+        ),
     )
 
     return parser
