@@ -448,3 +448,195 @@ def test_doctor_text_renders_skipped_with_prereq_reference(docker_world, capsys)
     assert "SKIP" in out
     # The prereq that caused the skip is named in the output
     assert "docker_installed" in out
+
+
+# ─────────────────────────────────────────────────────────────────
+# Phase 2.4 — m doctor --fix delegates to m engine verbs
+# ─────────────────────────────────────────────────────────────────
+
+
+def test_fix_dataclass_carries_engine_verb_field():
+    """Phase 2.4: Fix grows engine_verb so --fix knows which `m engine
+    <verb>` to invoke. None means the fix is non-engine (e.g. sudo'd
+    system command) and --fix should print a 'manual:' line instead."""
+    f = Fix(command=("docker", "pull", "x"), engine_verb="install")
+    assert f.engine_verb == "install"
+    f2 = Fix(command=("sudo", "systemctl", "start", "docker"))
+    assert f2.engine_verb is None  # default
+
+
+def test_check_engine_image_fix_declares_install_engine_verb(docker_world):
+    docker_world.set(docker_image_present=False)
+    c = check_engine_image()
+    assert c.fix is not None
+    assert c.fix.engine_verb == "install"
+
+
+def test_check_engine_container_fix_declares_start_engine_verb(docker_world):
+    docker_world.set(docker_container_running=False)
+    c = check_engine_container()
+    assert c.fix is not None
+    assert c.fix.engine_verb == "start"
+
+
+def test_check_docker_daemon_fix_has_no_engine_verb(docker_world):
+    """sudo systemctl start docker isn't an engine verb — --fix must
+    NOT auto-run it. It belongs to the 'manual:' bucket."""
+    docker_world.set(docker_daemon_reachable=False)
+    c = check_docker_daemon()
+    assert c.fix is not None
+    assert c.fix.engine_verb is None
+
+
+def test_check_engine_bind_mount_fix_has_no_engine_verb(docker_world):
+    """sudo install -d /m-work also belongs to manual: bucket."""
+    docker_world.set(path_exists=False)
+    c = check_engine_bind_mount()
+    if c.fix is not None:
+        assert c.fix.engine_verb is None
+
+
+# ── apply_fixes — driver-delegation engine ───────────────────────
+
+
+class _FakeFixDriver:
+    """Records every engine method invocation. apply_fixes uses these."""
+
+    name = "docker"
+
+    def __init__(self):
+        self.calls: list[str] = []
+
+    def install(self):
+        self.calls.append("install")
+        return 0
+
+    def start(self):
+        self.calls.append("start")
+        return 0
+
+    def stop(self):
+        self.calls.append("stop")
+        return 0
+
+    def restart(self):
+        self.calls.append("restart")
+        return 0
+
+    def upgrade(self):
+        self.calls.append("upgrade")
+        return 0
+
+    def reset(self, *, confirm=False):
+        self.calls.append(f"reset(confirm={confirm})")
+        return 0 if confirm else 2
+
+
+@pytest.fixture
+def fake_fix_driver():
+    from m_cli.engine_cli import _default_driver_factory, set_driver_factory
+
+    drv = _FakeFixDriver()
+    set_driver_factory(lambda: drv)
+    try:
+        yield drv
+    finally:
+        set_driver_factory(_default_driver_factory)
+
+
+def test_apply_fixes_invokes_engine_verb_for_each_fixable_warn(
+    docker_world, fake_fix_driver
+):
+    """engine_image WARN + engine_container WARN should both run via the driver."""
+    from m_cli.doctor.cli import apply_fixes
+
+    docker_world.set(docker_image_present=False, docker_container_running=False)
+    invoked = apply_fixes(run_all_checks(), confirm=False)
+    assert "install" in fake_fix_driver.calls
+    assert "start" in fake_fix_driver.calls
+    # apply_fixes returns the count of driver invocations; both engine
+    # checks fired so we expect 2 (not all fixes have engine_verb).
+    assert invoked == 2
+
+
+def test_apply_fixes_skips_non_engine_fixes_with_manual_message(
+    docker_world, fake_fix_driver, capsys
+):
+    """A WARN whose fix lacks engine_verb is not auto-run; manual hint prints."""
+    from m_cli.doctor.cli import apply_fixes
+
+    docker_world.set(docker_daemon_reachable=False)
+    apply_fixes(run_all_checks(), confirm=False)
+    out = capsys.readouterr().out
+    # No fix.command for docker_daemon should have been driver-invoked
+    assert "install" not in fake_fix_driver.calls
+    assert "start" not in fake_fix_driver.calls
+    # The user is told what to run by hand
+    assert "manual" in out.lower()
+    assert "systemctl" in out or "Docker" in out
+
+
+def test_apply_fixes_refuses_destructive_engine_verb_without_confirm(
+    docker_world, fake_fix_driver, capsys
+):
+    """If a check ever emits a destructive Fix with an engine_verb, --fix
+    must require --confirm before running. None of the Phase 1b/2 checks
+    do this today; this test pins the guard for future additions."""
+    from m_cli.doctor.checks import Check, Fix, Status
+    from m_cli.doctor.cli import _apply_one_fix
+
+    bad = Check(
+        name="hypothetical_destructive",
+        status=Status.WARN,
+        message="m",
+        fix=Fix(command=("docker", "reset"), engine_verb="reset", destructive=True),
+    )
+    # Without --confirm: skipped, driver not called
+    _apply_one_fix(bad, confirm=False)
+    assert not any("reset" in c for c in fake_fix_driver.calls)
+    out = capsys.readouterr().out
+    assert "destructive" in out.lower() or "--confirm" in out
+
+
+def test_apply_fixes_runs_destructive_engine_verb_with_confirm(
+    docker_world, fake_fix_driver
+):
+    from m_cli.doctor.checks import Check, Fix, Status
+    from m_cli.doctor.cli import _apply_one_fix
+
+    bad = Check(
+        name="hypothetical_destructive",
+        status=Status.WARN,
+        message="m",
+        fix=Fix(command=("docker", "reset"), engine_verb="reset", destructive=True),
+    )
+    _apply_one_fix(bad, confirm=True)
+    assert any("reset" in c for c in fake_fix_driver.calls)
+
+
+def test_apply_fixes_skips_ok_checks(docker_world, fake_fix_driver):
+    """Only WARN/FAIL checks with a fix are candidates; OK checks are ignored."""
+    from m_cli.doctor.cli import apply_fixes
+
+    # All green
+    apply_fixes(run_all_checks(), confirm=False)
+    assert fake_fix_driver.calls == []
+
+
+def test_doctor_command_fix_flag_invokes_fixes(docker_world, fake_fix_driver):
+    """The CLI flag wires apply_fixes after the initial check pass."""
+    from m_cli.doctor import doctor_command
+
+    docker_world.set(docker_image_present=False)
+    rc = doctor_command(_ns(format="text", fix=True, confirm=False))
+    assert "install" in fake_fix_driver.calls
+    assert rc in (0, 1)  # may re-check; exit code reflects post-fix state
+
+
+def test_doctor_command_fix_flag_default_off(docker_world, fake_fix_driver):
+    """Without --fix, no engine verbs fire even if WARN checks have engine_verb."""
+    from m_cli.doctor import doctor_command
+
+    docker_world.set(docker_image_present=False)
+    doctor_command(_ns(format="text"))
+    assert fake_fix_driver.calls == []

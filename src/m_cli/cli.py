@@ -530,6 +530,24 @@ def build_parser() -> argparse.ArgumentParser:
         default="text",
         help="Output format (default: text)",
     )
+    doctor_parser.add_argument(
+        "--fix",
+        action="store_true",
+        help=(
+            "After running checks, invoke `m engine <verb>` for every "
+            "WARN whose fix is an engine verb (install / start / ...). "
+            "Non-engine fixes (sudo'd system commands) are NOT auto-run "
+            "— a manual: line prints instead."
+        ),
+    )
+    doctor_parser.add_argument(
+        "--confirm",
+        action="store_true",
+        help=(
+            "Required to run destructive engine verbs (e.g. `reset`) "
+            "via --fix. No-op without --fix."
+        ),
+    )
     doctor_parser.set_defaults(func=doctor_command)
 
     # `m new`

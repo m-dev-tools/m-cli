@@ -41,10 +41,23 @@ class Status(enum.Enum):
 
 @dataclass(frozen=True)
 class Fix:
-    """A copy-pasteable fix command derived from manifest data."""
+    """A copy-pasteable fix command derived from manifest data.
+
+    ``engine_verb`` (Phase 2.4) declares which ``m engine <verb>``
+    method applies the fix. When set, ``m doctor --fix`` invokes the
+    driver method directly (no shell-out). When ``None``, the fix is
+    outside the engine namespace (e.g. ``sudo systemctl start
+    docker``) and ``--fix`` only prints a "manual:" hint.
+
+    Keep this distinction tight: the engine-verb path bounds the
+    security surface of ``--fix`` to operations the driver already
+    owns; non-engine fixes never auto-run, no matter how
+    non-destructive they look.
+    """
 
     command: tuple[str, ...]
     destructive: bool = False
+    engine_verb: str | None = None
 
 
 @dataclass(frozen=True)
@@ -304,7 +317,11 @@ def check_engine_image() -> Check:
         message=f"image {ref} not pulled",
         hint=f"Pull the canonical engine image: `docker pull {ref}`.",
         prerequisites=("docker_installed", "docker_daemon"),
-        fix=Fix(command=("docker", "pull", ref), destructive=False),
+        fix=Fix(
+            command=("docker", "pull", ref),
+            destructive=False,
+            engine_verb="install",
+        ),
     )
 
 
@@ -337,6 +354,7 @@ def check_engine_container() -> Check:
         fix=Fix(
             command=("docker", "compose", "-f", m.compose_file, "up", "-d"),
             destructive=False,
+            engine_verb="start",
         ),
     )
 
