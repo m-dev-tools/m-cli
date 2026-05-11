@@ -112,6 +112,12 @@ class EngineStatus:
     container_healthy: bool | None  # None until Phase 3 healthcheck lands
     image_ref: str
     container: str
+    # Phase 3b: OCI labels read from `docker image inspect`. Empty when
+    # no image is pulled. `mismatches` lists classifications of
+    # label-vs-manifest discrepancies; consumers (m doctor, m engine
+    # status) render each as a WARN with an actionable fix.
+    image_labels: dict[str, str] = field(default_factory=dict)
+    mismatches: tuple[str, ...] = ()
 
     def to_dict(self) -> dict:
         return {
@@ -123,6 +129,8 @@ class EngineStatus:
             "container_healthy": self.container_healthy,
             "image_ref": self.image_ref,
             "container": self.container,
+            "image_labels": dict(self.image_labels),
+            "mismatches": list(self.mismatches),
         }
 
 
@@ -209,6 +217,79 @@ class DockerDriver:
     def _has_compose_plugin(self) -> bool:
         return self.runner(["docker", "compose", "version"], capture=True, timeout=5).ok
 
+    def _image_labels(self) -> dict[str, str]:
+        """Read OCI labels from the pulled image. Empty dict if not present."""
+        import json as _json
+
+        result = self.runner(
+            [
+                "docker",
+                "image",
+                "inspect",
+                "--format",
+                "{{ json .Config.Labels }}",
+                self.manifest.image_ref(),
+            ],
+            capture=True,
+            timeout=5,
+        )
+        if not result.ok or not result.stdout.strip():
+            return {}
+        try:
+            parsed = _json.loads(result.stdout.strip())
+        except _json.JSONDecodeError:
+            return {}
+        # docker inspect returns `null` (the JSON literal) when no labels
+        # are set — _json.loads turns that into Python None.
+        if not isinstance(parsed, dict):
+            return {}
+        return {str(k): str(v) for k, v in parsed.items()}
+
+    def _classify_mismatches(self, labels: dict[str, str]) -> tuple[str, ...]:
+        """Diff image labels against the manifest; name each discrepancy.
+
+        Returns a tuple of mismatch classifications (e.g.
+        ``protocol_mismatch``, ``image_outdated``, ``bind_mount_drift``,
+        ``ydb_version_drift``). Empty when labels match the manifest's
+        published expectations.
+
+        Empty input (no labels read) → empty output: m-cli can't
+        classify what it can't observe.
+        """
+        if not labels:
+            return ()
+        m = self.manifest
+        out: list[str] = []
+
+        # Protocol comparison: bidirectional.
+        raw_proto = labels.get("org.m-dev-tools.m-test-engine.protocol")
+        if raw_proto is not None:
+            try:
+                image_proto = int(raw_proto)
+            except ValueError:
+                image_proto = None
+            if image_proto is not None:
+                if image_proto < m.protocol:
+                    # m-cli has newer expectations than the pulled image
+                    # satisfies — user should `m engine upgrade`.
+                    out.append("image_outdated")
+                elif image_proto > m.protocol:
+                    # Image speaks newer protocol than m-cli understands.
+                    out.append("protocol_mismatch")
+
+        # Bind-mount drift — the published image baked the wrong path.
+        raw_bm = labels.get("org.m-dev-tools.m-test-engine.bind-mount")
+        if raw_bm is not None and raw_bm != m.bind_mount.container:
+            out.append("bind_mount_drift")
+
+        # YDB version drift — image was built on a different YDB release
+        # than the manifest declares as canonical.
+        raw_ydb = labels.get("org.m-dev-tools.m-test-engine.ydb-version")
+        if raw_ydb is not None and raw_ydb != m.ydb_version:
+            out.append("ydb_version_drift")
+
+        return tuple(out)
+
     # ── lifecycle verbs ──────────────────────────────────────────────
 
     def status(self) -> EngineStatus:
@@ -216,15 +297,19 @@ class DockerDriver:
         daemon = installed and self._daemon_reachable()
         image = daemon and self._image_present()
         running = daemon and self._container_running()
+        labels = self._image_labels() if image else {}
+        mismatches = self._classify_mismatches(labels) if labels else ()
         return EngineStatus(
             driver=self.name,
             installed=installed,
             daemon_reachable=daemon,
             image_present=image,
             container_running=running,
-            container_healthy=None,  # Phase 3 will source this from HEALTHCHECK
+            container_healthy=None,  # Phase 4 will source this from HEALTHCHECK
             image_ref=self.manifest.image_ref(),
             container=self.manifest.container,
+            image_labels=labels,
+            mismatches=mismatches,
         )
 
     def install(self) -> int:
@@ -351,18 +436,70 @@ class DockerDriver:
         return result.returncode
 
     def version(self) -> int:
-        """Print manifest-declared vs container-reported versions."""
+        """Print manifest-declared vs image-reported labels side-by-side.
+
+        Phase 3b.2: each comparable field renders with ✓ (match) or ✗
+        (mismatch), so version-skew between vendored manifest and pulled
+        image is visible at a glance.
+        """
         m = self.manifest
-        print(f"manifest:  image={m.image_ref()} ydb={m.ydb_version} protocol={m.protocol}")
+        labels = self._image_labels()
+
+        print(f"image:     {m.image_ref()}")
+        print()
+        print("                    manifest          image")
+        print("                    ----------------  ----------------")
+
+        comparisons = (
+            (
+                "protocol",
+                str(m.protocol),
+                labels.get("org.m-dev-tools.m-test-engine.protocol", "—"),
+            ),
+            (
+                "ydb-version",
+                m.ydb_version,
+                labels.get("org.m-dev-tools.m-test-engine.ydb-version", "—"),
+            ),
+            (
+                "bind-mount",
+                m.bind_mount.container,
+                labels.get("org.m-dev-tools.m-test-engine.bind-mount", "—"),
+            ),
+        )
+        any_mismatch = False
+        for name, declared, reported in comparisons:
+            # "—" means the image isn't pulled / has no label; not a
+            # mismatch per se, just an absence of data.
+            if reported == "—":
+                mark = "-"
+            elif declared == reported:
+                mark = "✓"
+            else:
+                mark = "✗"
+                any_mismatch = True
+            print(f"  {mark} {name:<16}  {declared:<16}  {reported}")
+
+        # image-rev has no manifest counterpart — show it standalone.
+        image_rev = labels.get("org.m-dev-tools.m-test-engine.image-rev", "—")
+        print(f"    {'image-rev':<16}  {'(none)':<16}  {image_rev}")
+
+        # Container's currently-running image-id (separate from labels).
         result = self.runner(
             ["docker", "inspect", "--format", "{{.Image}}", m.container],
             capture=True,
             timeout=5,
         )
+        print()
         if result.ok and result.stdout.strip():
             print(f"container: image-id={result.stdout.strip()}")
         else:
-            print("container: not running (manifest is the only available version)")
+            print("container: not running")
+
+        if any_mismatch:
+            print()
+            print("⚠ mismatch detected — run `m engine upgrade` to refresh.")
+
         return 0
 
     def upgrade(self) -> int:

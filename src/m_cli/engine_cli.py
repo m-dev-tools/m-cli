@@ -194,6 +194,13 @@ def _cmd_status(args: argparse.Namespace) -> int:
         print(f"  image present:  {marks[status.image_present]}")
         print(f"  container up:   {marks[status.container_running]}")
         print(f"  healthy:        {marks[status.container_healthy]}")
+        # Phase 3b: surface label-vs-manifest mismatches as WARN lines.
+        # Each mismatch class has an actionable next step.
+        if status.mismatches:
+            print()
+            print("⚠ version skew detected:")
+            for m in status.mismatches:
+                print(f"    {m} — run `m engine upgrade` or re-vendor the manifest")
     return 0 if status.container_running else 1
 
 

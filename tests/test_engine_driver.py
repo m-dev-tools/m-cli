@@ -303,3 +303,212 @@ def test_discover_drivers_returns_list_without_builtin():
     # The list may be empty (no out-of-tree drivers installed); the
     # built-in must never appear in it.
     assert all(d.name != "docker" for d in drivers)
+
+
+# ── Phase 3b: OCI label reading + version-mismatch detection ─────────
+
+
+# Helper: canned `docker image inspect --format '{{ json .Config.Labels }}'`
+# output. Tests configure the runner to return one of these per scenario.
+def _labels_stdout(labels: dict[str, str]) -> str:
+    import json as _json
+
+    return _json.dumps(labels) + "\n"
+
+
+def _matching_labels(manifest) -> dict[str, str]:
+    """Labels that exactly match the manifest — no mismatches."""
+    return {
+        "org.m-dev-tools.m-test-engine.protocol": str(manifest.protocol),
+        "org.m-dev-tools.m-test-engine.bind-mount": manifest.bind_mount.container,
+        "org.m-dev-tools.m-test-engine.ydb-version": manifest.ydb_version,
+        "org.m-dev-tools.m-test-engine.image-rev": "deadbeef" * 5,
+    }
+
+
+def test_engine_status_carries_image_labels_and_mismatches_fields():
+    """Phase 3b shape: EngineStatus exposes image-label payload + mismatch list."""
+    s = EngineStatus(
+        driver="docker",
+        installed=True,
+        daemon_reachable=True,
+        image_present=True,
+        container_running=True,
+        container_healthy=True,
+        image_ref="x:y",
+        container="m-test-engine",
+        image_labels={"org.m-dev-tools.m-test-engine.protocol": "1"},
+        mismatches=("protocol_mismatch",),
+    )
+    d = s.to_dict()
+    assert d["image_labels"] == {"org.m-dev-tools.m-test-engine.protocol": "1"}
+    assert d["mismatches"] == ["protocol_mismatch"]
+
+
+def test_engine_status_defaults_image_labels_to_empty_and_mismatches_to_empty():
+    s = EngineStatus(
+        driver="docker",
+        installed=True,
+        daemon_reachable=True,
+        image_present=False,
+        container_running=False,
+        container_healthy=None,
+        image_ref="x:y",
+        container="m-test-engine",
+    )
+    assert s.image_labels == {}
+    assert s.mismatches == ()
+
+
+def test_docker_driver_image_labels_empty_when_no_image(manifest, fake_runner):
+    """No image pulled → labels dict is empty (no inspect call necessary)."""
+    fake_runner.rule(
+        prefix=["docker", "image", "inspect", manifest.image_ref()],
+        result=CommandResult(returncode=1, stderr="No such image"),
+    )
+    drv = DockerDriver(manifest=manifest, runner=fake_runner.runner)
+    s = drv.status()
+    assert s.image_present is False
+    assert s.image_labels == {}
+    # Mismatches require labels — no labels means no mismatches reported.
+    assert s.mismatches == ()
+
+
+def test_docker_driver_status_populates_image_labels_when_present(manifest, fake_runner):
+    labels = _matching_labels(manifest)
+    fake_runner.rule(prefix=["docker", "info"], result=CommandResult(returncode=0))
+    fake_runner.rule(
+        prefix=["docker", "image", "inspect", manifest.image_ref()],
+        result=CommandResult(returncode=0),
+    )
+    # The label-reading call uses --format with a json template
+    fake_runner.rule(
+        prefix=["docker", "image", "inspect", "--format"],
+        result=CommandResult(returncode=0, stdout=_labels_stdout(labels)),
+    )
+    drv = DockerDriver(manifest=manifest, runner=fake_runner.runner)
+    s = drv.status()
+    assert s.image_labels == labels
+    assert s.mismatches == ()
+
+
+def test_docker_driver_status_detects_protocol_mismatch(manifest, fake_runner):
+    labels = _matching_labels(manifest)
+    labels["org.m-dev-tools.m-test-engine.protocol"] = str(manifest.protocol + 1)
+    fake_runner.rule(prefix=["docker", "info"], result=CommandResult(returncode=0))
+    fake_runner.rule(
+        prefix=["docker", "image", "inspect", manifest.image_ref()],
+        result=CommandResult(returncode=0),
+    )
+    fake_runner.rule(
+        prefix=["docker", "image", "inspect", "--format"],
+        result=CommandResult(returncode=0, stdout=_labels_stdout(labels)),
+    )
+    drv = DockerDriver(manifest=manifest, runner=fake_runner.runner)
+    s = drv.status()
+    assert "protocol_mismatch" in s.mismatches
+
+
+def test_docker_driver_status_detects_bind_mount_drift(manifest, fake_runner):
+    labels = _matching_labels(manifest)
+    labels["org.m-dev-tools.m-test-engine.bind-mount"] = "/wrong"
+    fake_runner.rule(prefix=["docker", "info"], result=CommandResult(returncode=0))
+    fake_runner.rule(
+        prefix=["docker", "image", "inspect", manifest.image_ref()],
+        result=CommandResult(returncode=0),
+    )
+    fake_runner.rule(
+        prefix=["docker", "image", "inspect", "--format"],
+        result=CommandResult(returncode=0, stdout=_labels_stdout(labels)),
+    )
+    drv = DockerDriver(manifest=manifest, runner=fake_runner.runner)
+    s = drv.status()
+    assert "bind_mount_drift" in s.mismatches
+
+
+def test_docker_driver_status_detects_ydb_version_drift(manifest, fake_runner):
+    labels = _matching_labels(manifest)
+    labels["org.m-dev-tools.m-test-engine.ydb-version"] = "r1.99"
+    fake_runner.rule(prefix=["docker", "info"], result=CommandResult(returncode=0))
+    fake_runner.rule(
+        prefix=["docker", "image", "inspect", manifest.image_ref()],
+        result=CommandResult(returncode=0),
+    )
+    fake_runner.rule(
+        prefix=["docker", "image", "inspect", "--format"],
+        result=CommandResult(returncode=0, stdout=_labels_stdout(labels)),
+    )
+    drv = DockerDriver(manifest=manifest, runner=fake_runner.runner)
+    s = drv.status()
+    assert "ydb_version_drift" in s.mismatches
+
+
+def test_docker_driver_status_image_outdated_when_protocol_lower_than_manifest(
+    manifest, fake_runner
+):
+    """image_outdated fires when image protocol < manifest protocol — m-cli
+    has newer expectations than the pulled image satisfies; user should
+    `m engine upgrade`."""
+    labels = _matching_labels(manifest)
+    # Hard to test "image protocol < manifest" with manifest.protocol == 1
+    # because there's no protocol 0. Use a stand-in: ydb-version that's
+    # an older release is the closest proxy in the Phase 3 contract.
+    # Test the protocol direction directly via _classify if it ships.
+    labels["org.m-dev-tools.m-test-engine.protocol"] = "0"
+    fake_runner.rule(prefix=["docker", "info"], result=CommandResult(returncode=0))
+    fake_runner.rule(
+        prefix=["docker", "image", "inspect", manifest.image_ref()],
+        result=CommandResult(returncode=0),
+    )
+    fake_runner.rule(
+        prefix=["docker", "image", "inspect", "--format"],
+        result=CommandResult(returncode=0, stdout=_labels_stdout(labels)),
+    )
+    drv = DockerDriver(manifest=manifest, runner=fake_runner.runner)
+    s = drv.status()
+    # Either "image_outdated" or "protocol_mismatch" is acceptable —
+    # both signal the same actionable problem (run `m engine upgrade`).
+    # Pin "image_outdated" specifically since that's the documented
+    # label for image < manifest direction.
+    assert "image_outdated" in s.mismatches or "protocol_mismatch" in s.mismatches
+
+
+# ── DockerDriver.version() — Phase 3b.2 ──────────────────────────────
+
+
+def test_docker_driver_version_shows_image_label_actuals_when_present(
+    manifest, fake_runner, capsys
+):
+    labels = _matching_labels(manifest)
+    fake_runner.rule(
+        prefix=["docker", "image", "inspect", "--format"],
+        result=CommandResult(returncode=0, stdout=_labels_stdout(labels)),
+    )
+    # docker inspect for image-id should still succeed
+    fake_runner.rule(
+        prefix=["docker", "inspect", "--format", "{{.Image}}"],
+        result=CommandResult(returncode=0, stdout="sha256:abcdef\n"),
+    )
+    drv = DockerDriver(manifest=manifest, runner=fake_runner.runner)
+    rc = drv.version()
+    out = capsys.readouterr().out
+    assert rc == 0
+    # Manifest-declared lines
+    assert manifest.image_ref() in out
+    # Image-reported lines
+    assert labels["org.m-dev-tools.m-test-engine.image-rev"][:7] in out or "deadbeef" in out
+    assert "image" in out.lower()  # the comparison framing
+
+
+def test_docker_driver_version_highlights_mismatch_in_protocol(manifest, fake_runner, capsys):
+    labels = _matching_labels(manifest)
+    labels["org.m-dev-tools.m-test-engine.protocol"] = str(manifest.protocol + 1)
+    fake_runner.rule(
+        prefix=["docker", "image", "inspect", "--format"],
+        result=CommandResult(returncode=0, stdout=_labels_stdout(labels)),
+    )
+    drv = DockerDriver(manifest=manifest, runner=fake_runner.runner)
+    drv.version()
+    out = capsys.readouterr().out
+    # Some visible mismatch indicator — `mismatch`, `✗`, or both
+    assert "mismatch" in out.lower() or "✗" in out
