@@ -29,5 +29,20 @@
       "/dev/null"
     ]
   },
+  "verbs": {
+    "status":       { "destructive": false, "read_only": true  },
+    "install":      { "destructive": false, "read_only": false },
+    "start":        { "destructive": false, "read_only": false },
+    "stop":         { "destructive": false, "read_only": false },
+    "restart":      { "destructive": false, "read_only": false },
+    "logs":         { "destructive": false, "read_only": true  },
+    "shell":        { "destructive": false, "read_only": false },
+    "exec":         { "destructive": false, "read_only": false },
+    "version":      { "destructive": false, "read_only": true  },
+    "upgrade":      { "destructive": false, "read_only": false },
+    "reset":        { "destructive": true,  "read_only": false, "requires_confirm": true },
+    "watch":        { "destructive": false, "read_only": true  },
+    "capabilities": { "destructive": false, "read_only": true  }
+  },
   "verified_on": "2026-05-11"
 }
