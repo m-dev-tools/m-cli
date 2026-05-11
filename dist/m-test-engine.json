@@ -1,0 +1,33 @@
+{
+  "$schema": "https://raw.githubusercontent.com/m-dev-tools/m-test-engine/main/dist/m-test-engine.schema.json",
+  "protocol": 1,
+  "image": "ghcr.io/m-dev-tools/m-test-engine",
+  "default_tag": "r2.02",
+  "container": "m-test-engine",
+  "bind_mount": {
+    "host": "/m-work",
+    "container": "/m-work",
+    "mode": "rw"
+  },
+  "compose_file": "docker/compose.yml",
+  "repo_url": "https://github.com/m-dev-tools/m-test-engine",
+  "min_docker": "20.10",
+  "ydb_version": "r2.02",
+  "run_args": {
+    "hostname": "m-test-engine",
+    "working_dir": "/m-work",
+    "restart": "unless-stopped",
+    "volumes": [
+      {
+        "name": "m-test-engine-globals",
+        "target": "/data"
+      }
+    ],
+    "command": [
+      "tail",
+      "-f",
+      "/dev/null"
+    ]
+  },
+  "verified_on": "2026-05-11"
+}
