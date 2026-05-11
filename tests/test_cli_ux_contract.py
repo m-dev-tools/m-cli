@@ -227,3 +227,59 @@ class TestUnknownFlagRoutesToSubparser:
         r = run("ci", "init", "--__bogus__")
         assert r.returncode == 2, r.stderr
         assert "usage: m ci init" in r.stderr.lower(), r.stderr
+
+
+# ────────────────────────────────────────────────────────────────────────
+# PR 4 — domain failures exit 1, not 2
+# ────────────────────────────────────────────────────────────────────────
+
+
+class TestDomainFailuresExit1:
+    """§3.7 — exit 2 is reserved for *usage* errors; missing manifests
+    and missing binaries are *domain* failures → exit 1."""
+
+    @pytest.mark.parametrize(
+        "cmd",
+        ["doc", "search", "manifest", "examples", "errors"],
+    )
+    def test_missing_manifest_exits_1(self, cmd: str, tmp_path: Path) -> None:
+        # Run from a clean tmp dir with HOME stubbed so find_manifest()
+        # walks up and finds nothing. Search needs a positional query;
+        # the others tolerate missing positionals.
+        env_extra = {"HOME": str(tmp_path)}
+        argv = [cmd]
+        if cmd == "search":
+            argv.append("nopatternmatchesthis")
+        elif cmd == "doc":
+            argv.append("STDJSON")
+        import os
+
+        env = {**os.environ, **env_extra}
+        env.pop("M_CLI_MANIFEST", None)
+        r = subprocess.run(
+            [str(M), *argv],
+            capture_output=True,
+            text=True,
+            cwd=str(tmp_path),
+            env=env,
+        )
+        assert r.returncode == 1, (cmd, r.stdout, r.stderr)
+        assert "manifest" in r.stderr.lower(), (cmd, r.stderr)
+
+    def test_missing_ydb_binary_exits_1(self, tmp_path: Path) -> None:
+        import os
+
+        env = {
+            **os.environ,
+            "PATH": str(tmp_path),  # no `ydb` here
+        }
+        env.pop("YDB", None)
+        env.pop("ydb_dist", None)
+        r = subprocess.run(
+            [str(M), "build", str(tmp_path)],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert r.returncode == 1, (r.stdout, r.stderr)
+        assert "ydb" in r.stderr.lower(), r.stderr

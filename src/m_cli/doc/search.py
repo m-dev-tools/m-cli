@@ -24,7 +24,7 @@ shape on a 32-module library.
 Per the discoverability plan §4.2, this command shares manifest
 discovery with ``m doc`` (``find_manifest()``). Same fallback chain;
 same JSON shape; same exit-code conventions (0 = matches, 1 = no
-matches, 2 = manifest unreachable).
+matches OR manifest unreachable, 2 = usage error).
 """
 
 from __future__ import annotations
@@ -34,6 +34,7 @@ import json
 import sys
 from dataclasses import dataclass
 
+from m_cli._exit import DOMAIN_FAILURE
 from m_cli.doc.lookup import find_manifest, load_manifest
 
 
@@ -104,12 +105,12 @@ def search_command(args: argparse.Namespace) -> int:
             "m search: could not find dist/stdlib-manifest.json. "
             "Run `make manifest` from m-stdlib or pass --manifest PATH.\n"
         )
-        return 2
+        return DOMAIN_FAILURE
     try:
         manifest = load_manifest(manifest_path)
     except (OSError, json.JSONDecodeError) as exc:
         sys.stderr.write(f"m search: failed to load {manifest_path}: {exc}\n")
-        return 2
+        return DOMAIN_FAILURE
 
     query = (getattr(args, "query", "") or "").strip()
     if not query:

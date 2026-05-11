@@ -17,10 +17,11 @@ Flags:
                              walks up from cwd, then falls back to
                              ``~/projects/m-stdlib/dist/stdlib-manifest.json``).
 
-Exit codes:
+Exit codes (per CLI-UX guide §3.7):
 *  0 — match found, output written.
-*  1 — symbol not found (also when fuzzy lookup found 0 matches).
-*  2 — manifest could not be loaded (missing or unreadable).
+*  1 — domain failure: symbol not found (also when fuzzy lookup found
+       0 matches), or manifest could not be loaded (missing/unreadable).
+*  2 — usage error (argparse-level: unknown flag, malformed argument).
 
 The legacy path-based behaviour (extract M docstrings to Markdown /
 HTML) has been moved aside — :mod:`m_cli.doc.extract` and
@@ -35,6 +36,7 @@ import argparse
 import json
 import sys
 
+from m_cli._exit import DOMAIN_FAILURE
 from m_cli.doc.format import (
     format_label_json,
     format_label_list,
@@ -75,13 +77,13 @@ def doc_command(args: argparse.Namespace) -> int:
     manifest_path = find_manifest(explicit=explicit)
     if manifest_path is None:
         _print_no_manifest(sys.stderr)
-        return 2
+        return DOMAIN_FAILURE
 
     try:
         manifest = load_manifest(manifest_path)
     except (OSError, json.JSONDecodeError) as exc:
         sys.stderr.write(f"m doc: failed to load {manifest_path}: {exc}\n")
-        return 2
+        return DOMAIN_FAILURE
 
     symbol = (getattr(args, "symbol", "") or "").strip()
     short = bool(getattr(args, "short", False))

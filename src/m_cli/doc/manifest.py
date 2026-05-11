@@ -9,8 +9,9 @@ an AI agent without paying the round-trip cost of the whole file.
 Conventions match :func:`m_cli.doc.cli.doc_command`:
 
 * exit 0 — output written
-* exit 1 — path resolved to a missing key
-* exit 2 — manifest could not be loaded
+* exit 1 — domain failure: path resolved to a missing key, or manifest
+           could not be loaded (per CLI-UX guide §3.7)
+* exit 2 — usage error (argparse-level)
 
 The path syntax is two-dotted-token-max:
 
@@ -31,6 +32,7 @@ import argparse
 import json
 import sys
 
+from m_cli._exit import DOMAIN_FAILURE
 from m_cli.doc.lookup import find_manifest, load_manifest
 
 
@@ -81,12 +83,12 @@ def manifest_command(args: argparse.Namespace) -> int:
             "m manifest: could not find dist/stdlib-manifest.json. "
             "Run `make manifest` from m-stdlib or pass --manifest PATH.\n"
         )
-        return 2
+        return DOMAIN_FAILURE
     try:
         manifest = load_manifest(manifest_path)
     except (OSError, json.JSONDecodeError) as exc:
         sys.stderr.write(f"m manifest: failed to load {manifest_path}: {exc}\n")
-        return 2
+        return DOMAIN_FAILURE
 
     path = getattr(args, "path", "") or ""
     found, value = _resolve_path(manifest, path)

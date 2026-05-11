@@ -74,17 +74,19 @@ def _ns(**kw) -> argparse.Namespace:
     return argparse.Namespace(**base)
 
 
-def test_build_command_no_ydb_returns_two(monkeypatch, tmp_path, capsys):
+def test_build_command_no_ydb_returns_one(monkeypatch, tmp_path, capsys):
+    # Domain failure (CLI-UX §3.7): missing dep is exit 1, not usage 2.
     monkeypatch.delenv("YDB", raising=False)
     monkeypatch.delenv("ydb_dist", raising=False)
     monkeypatch.setenv("PATH", str(tmp_path))
     rc = build_command(_ns(paths=[tmp_path]), runner=lambda b, f: (0, ""))
     err = capsys.readouterr().err
-    assert rc == 2
+    assert rc == 1
     assert "ydb" in err.lower()
 
 
-def test_build_command_no_files_returns_two(monkeypatch, tmp_path, capsys):
+def test_build_command_no_files_returns_one(monkeypatch, tmp_path, capsys):
+    # Domain failure (CLI-UX §3.7): empty input set is exit 1.
     bin_ = tmp_path / "ydb"
     bin_.write_text("#!/bin/sh\nexit 0\n")
     bin_.chmod(0o755)
@@ -93,7 +95,7 @@ def test_build_command_no_files_returns_two(monkeypatch, tmp_path, capsys):
     empty.mkdir()
     rc = build_command(_ns(paths=[empty]), runner=lambda b, f: (0, ""))
     err = capsys.readouterr().err
-    assert rc == 2
+    assert rc == 1
     assert "no .m files" in err.lower() or "no m files" in err.lower()
 
 

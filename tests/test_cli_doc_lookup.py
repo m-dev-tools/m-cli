@@ -407,7 +407,8 @@ class TestDocCommandFuzzy:
 
 
 class TestDocCommandManifestErrors:
-    def test_missing_manifest_returns_two(self, tmp_path, capsys, monkeypatch):
+    def test_missing_manifest_returns_one(self, tmp_path, capsys, monkeypatch):
+        # Domain failure per CLI-UX §3.7 (was: usage error / exit 2).
         # Force discovery to find nothing: no walk-up hit, no env var,
         # no fallback file (stub HOME).
         monkeypatch.delenv("M_CLI_MANIFEST", raising=False)
@@ -415,13 +416,14 @@ class TestDocCommandManifestErrors:
         monkeypatch.chdir(tmp_path)
         rc = doc_command(_ns(symbol="STDJSON"))
         err = capsys.readouterr().err
-        assert rc == 2
+        assert rc == 1
         assert "could not find" in err.lower()
 
-    def test_malformed_manifest_returns_two(self, tmp_path, capsys):
+    def test_malformed_manifest_returns_one(self, tmp_path, capsys):
+        # Domain failure per CLI-UX §3.7.
         bad = tmp_path / "bad.json"
         bad.write_text("{ this is not json")
         rc = doc_command(_ns(symbol="STDJSON", manifest=str(bad)))
         err = capsys.readouterr().err
-        assert rc == 2
+        assert rc == 1
         assert "failed to load" in err.lower()

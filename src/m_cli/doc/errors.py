@@ -14,9 +14,10 @@ way the output is identical.
 Exit codes:
 
 * 0 — at least one error code listed
-* 1 — manifest is loaded but contains zero error codes (and no
-       errors.json sidecar exists)
-* 2 — manifest could not be loaded
+* 1 — domain failure: manifest is loaded but contains zero error codes
+      (and no errors.json sidecar exists), or manifest could not be
+      loaded (per CLI-UX guide §3.7)
+* 2 — usage error (argparse-level)
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ import argparse
 import json
 import sys
 
+from m_cli._exit import DOMAIN_FAILURE
 from m_cli.doc.lookup import find_manifest, load_manifest
 
 
@@ -69,12 +71,12 @@ def errors_command(args: argparse.Namespace) -> int:
             "m errors: could not find dist/stdlib-manifest.json. "
             "Run `make manifest` from m-stdlib or pass --manifest PATH.\n"
         )
-        return 2
+        return DOMAIN_FAILURE
     try:
         manifest = load_manifest(manifest_path)
     except (OSError, json.JSONDecodeError) as exc:
         sys.stderr.write(f"m errors: failed to load {manifest_path}: {exc}\n")
-        return 2
+        return DOMAIN_FAILURE
 
     errors = _load_errors_sidecar(manifest_path)
     if errors is None:

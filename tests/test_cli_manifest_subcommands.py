@@ -311,7 +311,8 @@ class TestErrors:
 
 
 class TestManifestErrors:
-    def test_missing_manifest_returns_two(self, tmp_path, capsys, monkeypatch):
+    def test_missing_manifest_returns_one(self, tmp_path, capsys, monkeypatch):
+        # Domain failure per CLI-UX §3.7 (was: usage error / exit 2).
         monkeypatch.delenv("M_CLI_MANIFEST", raising=False)
         monkeypatch.setenv("HOME", str(tmp_path))
         monkeypatch.chdir(tmp_path)
@@ -322,9 +323,10 @@ class TestManifestErrors:
             (errors_command, {"json": False}),
         ]:
             rc = cmd(_ns(manifest=None, **kwargs))
-            assert rc == 2, f"{cmd.__name__} should return 2 when manifest is unreachable"
+            assert rc == 1, f"{cmd.__name__}: domain failure exit 1 when manifest unreachable"
 
-    def test_malformed_manifest_returns_two(self, tmp_path, capsys):
+    def test_malformed_manifest_returns_one(self, tmp_path, capsys):
+        # Domain failure per CLI-UX §3.7 (was: usage error / exit 2).
         bad = tmp_path / "bad.json"
         bad.write_text("{ not json")
         for cmd, kwargs in [
@@ -334,4 +336,4 @@ class TestManifestErrors:
             (errors_command, {"json": False}),
         ]:
             rc = cmd(_ns(manifest=str(bad), **kwargs))
-            assert rc == 2, f"{cmd.__name__} should return 2 on malformed manifest"
+            assert rc == 1, f"{cmd.__name__} should return 1 (domain failure) on malformed manifest"

@@ -14,8 +14,10 @@ time. Pairs naturally with shell pipes:
 Exit codes match the rest of the family:
 
 * 0 — examples found and written
-* 1 — module name resolved but has zero examples (or unknown module)
-* 2 — manifest could not be loaded
+* 1 — domain failure: module name resolved but has zero examples, or
+      unknown module, or manifest could not be loaded
+      (per CLI-UX guide §3.7)
+* 2 — usage error (argparse-level)
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ import argparse
 import json
 import sys
 
+from m_cli._exit import DOMAIN_FAILURE
 from m_cli.doc.lookup import find_manifest, load_manifest
 
 
@@ -50,12 +53,12 @@ def examples_command(args: argparse.Namespace) -> int:
             "m examples: could not find dist/stdlib-manifest.json. "
             "Run `make manifest` from m-stdlib or pass --manifest PATH.\n"
         )
-        return 2
+        return DOMAIN_FAILURE
     try:
         manifest = load_manifest(manifest_path)
     except (OSError, json.JSONDecodeError) as exc:
         sys.stderr.write(f"m examples: failed to load {manifest_path}: {exc}\n")
-        return 2
+        return DOMAIN_FAILURE
 
     module_arg = (getattr(args, "module", "") or "").strip()
     if module_arg:

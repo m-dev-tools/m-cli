@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from typing import Callable
 
+from m_cli._exit import DOMAIN_FAILURE
 from m_cli.build.runner import BuildResult, compile_file, discover_files
 from m_cli.run.runner import resolve_ydb_binary
 
@@ -24,13 +25,13 @@ def build_command(args: argparse.Namespace, *, runner: RunnerFn | None = None) -
             "ensure `ydb` is on PATH.",
             file=sys.stderr,
         )
-        return 2
+        return DOMAIN_FAILURE
 
     paths = list(args.paths) if args.paths else [Path.cwd()]
     files = discover_files(paths)
     if not files:
         print("m build: no .m files found in: " + ", ".join(str(p) for p in paths), file=sys.stderr)
-        return 2
+        return DOMAIN_FAILURE
 
     results: list[BuildResult] = []
     o_files_created: set[Path] = set()
