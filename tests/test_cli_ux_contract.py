@@ -332,3 +332,61 @@ class TestCwdDefaultsAndNothingToDo:
             cmd,
             r.stdout,
         )
+
+
+# ────────────────────────────────────────────────────────────────────────
+# PR 6 — `m capabilities` short overview unless `--json` or non-TTY
+# ────────────────────────────────────────────────────────────────────────
+
+
+class TestCapabilitiesOverviewVsJSON:
+    """§3.2 inspection default — emit JSON when piped or with --json,
+    overview text when invoked bare from an interactive terminal."""
+
+    def test_capabilities_with_json_flag_emits_json(self) -> None:
+        r = run("capabilities", "--json")
+        assert r.returncode == 0, r.stderr
+        # Roundtrip parse — that's the manifest-drift gate's relied-on
+        # invariant.
+        import json
+
+        payload = json.loads(r.stdout)
+        assert "version" in payload
+        assert "subcommands" in payload
+        # Sanity: fmt must be in the surface.
+        assert "fmt" in payload["subcommands"]
+
+    def test_capabilities_piped_stdout_emits_json(self) -> None:
+        """Subprocess captures stdout (not a TTY) — should still produce
+        JSON so `m capabilities > dist/commands.json` works without
+        `--json`. This mirrors `cargo metadata`."""
+        r = run("capabilities")
+        assert r.returncode == 0
+        import json
+
+        payload = json.loads(r.stdout)  # JSON, not overview text
+        assert "subcommands" in payload
+
+    def test_capabilities_interactive_tty_emits_overview(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Direct unit test of the handler with isatty patched, since
+        subprocess pipes can't simulate an interactive TTY without pty."""
+        import argparse
+        import io
+
+        from m_cli.capabilities.cli import capabilities_command
+
+        fake = io.StringIO()
+        # io.StringIO.isatty returns False — patch it to True for this
+        # case to simulate an interactive terminal.
+        monkeypatch.setattr(fake, "isatty", lambda: True)
+        monkeypatch.setattr("sys.stdout", fake)
+
+        rc = capabilities_command(argparse.Namespace(json=False))
+        assert rc == 0
+        out = fake.getvalue()
+        assert "JSON" in out
+        assert "--json" in out
+        # Definitely NOT JSON output.
+        assert not out.lstrip().startswith("{")

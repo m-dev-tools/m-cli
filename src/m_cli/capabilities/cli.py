@@ -144,7 +144,23 @@ def build_capabilities(
 
 
 def capabilities_command(args: argparse.Namespace) -> int:
-    """`m capabilities` handler — JSON-only output."""
+    """`m capabilities` handler.
+
+    Default: JSON to stdout — keeps the `make manifest` pipeline
+    (`m capabilities --json > dist/commands.json`) working and matches
+    pipe-friendly tools like `cargo metadata`.
+
+    When stdout is an interactive TTY *and* the user did NOT pass
+    `--json`, print a short overview instead of dumping 600+ lines of
+    JSON into the terminal (CLI-UX guide §3.2 inspection default).
+    """
+    if not getattr(args, "json", False) and sys.stdout.isatty():
+        sys.stdout.write(
+            "m capabilities: emits the m-cli command surface as JSON.\n"
+            "  Pass --json (or pipe stdout) to get the JSON payload.\n"
+            "  Used by `make manifest` to regenerate dist/commands.json.\n"
+        )
+        return 0
     payload = build_capabilities()
     json.dump(payload, sys.stdout, indent=2, sort_keys=False)
     sys.stdout.write("\n")
