@@ -4,8 +4,8 @@
 # `m lint`.
 #
 # Background:
-#   docs/vista-lint-presets/README.md (this directory)
-#   m-stdlib/docs/vista-corpus-lint-results.md (data behind the
+#   examples/vista-lint-presets/README.md (this directory)
+#   m-stdlib/docs/testing/vista-corpus-lint-results.md (data behind the
 #   recommended choices)
 
 [lint]
