@@ -372,6 +372,7 @@ m-cli/
 | [`docs/worked-example-accsum.md`](docs/worked-example-accsum.md) | A real M routine walked end-to-end through fmt + lint + test. |
 | [`docs/evolution.md`](docs/evolution.md) | **Archaeology.** How m-cli was built, in chronological order. Read this only if you care *why* the tool is shaped this way. |
 | [`docs/vista-meta-bootstrap.md`](docs/vista-meta-bootstrap.md) | **Archaeology.** How the VistA corpus was used during initial development, and the explicit verification that m-cli is no longer dependent on it. |
+| [CLI UX conventions guide](https://github.com/m-dev-tools/.github/blob/main/docs/dev-practices/cli-ux-conventions-guide.md) | **Org-level.** Rules every `m <subcommand>` follows: bare-dispatcher overview, `--help` to stdout, exit-code vocabulary (0 success / 1 domain / 2 usage), unknown-flag routing. Pinned by `tests/test_cli_ux_contract.py`. |
 
 ## Licence
 

@@ -312,6 +312,14 @@ subprocess and exchange LSP messages on stdin/stdout. Optional dependency:
 `pip install 'm-cli[lsp]'` adds `pygls` + `lsprotocol`. The dispatcher
 reports a friendly install hint if a user runs `m lsp` without the extra.
 
+**CLI-UX note.** `m lsp` is intentionally a filter-family leaf per the
+org [CLI UX conventions guide](https://github.com/m-dev-tools/.github/blob/main/docs/dev-practices/cli-ux-conventions-guide.md) §1: bare
+invocation enters server mode on stdin/stdout (like `python`, `psql`, or
+`gopls`). That diverges from the "bare dispatcher → overview text" rule
+the rest of `m`'s subcommands follow — see the guide's §6 (intentional
+divergence) for the rationale and the entry in
+`docs/plans/cli-ux-conventions-remediation.md` (P3).
+
 **Capabilities advertised:**
 
 - `textDocument/{didOpen,didChange,didSave,didClose}` — push diagnostics on open/change/save; clear on close.
