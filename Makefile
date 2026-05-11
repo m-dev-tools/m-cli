@@ -1,4 +1,4 @@
-.PHONY: install test test-lf watch lint format mypy cov check lint-modern lint-modern-baseline lint-modern-setup push pull hooks seed unseed test-vista engine-up engine-down engine-status manifest check-manifest
+.PHONY: install test test-lf watch lint format mypy cov check lint-modern lint-modern-baseline lint-modern-setup push pull hooks seed unseed test-vista engine-up engine-down engine-status manifest check-manifest check-docs-prose
 
 PYTHON := .venv/bin/python
 PYTEST := .venv/bin/pytest
@@ -160,3 +160,21 @@ unseed:
 test-vista: seed
 	@$(PYTEST) -m vista || (rc=$$?; $(MAKE) unseed; exit $$rc)
 	@$(MAKE) unseed
+
+# Guardrail: docs/ holds only human-readable prose. Non-prose artifacts
+# (generated data, JSON/TSV output, copy-paste examples, scaffolding
+# templates) belong under dist/, examples/, templates/, or a top-level
+# domain-specific directory — not docs/.
+check-docs-prose:
+	@if [ ! -d docs ]; then echo "check-docs-prose: no docs/ directory ✓"; exit 0; fi; \
+	violations=$$(find docs -type f \
+	    ! -name '*.md' ! -name '*.markdown' \
+	    ! -name '*.png' ! -name '*.jpg' ! -name '*.jpeg' \
+	    ! -name '*.gif' ! -name '*.svg' ! -name '*.webp' \
+	    ! -name '.gitkeep'); \
+	if [ -n "$$violations" ]; then \
+	  echo "ERROR: non-prose files under docs/ — move to dist/, examples/, templates/, or a top-level domain dir:" >&2; \
+	  echo "$$violations" >&2; \
+	  exit 1; \
+	fi; \
+	echo "check-docs-prose: docs/ is prose-only ✓"
