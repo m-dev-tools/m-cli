@@ -20,7 +20,7 @@ FMT_SOURCES  := $(shell find src/m_cli/fmt  -name '*.py' -type f)
 # lint). Override per-invocation: `make vista CORPUS=/path/to/other/corpus`,
 # or via environment: `CORPUS=... make vista`. Defaults to the in-org
 # m-modern-corpus so gates work on a fresh clone without VistA access.
-CORPUS ?= $(HOME)/projects/m-modern-corpus
+CORPUS ?= $(HOME)/m-dev-tools/m-modern-corpus
 
 # vista-meta client wiring — silently included if the conn.env exists.
 # Preserves the maintainer's legacy SSHEngine workflow without erroring
@@ -37,7 +37,7 @@ endif
 # m-test-engine — local checkout of m-dev-tools/m-test-engine, used by
 # `make engine-up` / `engine-down` to start/stop the lightweight YDB
 # container. Override if you cloned it elsewhere.
-M_TEST_ENGINE ?= $(HOME)/projects/m-test-engine
+M_TEST_ENGINE ?= $(HOME)/m-dev-tools/m-test-engine
 
 install:
 	uv sync --extra dev
@@ -115,7 +115,7 @@ cov:
 -include Makefile.vista
 
 # Run the modern (non-VistA) lint regression gate. Walks the corpora
-# at $$HOME/projects/m-modern-corpus/ (set up via `make lint-modern-setup`)
+# at $$HOME/m-dev-tools/m-modern-corpus/ (set up via `make lint-modern-setup`)
 # and compares per-corpus finding counts against the checked-in baseline.
 lint-modern:
 	$(PYTHON) scripts/lint_modern.py

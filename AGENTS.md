@@ -19,7 +19,7 @@ distribution:
   pypi: null                                 # clone-and-install
   github: m-dev-tools/m-cli
 
-location: ~/projects/m-cli
+location: ~/m-dev-tools/m-cli
 
 exposes:
   cli:

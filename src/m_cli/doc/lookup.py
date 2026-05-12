@@ -14,8 +14,8 @@ Discovery order
 3. Walk **up** from the current working directory looking for
    ``dist/stdlib-manifest.json`` — this catches the natural case of
    running ``m doc`` from inside an m-stdlib checkout.
-4. Fall back to ``~/projects/m-stdlib/dist/stdlib-manifest.json``
-   for users with the conventional layout.
+4. Fall back to ``~/m-dev-tools/m-stdlib/dist/stdlib-manifest.json``
+   for users with the conventional setup.sh layout.
 
 If none of the above resolve, ``find_manifest()`` returns ``None``
 and callers emit a help message pointing at the discoverability
@@ -96,7 +96,7 @@ def find_manifest(
         if candidate.is_file():
             return candidate
 
-    fallback = Path.home() / "projects" / "m-stdlib" / "dist" / "stdlib-manifest.json"
+    fallback = Path.home() / "m-dev-tools" / "m-stdlib" / "dist" / "stdlib-manifest.json"
     return fallback if fallback.is_file() else None
 
 
@@ -118,9 +118,7 @@ def _classify(symbol: str) -> str:
     return "label"
 
 
-def resolve_symbol(
-    symbol: str, manifest: dict
-) -> tuple[list[ModuleMatch], list[LabelMatch]]:
+def resolve_symbol(symbol: str, manifest: dict) -> tuple[list[ModuleMatch], list[LabelMatch]]:
     """Resolve ``symbol`` against ``manifest``.
 
     Returns ``(modules, labels)``. The two lists are independent —
@@ -160,11 +158,7 @@ def resolve_symbol(
         labels = mod.get("labels", {})
         for label_name, label_data in labels.items():
             if label_name == s:
-                hits.append(
-                    LabelMatch(
-                        module=mod_name, label=label_name, label_data=label_data
-                    )
-                )
+                hits.append(LabelMatch(module=mod_name, label=label_name, label_data=label_data))
     # Sort by (module, label) so output is deterministic.
     hits.sort(key=lambda h: (h.module, h.label))
     return ([], hits)

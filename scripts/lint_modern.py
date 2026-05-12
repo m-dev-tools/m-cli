@@ -17,7 +17,7 @@ Usage:
 
 Companion to ``scripts/vista_lint.py`` (the legacy VA-flavoured
 gate). Defaults assume the corpus has been cloned into
-``~/projects/m-modern-corpus/`` per the layout in the catalog; pass
+``~/m-dev-tools/m-modern-corpus/`` per the layout in the catalog; pass
 ``--corpus-root`` to override, or ``--corpus`` (repeatable) to point
 at individual subtrees.
 """
@@ -49,7 +49,7 @@ DEFAULT_CORPUS_LAYOUT: tuple[tuple[str, str | None], ...] = (
 )
 
 DEFAULT_BASELINE_PATH = Path(__file__).parent / "lint_modern.baseline.json"
-DEFAULT_CORPUS_ROOT = Path.home() / "projects" / "m-modern-corpus"
+DEFAULT_CORPUS_ROOT = Path.home() / "m-dev-tools" / "m-modern-corpus"
 DEFAULT_REGRESSION_THRESHOLD = 0.10  # 10% drift fails the gate
 
 

@@ -788,7 +788,7 @@ m stdlib doc --manifest PATH STDJSON         # override manifest discovery
 
 **Manifest discovery** is shared across all five verbs: walk up
 from cwd looking for `dist/stdlib-manifest.json`, then fall back to
-`$M_CLI_MANIFEST`, then `~/projects/m-stdlib/dist/stdlib-manifest.json`.
+`$M_CLI_MANIFEST`, then `~/m-dev-tools/m-stdlib/dist/stdlib-manifest.json`.
 Use `--manifest PATH` on any verb to override.
 
 **Exit codes** (CLI-UX guide §3.7): `0` matches found · `1` domain

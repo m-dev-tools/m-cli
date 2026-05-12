@@ -59,9 +59,7 @@ def add_stdlib_arguments(subparsers: argparse._SubParsersAction) -> None:  # typ
         "or dump the raw m-stdlib manifest as JSON."
     )
     stdlib_parser.set_defaults(
-        func=lambda _a: print_overview(
-            stdlib_parser, actions, tagline=_TAGLINE, word="action"
-        ),
+        func=lambda _a: print_overview(stdlib_parser, actions, tagline=_TAGLINE, word="action"),
     )
 
 
@@ -76,7 +74,7 @@ def _add_list(actions: argparse._SubParsersAction) -> None:  # type: ignore[type
             "Print every module in the m-stdlib manifest with its "
             "synopsis, one per line, sorted alphabetically. The "
             "discoverability entry point: \"what's in the standard "
-            "library?\" Use `m stdlib doc MODULE` to dig into any one."
+            'library?" Use `m stdlib doc MODULE` to dig into any one.'
         ),
     )
     p.add_argument(
@@ -107,7 +105,7 @@ def _add_doc(actions: argparse._SubParsersAction) -> None:  # type: ignore[type-
             "`m stdlib doc` (list every module). The manifest is found "
             "by walking up from cwd looking for "
             "`dist/stdlib-manifest.json`, then by checking "
-            "$M_CLI_MANIFEST, then `~/projects/m-stdlib/dist/"
+            "$M_CLI_MANIFEST, then `~/m-dev-tools/m-stdlib/dist/"
             "stdlib-manifest.json`; --manifest PATH overrides."
         ),
     )

@@ -164,7 +164,7 @@ The TDD inner loop, end to end:
 
 ```bash
 m new fetcher && cd fetcher                   # scaffold project
-make -C ~/projects/m-test-engine up           # start test engine (one-time)
+make -C ~/m-dev-tools/m-test-engine up        # start test engine (one-time)
 
 # write tests/FETCHTST.m using STDASSERT (red)
 m test                                        # confirm RED

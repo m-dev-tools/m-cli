@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Clone the non-VistA modern M corpus seed into ~/projects/m-modern-corpus/
+# Clone the non-VistA modern M corpus seed into ~/m-dev-tools/m-modern-corpus/
 # (or the path passed as $1). Idempotent: skips repos that are already cloned.
 #
 # Catalogued and justified in docs/m-corpus-catalog.md. The seed below is
@@ -8,7 +8,7 @@
 
 set -euo pipefail
 
-ROOT="${1:-$HOME/projects/m-modern-corpus}"
+ROOT="${1:-$HOME/m-dev-tools/m-modern-corpus}"
 mkdir -p "$ROOT"
 cd "$ROOT"
 

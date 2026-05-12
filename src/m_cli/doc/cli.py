@@ -15,7 +15,7 @@ Flags:
 * ``--json``               — raw manifest entry as JSON.
 * ``--manifest PATH``      — override manifest discovery (otherwise
                              walks up from cwd, then falls back to
-                             ``~/projects/m-stdlib/dist/stdlib-manifest.json``).
+                             ``~/m-dev-tools/m-stdlib/dist/stdlib-manifest.json``).
 
 Exit codes (per CLI-UX guide §3.7):
 *  0 — match found, output written.
@@ -58,7 +58,7 @@ def _print_no_manifest(stderr) -> None:
     stderr.write(
         "m doc: could not find dist/stdlib-manifest.json.\n"
         "  Tried: --manifest flag, $M_CLI_MANIFEST, walking up from cwd,\n"
-        "         ~/projects/m-stdlib/dist/stdlib-manifest.json\n"
+        "         ~/m-dev-tools/m-stdlib/dist/stdlib-manifest.json\n"
         "  Generate it with `make manifest` from inside an m-stdlib\n"
         "  checkout, or pass --manifest PATH.\n"
     )
