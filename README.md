@@ -58,33 +58,74 @@ Pre-commit hooks (`m-fmt-check`, `m-fmt`, `m-lint`) ship in
 
 ## Install
 
+**Prerequisites:** `git`, `docker`, Python 3.12+, [`uv`](https://docs.astral.sh/uv/),
+`make`. Docker daemon needs to be running (Docker Desktop on macOS /
+Windows, `systemctl start docker` on Linux). Install via your package
+manager — `apt install git docker.io python3.12 make` on Debian /
+Ubuntu, `brew install git docker python@3.12 uv` on macOS — then
+`curl -LsSf https://astral.sh/uv/install.sh | sh` for uv if it's not
+in your package manager.
+
+### One-paste install
+
 m-cli's distribution model is **clone-and-install**: `pyproject.toml`
 declares [`tree-sitter-m`](https://github.com/m-dev-tools/tree-sitter-m)
-and [`m-standard`](https://github.com/m-dev-tools/m-standard) as sibling
-checkouts. Clone all three; install m-cli into a uv-managed venv:
+(parser) and [`m-standard`](https://github.com/m-dev-tools/m-standard)
+(language reference) as sibling checkouts.
+[`m-stdlib`](https://github.com/m-dev-tools/m-stdlib) is the standard
+library; needed when you write M code that uses it. Clone all four
+under one directory, install m-cli, start the engine, verify:
 
 ```bash
+mkdir -p ~/m-dev-tools && cd ~/m-dev-tools && \
+  for r in tree-sitter-m m-standard m-cli m-stdlib; do \
+    [ -d "$r" ] || git clone "https://github.com/m-dev-tools/$r"; \
+  done && \
+  cd m-cli && make install && \
+  .venv/bin/m engine install && .venv/bin/m engine start && \
+  .venv/bin/m doctor
+```
+
+One paste, one wait. If `m doctor` reports anything other than all
+checks ✓, fix that before doing anything else — every command below
+depends on the engine being healthy.
+
+Add `~/m-dev-tools/m-cli/.venv/bin` to your `PATH` (or use
+[`direnv`](https://direnv.net/)) so `m` works without the `.venv/bin/`
+prefix.
+
+### Step-by-step (if you'd rather not paste a one-liner)
+
+```bash
+mkdir -p ~/m-dev-tools && cd ~/m-dev-tools
 git clone https://github.com/m-dev-tools/tree-sitter-m
 git clone https://github.com/m-dev-tools/m-standard
 git clone https://github.com/m-dev-tools/m-cli
+git clone https://github.com/m-dev-tools/m-stdlib       # only if you'll call into stdlib
 cd m-cli
-make install                                  # uv sync --extra dev + pre-commit hooks
+make install                                            # uv sync --extra dev + pre-commit hooks
+.venv/bin/m engine install                              # docker pull ghcr.io/m-dev-tools/m-test-engine
+.venv/bin/m engine start                                # docker run -d -v $HOME/m-work:/m-work …
+.venv/bin/m doctor                                      # all checks should be ✓
 ```
 
-Verify:
+### Engine alternatives
 
-```bash
-.venv/bin/m --version                         # m-cli 0.1.0
-.venv/bin/m doctor                            # checks tree-sitter-m, m-standard, engine
-```
+The recommended runtime path is the Docker engine above (cross-platform,
+pinned image). If Docker isn't an option, m-cli also supports:
 
-For runtime tools (`m test`, `m coverage`) you'll also want one of:
-
-- **Docker** + the [`m-test-engine`](https://github.com/m-dev-tools/m-test-engine) container (cross-platform; recommended);
-- **Local YottaDB** on `$PATH`;
-- **Remote YDB over SSH** (advanced).
+- **Local YottaDB** on `$PATH` — `m doctor` detects it.
+- **Remote YDB over SSH** — legacy vista-meta path; advanced.
 
 See [Engine support](#engine-support).
+
+### Bootstrap for working with M code
+
+The [walkthrough](docs/m-cli-tdd-lifecycle-walkthrough.md) shows the
+full TDD lifecycle of an M data-analysis app from a fresh install,
+exercising every `m <subcommand>`. Re-runnable on any docker-capable
+host — read that doc once after install to validate the toolchain is
+working end-to-end.
 
 ## Quick tour
 
