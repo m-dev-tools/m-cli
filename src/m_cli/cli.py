@@ -15,11 +15,6 @@ from m_cli._overview import print_overview
 from m_cli.capabilities import capabilities_command
 from m_cli.ci import ci_command
 from m_cli.coverage.cli import add_arguments as add_coverage_arguments
-from m_cli.doc import doc_command
-from m_cli.doc.errors import errors_command
-from m_cli.doc.examples import examples_command
-from m_cli.doc.manifest import manifest_command
-from m_cli.doc.search import search_command
 from m_cli.doctor import doctor_command
 from m_cli.engine_cli import add_engine_arguments
 from m_cli.fmt import fmt_command
@@ -28,6 +23,7 @@ from m_cli.lsp import lsp_command
 from m_cli.new import new_command
 from m_cli.plugins import plugins_command, register_plugins
 from m_cli.run import run_command
+from m_cli.stdlib_cli import add_stdlib_arguments
 from m_cli.test import test_command
 from m_cli.watch import watch_command
 
@@ -679,173 +675,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run_parser.set_defaults(func=run_command)
 
-    # `m doc` — godoc-style symbol lookup over the m-stdlib manifest
-    # (per discoverability-and-tooling-plan.md § 4.1, WB1). The
-    # legacy path-based extract-to-Markdown behaviour is now
-    # accessible only via the underlying library
-    # (`m_cli.doc.extract` / `m_cli.doc.render`); the CLI surface
-    # is the manifest reader.
-    doc_parser = subparsers.add_parser(
-        "doc",
-        help="godoc-style symbol lookup over the m-stdlib manifest",
-        description=(
-            "Look up a module or label in the m-stdlib manifest and "
-            "print its signature, params, returns, raises, examples, "
-            "and source pointer. Forms: `m doc STDJSON` (module "
-            "overview), `m doc STDJSON.parse` (single label), `m doc "
-            "parse` (fuzzy name lookup across modules), `m doc` (list "
-            "every module). The manifest is found by walking up from "
-            "cwd looking for `dist/stdlib-manifest.json`, then by "
-            "checking $M_CLI_MANIFEST, then `~/projects/m-stdlib/"
-            "dist/stdlib-manifest.json`; --manifest PATH overrides."
-        ),
-    )
-    doc_parser.add_argument(
-        "symbol",
-        nargs="?",
-        default="",
-        help="Symbol to look up: MODULE, MODULE.label, or bare label name",
-    )
-    doc_parser.add_argument(
-        "--short",
-        action="store_true",
-        help="One-line synopsis instead of full long-form output",
-    )
-    doc_parser.add_argument(
-        "--json",
-        action="store_true",
-        help="Emit the raw manifest entry as JSON",
-    )
-    doc_parser.add_argument(
-        "--manifest",
-        type=str,
-        default=None,
-        metavar="PATH",
-        help="Path to dist/stdlib-manifest.json (default: walk up from cwd)",
-    )
-    doc_parser.set_defaults(func=doc_command)
-
-    # `m search <query>` — full-text search over the m-stdlib manifest
-    # (per discoverability-and-tooling-plan.md § 4.2, WB3). Substring
-    # match, case-insensitive, AND-style across query tokens; ranks
-    # synopsis hits above description hits above example hits.
-    search_parser = subparsers.add_parser(
-        "search",
-        help="Full-text search over the m-stdlib manifest",
-        description=(
-            "Walk every (module, label) entry and report any whose "
-            "synopsis / description / example contains every space-"
-            "separated token in the query (case-insensitive). Results "
-            "rank synopsis matches above description above example. "
-            "Manifest discovery is shared with `m doc` (--manifest "
-            "PATH overrides; otherwise walks up from cwd, then "
-            "$M_CLI_MANIFEST, then ~/projects/m-stdlib/dist/...)."
-        ),
-    )
-    search_parser.add_argument(
-        "query",
-        nargs="?",
-        default="",
-        help="Search query — space-separated tokens (AND-style match)",
-    )
-    search_parser.add_argument(
-        "--limit",
-        type=int,
-        default=50,
-        help="Max number of matches to print (default: 50)",
-    )
-    search_parser.add_argument(
-        "--manifest",
-        type=str,
-        default=None,
-        metavar="PATH",
-        help="Path to dist/stdlib-manifest.json (default: walk up from cwd)",
-    )
-    search_parser.set_defaults(func=search_command)
-
-    # `m manifest [path]` — emit the m-stdlib manifest (or a sub-path)
-    # as JSON. Thin wrapper for piping into jq / scripting / AI agent
-    # context loading. Per WB4.
-    manifest_parser = subparsers.add_parser(
-        "manifest",
-        help="Emit the m-stdlib manifest (or a sub-path) as JSON",
-        description=(
-            "With no path, writes the resolved dist/stdlib-manifest.json "
-            "to stdout. With a path like STDJSON / STDJSON.parse / "
-            "modules / errors / stdlib_version, emits just that subtree. "
-            "Manifest discovery is shared with `m doc`."
-        ),
-    )
-    manifest_parser.add_argument(
-        "path",
-        nargs="?",
-        default="",
-        help="Sub-path to emit (e.g. STDJSON.parse). Empty = whole manifest.",
-    )
-    manifest_parser.add_argument(
-        "--manifest",
-        type=str,
-        default=None,
-        metavar="PATH",
-        help="Path to dist/stdlib-manifest.json (default: walk up from cwd)",
-    )
-    manifest_parser.set_defaults(func=manifest_command)
-
-    # `m examples [MODULE]` — print every @example body from the
-    # manifest, prefixed with `module.label:` for grep-friendliness.
-    # Per WB4.
-    examples_parser = subparsers.add_parser(
-        "examples",
-        help="Print every @example from the manifest",
-        description=(
-            "Walk every public label's @example bodies and emit them "
-            "prefixed with `module.label:` so the output is greppable. "
-            "With a MODULE argument, scope the walk to that module only."
-        ),
-    )
-    examples_parser.add_argument(
-        "module",
-        nargs="?",
-        default="",
-        help="Module to scope output to (default: every module)",
-    )
-    examples_parser.add_argument(
-        "--manifest",
-        type=str,
-        default=None,
-        metavar="PATH",
-        help="Path to dist/stdlib-manifest.json (default: walk up from cwd)",
-    )
-    examples_parser.set_defaults(func=examples_command)
-
-    # `m errors` — list every U-STD* error code with its producing
-    # module + labels. Per WB4. Reads dist/errors.json when it exists
-    # (m-stdlib's WA7 sidecar); falls back to deriving from the main
-    # manifest's per-label `raises` arrays.
-    errors_parser = subparsers.add_parser(
-        "errors",
-        help="List every U-STD* error code and the labels that raise it",
-        description=(
-            "Inverted index over the manifest's @raises tags: every "
-            "U-STDxxx-NAME code is listed with its producing module + "
-            "every label that raises it. Reads dist/errors.json when "
-            "available (m-stdlib's WA7 sidecar); otherwise derives the "
-            "inversion from the main manifest's per-label `raises` arrays."
-        ),
-    )
-    errors_parser.add_argument(
-        "--json",
-        action="store_true",
-        help="Emit the errors index as JSON (the same shape as dist/errors.json)",
-    )
-    errors_parser.add_argument(
-        "--manifest",
-        type=str,
-        default=None,
-        metavar="PATH",
-        help="Path to dist/stdlib-manifest.json (default: walk up from cwd)",
-    )
-    errors_parser.set_defaults(func=errors_command)
+    # `m stdlib <action>` — m-stdlib reference (doc / search / examples /
+    # errors / manifest). These were five separate top-level commands
+    # before 2026-05-11; namespacing them under `m stdlib` keeps the
+    # surface readable as it grows (see docs/evolution.md "Renames /
+    # namespace moves" for the rationale).
+    add_stdlib_arguments(subparsers)
 
     # ── `m plugins` — out-of-tree subcommand introspection ────────────
     plugins_parser = subparsers.add_parser(
@@ -911,7 +746,7 @@ def build_parser() -> argparse.ArgumentParser:
     # Must come *after* plugin registration so plugin-contributed
     # subcommands appear in the bare `m` listing alongside built-ins.
     _ROOT_TAGLINE = (
-        "Engine-neutral source tooling (fmt/lint/doc); "
+        "Engine-neutral source tooling (fmt/lint/stdlib); "
         "runtime tools (test/coverage) target YottaDB."
     )
     parser.set_defaults(

@@ -29,9 +29,10 @@ new top-level subcommand lands.
   coverage.
 - **integration** — surfaces consumed by downstream tools, AI agents,
   and humans reading library docs: the m-stdlib reference family
-  (`m doc` / `m search` / `m manifest` / `m examples` / `m errors`)
-  and `m capabilities` (the machine-readable command surface that
-  backs `dist/commands.json`).
+  (`m stdlib doc` / `search` / `manifest` / `examples` / `errors`,
+  grouped under one namespace since 2026-05-11) and `m capabilities`
+  (the machine-readable command surface that backs
+  `dist/commands.json`).
 
 ## Frequency rating
 
@@ -64,7 +65,7 @@ LSP handlers, pre-commit hooks, CI jobs, `make manifest`.
 | Glyph | Meaning |
 |---|---|
 | `⟳` | **continuously used** — runs as a long-lived process (`m lsp`, `m watch`) or fires on every editor save through the LSP (`m fmt`, `m lint`). The developer experiences these as always-on or always-firing, not as commands they type. |
-| `▶` | **manual / on-demand** — developer or tooling types / invokes it to get a one-shot result. Includes commands that are machine-readable (`m capabilities`, `m engine capabilities`, `m manifest`) but only invoked occasionally — being machine-processable does **not** by itself qualify as continuous. |
+| `▶` | **manual / on-demand** — developer or tooling types / invokes it to get a one-shot result. Includes commands that are machine-readable (`m capabilities`, `m engine capabilities`, `m stdlib manifest`) but only invoked occasionally — being machine-processable does **not** by itself qualify as continuous. |
 
 The split is about *whether the command is in continuous use*, not
 whether it can be machine-driven. `m fmt` lands in `⟳` because the
@@ -83,8 +84,8 @@ fmt/lint + the test watcher), then the **manual** (`▶`) commands
 the developer types: the core test cycle (`test` → `run` →
 `coverage`).
 
-M-stdlib reference lookups (`m doc` / `m search` / `m examples` /
-`m errors` / `m manifest`) split out into the
+M-stdlib reference lookups (`m stdlib doc` / `search` / `examples` /
+`errors` / `manifest`) split out into the
 [M-stdlib reference](#m-stdlib-reference--library-lookups)
 table below — they're occasional and not part of the core cycle.
 Environment / engine lifecycle commands plus the rest of the
@@ -124,12 +125,15 @@ A few patterns worth calling out before reading the column:
 
 ## M-stdlib reference — library lookups
 
-Five commands that surface the [m-stdlib](https://github.com/m-dev-tools/m-stdlib)
-manifest as a developer-facing reference. Not part of the daily
-edit-run-test cycle — reach for them when integrating against the
-library: look up an API (`m doc` / `m search` / `m examples`),
-trace an error code back to its raising labels (`m errors`), or
-pull JSON for jq pipelines (`m manifest`).
+Five sub-verbs nested under the `m stdlib` namespace (grouped there
+since 2026-05-11 — see [`evolution.md`](evolution.md) "Renames /
+namespace moves"). They surface the
+[m-stdlib](https://github.com/m-dev-tools/m-stdlib) manifest as a
+developer-facing reference. Not part of the daily edit-run-test
+cycle — reach for them when integrating against the library:
+look up an API (`m stdlib doc` / `search` / `examples`), trace an
+error code back to its raising labels (`m stdlib errors`), or pull
+JSON for jq pipelines (`m stdlib manifest`).
 
 All `▶` manual. Frequency depends heavily on what the developer is
 doing that day — heavy when wiring up new library calls, near-zero
@@ -137,11 +141,11 @@ on internal-only work.
 
 | # | Run | Command | Use | Typical use | What it does |
 |---|---|---|---|---|---|
-| 1 | `▶` | `m doc [SYMBOL]` | `●●○○○` | `0–15×/day` (heavy when integrating m-stdlib; near-0 on pure-internal days) | Research a library API before you call it: godoc-style symbol lookup over the m-stdlib manifest — module overview, single-label long form, or fuzzy lookup |
-| 2 | `▶` | `m search <query>` | `●○○○○` | `0–5×/day` (when you don't know the symbol name) | Fuzzy lookup when you don't know the symbol name: full-text AND-style search over synopsis / description / examples; tiered ranking (synopsis > description > examples) |
-| 3 | `▶` | `m examples [MODULE]` | `●○○○○` | `0–3×/day` | See real usage patterns: print every `@example` from the manifest, prefixed with `module.label:` (greppable) |
-| 4 | `▶` | `m errors` | `◐○○○○` | `0–2×/day` (when debugging a `$ECODE`) | Figure out where a `$ECODE` came from: inverted index of every `U-STD*` error code → the modules and labels that raise it |
-| 5 | `▶` | `m manifest [path]` | `◐○○○○` | `<1×/day` (mostly tooling) | Lower-level JSON pull for tooling / agents: emit the resolved m-stdlib manifest (or a `STDJSON` / `STDJSON.parse` sub-path) as JSON — pipe-friendly for `jq` |
+| 1 | `▶` | `m stdlib doc [SYMBOL]` | `●●○○○` | `0–15×/day` (heavy when integrating m-stdlib; near-0 on pure-internal days) | Research a library API before you call it: godoc-style symbol lookup over the m-stdlib manifest — module overview, single-label long form, or fuzzy lookup |
+| 2 | `▶` | `m stdlib search <query>` | `●○○○○` | `0–5×/day` (when you don't know the symbol name) | Fuzzy lookup when you don't know the symbol name: full-text AND-style search over synopsis / description / examples; tiered ranking (synopsis > description > examples) |
+| 3 | `▶` | `m stdlib examples [MODULE]` | `●○○○○` | `0–3×/day` | See real usage patterns: print every `@example` from the manifest, prefixed with `module.label:` (greppable) |
+| 4 | `▶` | `m stdlib errors` | `◐○○○○` | `0–2×/day` (when debugging a `$ECODE`) | Figure out where a `$ECODE` came from: inverted index of every `U-STD*` error code → the modules and labels that raise it |
+| 5 | `▶` | `m stdlib manifest [path]` | `◐○○○○` | `<1×/day` (mostly tooling) | Lower-level JSON pull for tooling / agents: emit the resolved m-stdlib manifest (or a `STDJSON` / `STDJSON.parse` sub-path) as JSON — pipe-friendly for `jq` |
 
 ## Environment & introspection — low-frequency / one-shot
 
@@ -186,9 +190,9 @@ Sorted from most-used to least, ignoring textual nuance:
 | `●●●●●` (5) | `m lsp` · `m fmt` · `m lint` |
 | `●●●●○` (4) | `m test` · `m watch` |
 | `●●●○○` (3) | — |
-| `●●○○○` (2) | `m doc` |
-| `●○○○○` (1) | `m doctor` · `m engine start` · `m engine status` · `m engine restart` · `m engine stop` · `m engine exec` · `m engine shell` · `m engine logs` · `m search` · `m examples` · `m run` · `m coverage` |
-| `◐○○○○` (½) | `m engine install` · `m engine version` · `m engine reset` · `m new` · `m ci init` · `m errors` · `m manifest` · `m plugins` |
+| `●●○○○` (2) | `m stdlib doc` |
+| `●○○○○` (1) | `m doctor` · `m engine start` · `m engine status` · `m engine restart` · `m engine stop` · `m engine exec` · `m engine shell` · `m engine logs` · `m stdlib search` · `m stdlib examples` · `m run` · `m coverage` |
+| `◐○○○○` (½) | `m engine install` · `m engine version` · `m engine reset` · `m new` · `m ci init` · `m stdlib errors` · `m stdlib manifest` · `m plugins` |
 | `○○○○○` (0) | `m engine capabilities` · `m capabilities` |
 
 ### Run-mode roll-up
@@ -196,14 +200,14 @@ Sorted from most-used to least, ignoring textual nuance:
 | Mode | Commands |
 |---|---|
 | `⟳` continuously used (4) | `m lsp` · `m watch` · `m fmt` · `m lint` |
-| `▶` manual / on-demand (25) | everything else, including the machine-readable `m capabilities` / `m engine capabilities` / `m manifest` (tooling-invoked but not continuous) |
+| `▶` manual / on-demand (24) | everything else, including the machine-readable `m capabilities` / `m engine capabilities` / `m stdlib manifest` (tooling-invoked but not continuous) |
 
 ### Honest caveats
 
 - **Different developer profiles see very different numbers.** A
   *library author* (writing m-stdlib code) lives in `m fmt` / `m lint`
-  / `m test` and barely touches `m doc`. A *library consumer*
-  (writing an app on top of m-stdlib) inverts that: `m doc` is hot,
+  / `m test` and barely touches `m stdlib doc`. A *library consumer*
+  (writing an app on top of m-stdlib) inverts that: `m stdlib doc` is hot,
   many lint rules don't fire. An *infra-/CI person* lives in
   `m engine` and `m doctor`.
 - **Process-level vs human-keystroke counts diverge by orders of
@@ -252,17 +256,18 @@ m
 ├── ci                  CI scaffolding
 │   └── init                preview / scaffold m-ci.yml (--write)
 ├── run <entryref>      run an M routine via `ydb -run`
-├── doc [symbol]        godoc-style m-stdlib symbol lookup
-├── search <query>      full-text search over the m-stdlib
-├── manifest [path]     emit m-stdlib manifest as JSON
-├── examples [module]   print every @example from the manifest
-├── errors              U-STD* error codes → producing labels
+├── stdlib              m-stdlib reference (doc/search/...)
+│   ├── doc [symbol]        godoc-style symbol lookup
+│   ├── search <query>      full-text search over the manifest
+│   ├── examples [module]   print every @example
+│   ├── errors              U-STD* error codes → producing labels
+│   └── manifest [path]     emit the manifest as JSON
 ├── plugins             list out-of-tree subcommands
 └── capabilities        machine-readable command surface (JSON)
 ```
 
-18 top-level commands · 11 `m engine` subverbs · 1 `m ci` subverb ·
-28 distinct invocations end-to-end.
+14 top-level commands · 11 `m engine` subverbs · 5 `m stdlib`
+subverbs · 1 `m ci` subverb · 28 distinct invocations end-to-end.
 
 ## Lifecycle quick view
 
@@ -273,7 +278,7 @@ The same surface, sliced by lifecycle stage instead of domain.
 | **environmental health** | `m doctor` · `m engine status` · `m engine install` · `m engine start` · `m engine stop` · `m engine restart` · `m engine logs` · `m engine shell` · `m engine exec` · `m engine version` · `m engine reset` · `m engine capabilities` · `m plugins` |
 | **setup project** | `m new` · `m ci init` |
 | **inner loop** | `m fmt` · `m lint` · `m lsp` · `m test` · `m watch` · `m coverage` · `m run` |
-| **integration** | `m doc` · `m search` · `m manifest` · `m examples` · `m errors` · `m capabilities` |
+| **integration** | `m stdlib doc` · `m stdlib search` · `m stdlib manifest` · `m stdlib examples` · `m stdlib errors` · `m capabilities` |
 
 ## Cross-cutting notes
 

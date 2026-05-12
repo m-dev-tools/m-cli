@@ -78,6 +78,16 @@ class TestBareDispatcher:
         assert "m ci <action>" in r.stdout or "m ci <command>" in r.stdout
         assert r.stderr == ""
 
+    def test_stdlib_bare_exits_0_with_overview(self) -> None:
+        r = run("stdlib")
+        assert r.returncode == 0, r.stderr
+        assert "USAGE" in r.stdout
+        assert "m stdlib <action>" in r.stdout
+        # Must list all 5 verbs.
+        for verb in ("doc", "search", "examples", "errors", "manifest"):
+            assert f"  {verb}:" in r.stdout, (verb, r.stdout)
+        assert r.stderr == ""
+
 
 class TestHelpOutput:
     """§3.3 — `--help` / `-h` to stdout, exit 0, concise synopsis."""
@@ -199,11 +209,6 @@ class TestUnknownFlagRoutesToSubparser:
             "coverage",
             "lsp",
             "doctor",
-            "doc",
-            "search",
-            "manifest",
-            "examples",
-            "errors",
             "plugins",
             "capabilities",
         ],
@@ -216,6 +221,20 @@ class TestUnknownFlagRoutesToSubparser:
         assert f"usage: m {leaf}" in stderr_lc, (leaf, r.stderr)
         # And NOT the root synopsis (regression guard for the old bug).
         assert "usage: m [-h]" not in stderr_lc, (leaf, r.stderr)
+
+    @pytest.mark.parametrize(
+        "verb",
+        ["doc", "search", "examples", "errors", "manifest"],
+    )
+    def test_nested_stdlib_unknown_flag_shows_subverb_usage(
+        self, verb: str
+    ) -> None:
+        """Same routing rule but at the `m stdlib <verb>` depth."""
+        r = run("stdlib", verb, "--__bogus__")
+        assert r.returncode == 2, (verb, r.stdout, r.stderr)
+        stderr_lc = r.stderr.lower()
+        assert f"usage: m stdlib {verb}" in stderr_lc, (verb, r.stderr)
+        assert "usage: m [-h]" not in stderr_lc, (verb, r.stderr)
 
     def test_root_unknown_flag_still_shows_root_usage(self) -> None:
         r = run("--__bogus__")
@@ -244,9 +263,10 @@ class TestDomainFailuresExit1:
     def test_missing_manifest_exits_1(self, cmd: str, tmp_path: Path) -> None:
         # Run from a clean tmp dir with HOME stubbed so find_manifest()
         # walks up and finds nothing. Search needs a positional query;
-        # the others tolerate missing positionals.
+        # the others tolerate missing positionals. Commands are now
+        # nested under `m stdlib <verb>` since 2026-05-11.
         env_extra = {"HOME": str(tmp_path)}
-        argv = [cmd]
+        argv = ["stdlib", cmd]
         if cmd == "search":
             argv.append("nopatternmatchesthis")
         elif cmd == "doc":

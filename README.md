@@ -30,7 +30,7 @@ m coverage --min-percent=85
   - [`m coverage` — coverage](#m-coverage--coverage)
   - [`m watch` — TDD watcher](#m-watch--tdd-watcher)
   - [`m lsp` — Language Server](#m-lsp--language-server)
-  - [`m doc` family — m-stdlib reference](#m-doc-family--m-stdlib-reference)
+  - [`m stdlib` — m-stdlib reference](#m-stdlib--m-stdlib-reference-nested-namespace)
   - [Project scaffolding and helpers](#project-scaffolding-and-helpers)
 - [Configuration — `.m-cli.toml`](#configuration--m-clitoml)
 - [Engine support](#engine-support)
@@ -49,7 +49,7 @@ m coverage --min-percent=85
 | `m coverage` | ✅ | Label + line coverage via YDB `view "TRACE"`; `--branch` for AST-driven branch points; text / `text --lines` / JSON / LCOV output; `--min-percent` CI gate. |
 | `m watch`    | ✅ | Polling file watcher; source→suite affinity; `--once` / `--interval` / `--filter`. |
 | `m lsp`      | ✅ | LSP server over stdio — diagnostics, formatting, code actions, hover, completion, document symbols, code lenses, folding, signature help, document highlight, go-to-definition, find-references, workspace symbol search. |
-| `m doc` / `m search` / `m manifest` / `m examples` / `m errors` | ✅ | Manifest-driven m-stdlib reference. |
+| `m stdlib doc` / `search` / `manifest` / `examples` / `errors` | ✅ | Manifest-driven m-stdlib reference (one nested namespace; grouped under `m stdlib` since 2026-05-11). |
 | `m new` / `m run` / `m doctor` / `m ci init` | ✅ | Project scaffolding, ad-hoc execution, environment self-check, CI scaffolding. |
 | `m plugins`  | ✅ | Lists out-of-tree subcommands registered via the `m_cli.plugins` entry-point group. |
 
@@ -226,14 +226,14 @@ the extension spawns `m lsp` on activation. Settings: `m-cli.enabled`,
 `m-cli.path` (set to the venv-installed `m` binary if not on `$PATH`),
 `m-cli.args`, `m-cli.trace.server`.
 
-### `m doc` family — m-stdlib reference
+### `m stdlib` — m-stdlib reference (nested namespace)
 
 ```bash
-m doc parse^STDJSON                           # signature, params, returns, examples
-m search uuid                                 # full-text search across the manifest
-m manifest                                    # print the active stdlib-manifest.json
-m examples STDCSV                             # runnable examples for a module
-m errors STDB64                               # error catalogue for a module
+m stdlib doc parse^STDJSON                    # signature, params, returns, examples
+m stdlib search uuid                          # full-text search across the manifest
+m stdlib manifest                             # print the active stdlib-manifest.json
+m stdlib examples STDCSV                      # runnable examples for a module
+m stdlib errors STDB64                        # error catalogue for a module
 ```
 
 Manifest source:
@@ -350,7 +350,7 @@ m-cli/
 │   ├── watch/                    # m watch — polling file watcher
 │   ├── coverage/                 # m coverage — view "TRACE" + LCOV emitter
 │   ├── lsp/                      # m lsp   — pygls language server
-│   ├── doc/                      # m doc / search / manifest / examples / errors
+│   ├── doc/                      # m stdlib doc / search / manifest / examples / errors (handlers; wired in stdlib_cli.py)
 │   ├── doctor/                   # m doctor — environment self-check
 │   ├── new/                      # m new   — project scaffolder
 │   ├── ci/                       # m ci    — CI scaffolding

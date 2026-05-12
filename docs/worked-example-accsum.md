@@ -122,20 +122,21 @@ the real application.
 
 ---
 
-## 3. Talk to m-stdlib first — `m doc`
+## 3. Talk to m-stdlib first — `m stdlib doc`
 
 The single biggest time-save in this whole exercise is **not writing
 a CSV parser, a URL parser, a JSON encoder, a date formatter, or a
 structured logger.** Before writing a line of M, look up what the
 standard library already gives us.
 
-`m doc` is the manifest browser for m-stdlib. No flags — just ask.
+`m stdlib doc` is the manifest browser for m-stdlib. No flags —
+just ask.
 
 ```text
-$ m doc STDCSV --short
+$ m stdlib doc STDCSV --short
 STDCSV — m-stdlib — RFC-4180 CSV parser/writer (pure-M).
 
-$ m doc STDCSV.parseFile
+$ m stdlib doc STDCSV.parseFile
 parseFile^STDCSV(path,callback) → procedure
 
 Read `path`; call `callback(rownum,.fields)` once per record.
@@ -148,28 +149,28 @@ example:
 
 source: src/STDCSV.m:248
 
-$ m doc STDDATE.toh
+$ m stdlib doc STDDATE.toh
 $$toh^STDDATE(iso) → string
 Horolog form (2/3/4-piece) parsed from ISO-8601.
 
 example:
   set h=$$toh^STDDATE("2026-05-08T14:32:11Z")  ; "67268,52331"
 
-$ m doc STDLOG.INFO
+$ m stdlib doc STDLOG.INFO
 do INFO^STDLOG(event,k1,v1,k2,v2,k3,v3,k4,v4,k5,v5)
 Emit at level INFO. Up to 5 key/value pairs.
 
 example:
   do INFO^STDLOG("rows_seen","count",total,"errors",errs)
 
-$ m doc STDJSON.encode
+$ m stdlib doc STDJSON.encode
 $$encode^STDJSON(.root) → string
 RFC-8259 conformant JSON text from a sigil-prefixed M tree.
 
-$ m doc STDARGS --short
+$ m stdlib doc STDARGS --short
 STDARGS — m-stdlib — argparse-style CLI parser for M routines.
 
-$ m doc STDURL.normalize
+$ m stdlib doc STDURL.normalize
 $$normalize^STDURL(url) → string
 RFC 3986 §6.2 syntax-based normalisation: lowercases scheme + host,
 uppercases hex digits in %HH, percent-decodes unreserved characters,
@@ -322,7 +323,7 @@ All tests passed.
 
 **GREEN.** Total elapsed: under a minute, including writing the M
 code and looking up two stdlib entry points. No CSV reader, no URL
-parser, no date arithmetic — `m doc` told us what to call.
+parser, no date arithmetic — `m stdlib doc` told us what to call.
 
 ---
 
@@ -392,7 +393,7 @@ _row(rownum,fields) ; @summary  Per-row callback for parseFile^STDCSV
 
 This deliberately uses `^||ACCSUM` (a YDB process-private global) as
 the accumulator passed to the per-row callback — a pattern documented
-in `m doc STDCSV.parseFile`. We will revisit it.
+in `m stdlib doc STDCSV.parseFile`. We will revisit it.
 
 `m watch` is still running, so we just save and watch:
 
@@ -735,7 +736,7 @@ application is the application — nothing else.
 |---|---|---|
 | 1 | `m doctor` | Verify the host before touching code. |
 | 2 | `m new accsum` | Scaffold layout + config + sample test. |
-| 3 | `m doc <symbol>` | Browse m-stdlib API; avoid reinventing. |
+| 3 | `m stdlib doc <symbol>` | Browse m-stdlib API; avoid reinventing. |
 | 4 | `m test` | RED — prove the test fails. |
 | 5 | `m test` | GREEN — prove the implementation works. |
 | 6 | `m watch` | Re-run the suite on every save. |

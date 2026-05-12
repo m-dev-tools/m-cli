@@ -29,7 +29,7 @@ exposes:
     - m watch                                # polling file watcher
     - m coverage                             # YDB view "TRACE"-based; text/json/lcov; --branch; --min-percent gate
     - m lsp                                  # LSP server: diagnostics, fmt, code actions, hover, completion, document symbols, code lenses, folding, signature help, document highlight, go-to-definition, find-references, workspace symbol search
-    - m doc / m search / m manifest / m examples / m errors  # m-stdlib reference surface
+    - m stdlib {doc,search,manifest,examples,errors}         # m-stdlib reference surface (nested namespace)
     - m new / m run / m doctor / m ci init                   # project scaffolding + helpers
     - m plugins                              # list out-of-tree subcommands registered via m_cli.plugins entry-point group
   pre_commit_hooks: [m-fmt-check, m-fmt, m-lint]
@@ -44,7 +44,7 @@ consumes:
   upstream_data:
     - "m-standard TSVs (loaded by src/m_cli/lint/_keywords.py)"
     - "tree-sitter-m grammar (Python binding)"
-    - "m-stdlib manifest (loaded by m doc / m search / m examples / m errors)"
+    - "m-stdlib manifest (loaded by m stdlib doc / search / examples / errors)"
 
 companions:
   - project: m-standard
@@ -52,7 +52,7 @@ companions:
   - project: tree-sitter-m
     relation: "input — parser used for AST-level lint and fmt round-trip checks"
   - project: m-stdlib
-    relation: "consumed — `m doc` family surfaces stdlib-manifest.json. Architectural priority: m-cli should consume m-stdlib utilities when implementing new functionality."
+    relation: "consumed — the `m stdlib` family surfaces stdlib-manifest.json. Architectural priority: m-cli should consume m-stdlib utilities when implementing new functionality."
   - project: m-test-engine
     relation: "default Docker engine for runtime tools (`docker exec` transport)"
   - project: m-cli-extras
@@ -77,8 +77,8 @@ docs:
 # m-cli — Claude Project Context
 
 `m-cli` is the canonical `m <subcommand>` CLI for the M (MUMPS) language —
-`m fmt`, `m lint`, `m test`, `m coverage`, `m watch`, `m lsp`, `m doc`, and
-project-scaffolding helpers. Source-level tools are engine-neutral; runtime
+`m fmt`, `m lint`, `m test`, `m coverage`, `m watch`, `m lsp`, `m stdlib doc`,
+and project-scaffolding helpers. Source-level tools are engine-neutral; runtime
 tools target YottaDB and auto-detect a transport (Local → Docker via
 [m-test-engine](https://github.com/m-dev-tools/m-test-engine) → SSH legacy).
 
@@ -93,7 +93,7 @@ For new contributors:
 
 - [`tree-sitter-m`](https://github.com/m-dev-tools/tree-sitter-m) — parser used for AST-level lint and fmt round-trip
 - [`m-standard`](https://github.com/m-dev-tools/m-standard) — language reference; commands/ISVs/functions loaded from its TSVs via `src/m_cli/lint/_keywords.py`
-- [`m-stdlib`](https://github.com/m-dev-tools/m-stdlib) — runtime library; the `m doc` family surfaces its manifest
+- [`m-stdlib`](https://github.com/m-dev-tools/m-stdlib) — runtime library; the `m stdlib` family surfaces its manifest
 
 ---
 
@@ -202,6 +202,7 @@ src/m_cli/
 ├── engine.py               # LocalEngine / DockerEngine / SSHEngine + detect_engine()
 ├── workspace.py            # cross-routine label index (definitions + refs)
 ├── plugins.py              # entry-point discovery for m_cli.plugins
+├── stdlib_cli.py           # `m stdlib` parent dispatcher + 5 sub-action wires
 ├── fmt/
 │   ├── cli.py              # `m fmt` argparse + file orchestration
 │   └── formatter.py        # round-trip pretty-printer + rule pipeline
@@ -237,7 +238,7 @@ src/m_cli/
 │   ├── server.py           # pygls-based stdio server; lint/fmt/code-action/hover/completion/symbols/lenses/folding/signature/highlight/definition handlers
 │   ├── symbols.py          # token_at, lookup_keyword (m-standard-backed)
 │   └── structure.py        # find_labels, find_dot_blocks
-├── doc/                    # m doc / search / manifest / examples / errors — manifest-driven
+├── doc/                    # handlers for the `m stdlib` family (doc/search/manifest/examples/errors); wired via stdlib_cli.py
 ├── doctor/                 # m doctor — environment self-check
 ├── new/                    # m new — project scaffolder
 ├── ci/                     # m ci init — CI workflow scaffolding

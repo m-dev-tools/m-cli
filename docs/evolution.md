@@ -22,6 +22,7 @@ shaped the way they are without having to reverse-engineer commit history.
 - [Performance milestones](#performance-milestones)
 - [Deferred items and known quirks](#deferred-items-and-known-quirks)
 - [Retirements](#retirements)
+- [Renames / namespace moves](#renames--namespace-moves)
 - [Bootstrap substrate](#bootstrap-substrate)
 
 ## Origin: the four-tier strategy
@@ -355,6 +356,57 @@ references scrubbed from `README.md`, `AGENTS.md`,
 documents (language-cli-survey, iris-ydb-portability,
 cli-ux-conventions-remediation) are left as-is — they're frozen
 plan records, not as-is references.
+
+## Renames / namespace moves
+
+Commands that shipped earlier under one name but were later moved
+into a different shape (typically a namespace). The behavior is
+preserved; only the invocation changes.
+
+### m-stdlib reference → `m stdlib <verb>` (2026-05-11)
+
+**What changed.** The 5 m-stdlib reference commands were lifted out
+of the top-level namespace and grouped under a single `m stdlib`
+parent dispatcher:
+
+| Before                  | After                              |
+| ----------------------- | ---------------------------------- |
+| `m doc SYMBOL`          | `m stdlib doc SYMBOL`              |
+| `m search QUERY`        | `m stdlib search QUERY`            |
+| `m examples [MODULE]`   | `m stdlib examples [MODULE]`       |
+| `m errors`              | `m stdlib errors`                  |
+| `m manifest [PATH]`     | `m stdlib manifest [PATH]`         |
+
+**Why.** Cognitive and logical grouping. Five distinct top-level
+verbs all served the same purpose (read the m-stdlib manifest in
+different views), but their names didn't make that relationship
+visible. `m doc` could have meant "doc the project" (m-cli's own
+docs), "doc one routine", or "doc m-stdlib" — only the description
+disambiguated. Grouping under `m stdlib` mirrors the existing
+`m engine <verb>` and `m ci <verb>` patterns: when a cluster of
+commands shares a domain, name the domain.
+
+**Mechanical changes.** New `src/m_cli/stdlib_cli.py` registers
+the `stdlib` subparser + 5 sub-actions (mirroring
+`m_cli.engine_cli.add_engine_arguments` but without the
+`required=True` anti-pattern — bare `m stdlib` prints a gh-style
+overview). The 5 top-level parsers were removed from
+`src/m_cli/cli.py`. Underlying handlers in `m_cli.doc.*` are
+unchanged; only the registration site moved. Contract tests
+updated: `TestUnknownFlagRoutesToSubparser` now has a separate
+parametrize for `m stdlib <verb>`; `TestDomainFailuresExit1`
+passes `["stdlib", verb]`; new
+`test_stdlib_bare_exits_0_with_overview`. `dist/commands.json`
+regenerated.
+
+**No backward-compat shim.** Per project convention (CLAUDE.md
+"Don't use feature flags or backwards-compatibility shims when
+you can just change the code"), `m doc` etc. now return
+argparse's `invalid choice` error. Users who relied on the old
+names see a clean error directing them to the new namespace.
+
+**Top-level count.** 14 commands (down from 18). `m stdlib`
+adds 5 sub-verbs; total distinct invocations: 28 (unchanged).
 
 ## Bootstrap substrate
 

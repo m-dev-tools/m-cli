@@ -50,7 +50,7 @@ doc_type: [GUIDE, REFERENCE]
   - [6.8 `m new`](#68-m-new)
   - [6.9 `m ci init`](#69-m-ci-init)
   - [6.10 `m run`](#610-m-run)
-  - [6.11 `m doc`](#611-m-doc)
+  - [6.11 `m stdlib` family](#611-m-stdlib-family)
 - [7. Project configuration](#7-project-configuration)
 - [8. Editor integration (VS Code)](#8-editor-integration-vs-code)
 - [9. Library API for downstream tools](#9-library-api-for-downstream-tools)
@@ -78,7 +78,7 @@ m doctor    — diagnose the M development environment
 m new       — scaffold a new M project (zero-deps starter)
 m ci init   — emit a GitHub Actions workflow running the four gates
 m run       — thin `ydb -run ENTRYREF` wrapper
-m doc       — extract `@summary` annotations into Markdown / HTML
+m stdlib    — m-stdlib reference (doc / search / examples / errors / manifest)
 ```
 
 `m-cli` is the canonical implementation of the **Tier 1 deliverable** described in [m-tooling-tier1.md](../../m-tools/docs/m-tooling-tier1.md), now extended with the Tier 2 quality-gate features (`m coverage`, pre-commit hooks, style linting) and an opinionated modernization track (the M-MOD-NN rule family — 35 rules covering complexity, concurrency, transaction integrity, engine portability, code-style, and security/taint). It is the active replacement for the legacy `y*` shell scripts in `~/projects/m-tools/bin/` (kept only as references).
@@ -737,31 +737,39 @@ m run HELLO -- arg1 arg2               # extra args flow through to $ZCMDLINE
 
 ---
 
-### 6.11 `m doc`
+### 6.11 `m stdlib` family
 
-Extract `@summary` docstrings from M source into Markdown or HTML.
+Reference surface over the [m-stdlib](https://github.com/m-dev-tools/m-stdlib)
+manifest. Five sub-verbs under one namespace (grouped 2026-05-11; the
+underlying handlers were the original top-level `m doc` / `m search` /
+`m examples` / `m errors` / `m manifest` commands shipped in Phase 3a
+— see [`evolution.md`](evolution.md) under "Renames / namespace
+moves" for the rationale).
 
 ```bash
-m doc                              # walk ./ for *.m, write Markdown to stdout
-m doc routines                     # explicit roots
-m doc routines --output API.md     # write to a file instead of stdout
-m doc routines --format html       # HTML output (inline stylesheet, no external assets)
+m stdlib                                     # gh-style overview of the 5 verbs
+m stdlib doc STDJSON                         # module overview
+m stdlib doc STDJSON.parse                   # single-label long form
+m stdlib doc parse                           # fuzzy lookup across modules
+m stdlib search "url encode"                 # AND-style full-text search
+m stdlib examples STDCSV                     # every @example for one module
+m stdlib errors                              # U-STD* error code inverted index
+m stdlib manifest STDJSON.parse              # raw JSON subtree (pipes into jq)
+m stdlib doc --manifest PATH STDJSON         # override manifest discovery
 ```
 
-The extractor pulls four pieces of structure from each routine:
+**Manifest discovery** is shared across all five verbs: walk up
+from cwd looking for `dist/stdlib-manifest.json`, then fall back to
+`$M_CLI_MANIFEST`, then `~/projects/m-stdlib/dist/stdlib-manifest.json`.
+Use `--manifest PATH` on any verb to override.
 
-1. **Routine name** — file stem, uppercased (matches the M convention).
-2. **Routine summary** — text after the first `;` on line 1, with a leading `@summary` annotation stripped.
-3. **Version stub** — line 2 if it matches `;;<version>;<package>;;<date>;<build>`. Surfaced as the per-routine `version` and `package` metadata.
-4. **Per-label entries** — one for each labelled definition discovered by `tree-sitter-m`. Each carries `name`, `formals` (`"(a,b)"` or `""`), and the `@summary` text from the label's line.
+**Exit codes** (CLI-UX guide §3.7): `0` matches found · `1` domain
+failure (no matches / missing or malformed manifest) · `2` usage
+error (unknown flag, malformed argument).
 
-Double-semicolon lines (`;;<directive>`) are excluded from human-prose extraction — they're either version stubs or structured directives, not documentation.
-
-**Markdown output** — one `## ROUTINE` heading per routine with a `_version · package · source_` italic metadata line, then a `### Labels` bullet list of `` `name(formals)` — summary `` entries.
-
-**HTML output** — same structure wrapped in a `<!doctype html>` document with a tiny inline stylesheet. Renders cleanly without external assets, suitable for emailing or hosting on a static site.
-
-**Reuses the parser.** `m_cli.lsp.structure.find_labels` does the AST walk; in-module file walking does the file walk. New code in `m_cli.doc` is purely the docstring-extraction + render layer.
+**Underlying handlers** live in `m_cli.doc.*` (one file per verb).
+The argparse registration is in `m_cli.stdlib_cli.add_stdlib_arguments`,
+called from the root dispatcher.
 
 ---
 

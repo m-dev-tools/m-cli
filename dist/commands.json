@@ -90,36 +90,6 @@
       ],
       "examples": []
     },
-    "doc": {
-      "purpose": "godoc-style symbol lookup over the m-stdlib manifest",
-      "options": [
-        {
-          "name": "symbol",
-          "help": "Symbol to look up: MODULE, MODULE.label, or bare label name",
-          "default": "",
-          "choices": null
-        },
-        {
-          "name": "--short",
-          "help": "One-line synopsis instead of full long-form output",
-          "default": false,
-          "choices": null
-        },
-        {
-          "name": "--json",
-          "help": "Emit the raw manifest entry as JSON",
-          "default": false,
-          "choices": null
-        },
-        {
-          "name": "--manifest",
-          "help": "Path to dist/stdlib-manifest.json (default: walk up from cwd)",
-          "default": null,
-          "choices": null
-        }
-      ],
-      "examples": []
-    },
     "doctor": {
       "purpose": "Diagnose the M development environment",
       "options": [
@@ -150,42 +120,6 @@
     "engine": {
       "purpose": "Manage the m-test-engine container (install/start/stop/...)",
       "options": [],
-      "examples": []
-    },
-    "errors": {
-      "purpose": "List every U-STD* error code and the labels that raise it",
-      "options": [
-        {
-          "name": "--json",
-          "help": "Emit the errors index as JSON (the same shape as dist/errors.json)",
-          "default": false,
-          "choices": null
-        },
-        {
-          "name": "--manifest",
-          "help": "Path to dist/stdlib-manifest.json (default: walk up from cwd)",
-          "default": null,
-          "choices": null
-        }
-      ],
-      "examples": []
-    },
-    "examples": {
-      "purpose": "Print every @example from the manifest",
-      "options": [
-        {
-          "name": "module",
-          "help": "Module to scope output to (default: every module)",
-          "default": "",
-          "choices": null
-        },
-        {
-          "name": "--manifest",
-          "help": "Path to dist/stdlib-manifest.json (default: walk up from cwd)",
-          "default": null,
-          "choices": null
-        }
-      ],
       "examples": []
     },
     "fmt": {
@@ -380,24 +314,6 @@
       ],
       "examples": []
     },
-    "manifest": {
-      "purpose": "Emit the m-stdlib manifest (or a sub-path) as JSON",
-      "options": [
-        {
-          "name": "path",
-          "help": "Sub-path to emit (e.g. STDJSON.parse). Empty = whole manifest.",
-          "default": "",
-          "choices": null
-        },
-        {
-          "name": "--manifest",
-          "help": "Path to dist/stdlib-manifest.json (default: walk up from cwd)",
-          "default": null,
-          "choices": null
-        }
-      ],
-      "examples": []
-    },
     "new": {
       "purpose": "Scaffold a new M project",
       "options": [
@@ -470,28 +386,9 @@
       ],
       "examples": []
     },
-    "search": {
-      "purpose": "Full-text search over the m-stdlib manifest",
-      "options": [
-        {
-          "name": "query",
-          "help": "Search query \u2014 space-separated tokens (AND-style match)",
-          "default": "",
-          "choices": null
-        },
-        {
-          "name": "--limit",
-          "help": "Max number of matches to print (default: 50)",
-          "default": 50,
-          "choices": null
-        },
-        {
-          "name": "--manifest",
-          "help": "Path to dist/stdlib-manifest.json (default: walk up from cwd)",
-          "default": null,
-          "choices": null
-        }
-      ],
+    "stdlib": {
+      "purpose": "m-stdlib reference lookups (doc/search/examples/errors/manifest)",
+      "options": [],
       "examples": []
     },
     "test": {
