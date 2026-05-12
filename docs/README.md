@@ -19,6 +19,7 @@ Each doc is labeled `[TYPE · type? · connection · connection?]`.
 
 ## Top-level
 
+- **`cli-menu-system.md`** — `[REFERENCE · function]` Master tabular reference of every `m <subcommand>` arranged in developer-journey order, tagged by lifecycle stage (env health / setup / inner loop / integration), with a 5-circle frequency rating per command and cross-cutting notes on exit codes, engine binding, and configuration.
 - **`evolution.md`** — `[HISTORY · BUILD-LOG · history · implementation]` Chronological narrative of how m-cli was built tier by tier, milestone by milestone, with performance journey and deferred items.
 - **`guide.md`** — `[GUIDE · REFERENCE · function · architecture]` Comprehensive user-facing reference covering every subcommand, configuration, profiles, and the four-tier framework m-cli implements.
 - **`m-linting-user-guide.md`** — `[GUIDE · function]` How-to guide for `m lint`: profiles, severity, thresholds, output formats, inline disables, and CLI flags.
