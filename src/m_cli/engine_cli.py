@@ -20,6 +20,7 @@ import argparse
 import json
 from typing import Callable
 
+from m_cli._overview import print_overview
 from m_cli.engine_driver import DockerDriver, EngineDriver
 from m_cli.engine_manifest import load_engine_manifest
 
@@ -66,7 +67,7 @@ def add_engine_arguments(subparsers: argparse._SubParsersAction) -> None:
     )
     actions = engine_parser.add_subparsers(
         dest="engine_action",
-        required=True,
+        metavar="<action>",
     )
 
     # status
@@ -162,6 +163,17 @@ def add_engine_arguments(subparsers: argparse._SubParsersAction) -> None:
         help="Emit the engine namespace's machine-readable capabilities (JSON)",
     )
     caps_p.set_defaults(func=_cmd_capabilities)
+
+    # Bare `m engine` prints the gh-style overview at exit 0 (CLI-UX
+    # guide §5.2 — no `required=True`).
+    _TAGLINE = (
+        "Lifecycle management for the canonical m-test-engine Docker container."
+    )
+    engine_parser.set_defaults(
+        func=lambda _a: print_overview(
+            engine_parser, actions, tagline=_TAGLINE, word="action"
+        ),
+    )
 
 
 def engine_command(args: argparse.Namespace) -> int:
