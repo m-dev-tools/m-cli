@@ -234,7 +234,13 @@ class DockerEngine:
     bind_root: Path = field(default_factory=lambda: Path("/m-work"))
 
     def _exec_prefix(self) -> list[str]:
-        return ["docker", "exec", self.container]
+        # `-i` keeps stdin attached so commands that pipe a script
+        # (like `m coverage`'s `mumps -direct` invocation) actually
+        # receive it. Without it docker silently discards stdin and
+        # the M session sees EOF immediately, producing empty output.
+        # Harmless for the non-piped cases (build_suite_cmd /
+        # build_xcmd_cmd) — the M command is in argv, not stdin.
+        return ["docker", "exec", "-i", self.container]
 
     def _shell_script(self, stage: str, body: str) -> str:
         # Inside the container, expand $ydb_dist via bash login shell.

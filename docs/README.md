@@ -21,6 +21,7 @@ Each doc is labeled `[TYPE · type? · connection · connection?]`.
 
 - **`cli-menu-system.md`** — `[REFERENCE · function]` Master tabular reference of every `m <subcommand>` arranged in developer-journey order, tagged by lifecycle stage (env health / setup / inner loop / integration), with a 5-circle frequency rating per command and cross-cutting notes on exit codes, engine binding, and configuration.
 - **`evolution.md`** — `[HISTORY · BUILD-LOG · history · implementation]` Chronological narrative of how m-cli was built tier by tier, milestone by milestone, with performance journey and deferred items.
+- **`m-cli-tdd-lifecycle-walkthrough.md`** — `[WORKED-EXAMPLE · TUTORIAL · SMOKE-TEST · function]` End-to-end transcript building `reqstats` (an HTTP-access-log summarizer) using STDCSV/STDMATH/STDJSON/STDASSERT. Doubles as a smoke gate that every `m <subcommand>` works on a docker-only host; finished app left at `~/m-work/reqstats/` for re-running any step.
 - **`guide.md`** — `[GUIDE · REFERENCE · function · architecture]` Comprehensive user-facing reference covering every subcommand, configuration, profiles, and the four-tier framework m-cli implements.
 - **`m-linting-user-guide.md`** — `[GUIDE · function]` How-to guide for `m lint`: profiles, severity, thresholds, output formats, inline disables, and CLI flags.
 - **`plugin-development.md`** — `[GUIDE · SPEC · function · architecture]` Contract and walkthrough for registering out-of-tree subcommands via the `m_cli.plugins` entry-point group.
