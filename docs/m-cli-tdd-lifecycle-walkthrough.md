@@ -1,21 +1,22 @@
 ---
 created: 2026-05-11
-last_modified: 2026-05-11
-revisions: 0
+last_modified: 2026-05-12
+revisions: 1
 doc_type: [WORKED-EXAMPLE, TUTORIAL, SMOKE-TEST]
 ---
 
 # m-cli TDD lifecycle walkthrough
 
-End-to-end transcript of a real M developer building a small data-analysis
-application — **`reqstats`**, an HTTP-access-log summarizer — using only
-the `m` toolchain and the `m-stdlib` standard library. Doubles as a
-smoke test that every `m <subcommand>` works on a docker-only host.
+End-to-end transcript of a real M developer building a small
+data-analysis application — **`reqstats`**, an HTTP-access-log
+summarizer — using only the `m` toolchain and the `m-stdlib` standard
+library. Doubles as a turnkey smoke test that every `m <subcommand>`
+works on *any* docker-capable host, from a clean checkout.
 
 The finished application is left in place at `~/m-work/reqstats/` so
 the next session can re-run any step. m-stdlib's `.m` files are
 vendored into `routines/` so the engine container can find them
-(see [§ Vendoring m-stdlib](#vendoring-m-stdlib) below).
+(see [§ Vendoring m-stdlib](#4-vendoring-m-stdlib) below).
 
 **Surface coverage.** Every one of the 28 distinct invocations in
 [`cli-menu-system.md`](cli-menu-system.md) is exercised below at least
@@ -23,6 +24,85 @@ once, except for `m engine reset` (destructive — touched in description
 only) and `m watch` (long-running — mentioned only). The final 100 %
 label-coverage gate against the production routine validates the
 inner-loop chain end to end.
+
+---
+
+## Prerequisites — turnkey setup on a fresh host
+
+Anyone on any machine should be able to follow this walkthrough from
+zero. Setup is one-time per machine.
+
+### System tools
+
+| Tool          | Why                                       | Verify             |
+| ------------- | ----------------------------------------- | ------------------ |
+| **git**       | clone the repos                           | `git --version`    |
+| **docker**    | runs the m-test-engine YottaDB container  | `docker --version` |
+| **Python 3.12+** | m-cli is a Python package              | `python3 --version` |
+| **uv**        | m-cli's dependency manager + venv         | `uv --version`     |
+| **make**      | optional; convenience targets             | `make --version`   |
+
+On Linux: `apt install git docker.io python3.12 make`, then
+[install uv](https://docs.astral.sh/uv/getting-started/installation/)
+(`curl -LsSf https://astral.sh/uv/install.sh | sh`). On macOS:
+`brew install git docker python@3.12 uv`. Docker requires the daemon
+running (Docker Desktop on macOS / Windows, `systemctl start docker`
+on Linux).
+
+### Clone the repos
+
+m-cli has two hard dependencies that must live as sibling checkouts —
+its `pyproject.toml` declares them by relative path. m-stdlib is the
+library we're going to call from `reqstats`, so we need that too.
+
+```bash
+mkdir -p ~/m-dev-tools && cd ~/m-dev-tools
+git clone https://github.com/m-dev-tools/tree-sitter-m
+git clone https://github.com/m-dev-tools/m-standard
+git clone https://github.com/m-dev-tools/m-cli
+git clone https://github.com/m-dev-tools/m-stdlib
+```
+
+(`tree-sitter-m` is the parser m-cli builds on; `m-standard` is the
+language reference m-cli loads keyword/symbol tables from. Both are
+mandatory.)
+
+### Install m-cli into a venv
+
+```bash
+cd ~/m-dev-tools/m-cli
+make install                       # uv sync --extra dev + pre-commit hooks
+.venv/bin/m --version              # m-cli 0.1.0
+```
+
+Add `~/m-dev-tools/m-cli/.venv/bin` to your `PATH` (or use direnv) so
+the bare `m` command works without the explicit prefix used in the
+transcript below.
+
+### Bootstrap the engine container
+
+```bash
+m engine install                   # docker pull ghcr.io/m-dev-tools/m-test-engine:0.1.0
+m engine start                     # docker run -d -v $HOME/m-work:/m-work ...
+```
+
+The first call pulls the image (~150 MB) from GHCR; the second starts
+a long-running container named `m-test-engine` with `$HOME/m-work`
+bind-mounted at `/m-work`. The bind-mount is the entire point: every
+M project under `~/m-work/` is automatically visible inside the
+container at the matching path, no per-project mount setup.
+
+### Verify
+
+```bash
+mkdir -p ~/m-work                  # bind-mount root
+m doctor                           # all checks should be ✓
+```
+
+If `m doctor` reports anything other than 7 OK, fix that before
+proceeding — every command below depends on the engine being healthy.
+
+---
 
 ---
 
@@ -346,25 +426,83 @@ ok  REQSTATSTST  (15/15 passed)
 15/15 — every classify case, every aggregate path, the full
 end-to-end summarize→JSON→parse round-trip.
 
-### 5.3 Format + lint
+### 5.3 Format + select a lint profile
 
 ```text
 $ m fmt --check routines/REQSTATS.m tests/REQSTATSTST.m
 m fmt: all formatted, 2 unchanged
 ```
 
+Before running lint, **survey the available rule profiles** so you
+pick the one that matches your project's house style. `m new`
+scaffolds `[lint] rules = "default"` — m-cli's curated daily-lint
+subset — but for this app we want the stricter Python-flavoured
+preset since we're writing in modern lowercase style.
+
+```text
+$ m lint --list-profiles
+m lint profiles:
+  all          80 rule(s)  Every registered rule, regardless of tag or profile.
+  default      34 rule(s)  m-cli's curated daily-lint set — M-MOD-NN minus the four pedantic style rules.
+  modern       38 rule(s)  Full M-MOD-NN modernization track (includes pedantic style rules).
+  pedantic      4 rule(s)  Just the four pedantic style rules (commands-per-line, label-docstring,
+                           magic-numbers, single-letter-vars).
+  pythonic     38 rule(s)  Python-style preset: modern + tighter thresholds (line_length=100,
+                           commands_per_line=1, cyclomatic=10, …).
+  sac          23 rule(s)  VA SAC portable subset — non-VistA rules tagged `sac`.
+  vista         8 rule(s)  VA VistA-Kernel-specific rules. Opt in only for VistA M code.
+  vista-full   42 rule(s)  XINDEX + vista + sac. Recommended with --target-engine=yottadb.
+  xindex       34 rule(s)  Engine-neutral subset of the VA Toolkit ^XINDEX rule set.
+```
+
+We're writing modern lowercase non-VistA code, so **`pythonic`** is
+the right pick — it's the full M-MOD modernization track plus tighter
+PEP-8-ish thresholds. The `vista` and `vista-full` / `sac` profiles
+emit false positives outside VistA, and `default` is too lax for the
+strict style this project wants.
+
+Pin the choice in `.m-cli.toml` so every contributor's `m lint` /
+LSP integration gets the same answer:
+
+```toml
+# ~/m-work/reqstats/.m-cli.toml
+[fmt]
+rules = "pythonic-lower"           # lowercase keywords (set, write, $length)
+
+[lint]
+# `pythonic` = modern M-MOD-NN ruleset (no VA / VistA / XINDEX) with
+# PEP-8-flavoured thresholds: line_length=100, commands_per_line=1,
+# cyclomatic=10. Selected via `m lint --list-profiles`.
+rules = "pythonic"
+```
+
+Then run lint — it picks up the config automatically (`m lint` walks
+up from cwd looking for `.m-cli.toml`):
+
 ```text
 $ m lint routines/REQSTATS.m tests/REQSTATSTST.m
-routines/REQSTATS.m:62:15: [W] M-MOD-020: By-reference argument `.rows` to 'aggregate' but the callee never writes its formal 'rows'
+routines/REQSTATS.m:13:2: [S] M-MOD-009: Line has 2 commands (limit: 1)
+routines/REQSTATS.m:13:12: [S] M-MOD-031: Magic numeric literal 200 — extract to a named constant
+routines/REQSTATS.m:13:24: [S] M-MOD-031: Magic numeric literal 599 — extract to a named constant
+routines/REQSTATS.m:14:15: [S] M-MOD-031: Magic numeric literal 100 — extract to a named constant
+routines/REQSTATS.m:16:1: [I] M-MOD-029: Label 'aggregate' comment density 6% below threshold 10% (1/15 non-blank lines)
+routines/REQSTATS.m:17:6: [S] M-MOD-032: Single-letter variable 'i' outside FOR loop counter — pick a meaningful name
 …
 ```
 
-The `M-MOD-020` warnings are false positives — STDASSERT mutates the
-`pass`/`fail` by-ref formals, but the static analyzer can't see
-through cross-routine calls. They're warnings (W), not errors —
-`m lint`'s exit is still 0. A real project would either disable
-`M-MOD-020` for these labels (`; m-lint: disable=M-MOD-020`) or
-file an issue against the lint rule.
+The findings are **STYLE (S)** and **INFO (I)** severity — not
+errors — so `m lint`'s exit is 0. They're real signal under the
+pythonic preset: magic numbers, single-letter vars, multi-command
+lines. A real project would either fix them (extract named constants,
+rename `i` to `rowIdx`, split lines), suppress per-call with
+`; m-lint: disable=M-MOD-031`, or relax thresholds in
+`[lint.thresholds]`.
+
+Use `--error-on=error` to gate CI on hard errors only, ignoring style:
+
+```bash
+m lint --error-on=error routines/ tests/
+```
 
 ### 5.4 Useful inner-loop verbs not run here
 
