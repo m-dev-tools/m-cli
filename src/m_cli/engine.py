@@ -152,6 +152,23 @@ class LocalEngine:
             m_cmd,
         ]
 
+    def build_run_cmd(
+        self, entryref: str, extras: list[str], stage: str
+    ) -> list[str]:
+        """Build ``mumps -run ENTRYREF [args...]`` for a `m run` invocation.
+
+        Extras (the bits after ``--``) flow into ``$ZCMDLINE`` in the
+        running M program — the same convention every YottaDB CLI uses.
+        """
+        return [
+            "env",
+            f"ydb_routines={self._routines_value(stage)}",
+            self._mumps(),
+            "-run",
+            entryref,
+            *extras,
+        ]
+
     def build_direct_cmd(self, stage: str) -> list[str]:
         return [
             "env",
@@ -228,6 +245,22 @@ class DockerEngine:
         script = self._shell_script(stage, f"mumps -run %XCMD {shlex.quote(m_cmd)}")
         return [*self._exec_prefix(), "bash", "-lc", script]
 
+    def build_run_cmd(
+        self, entryref: str, extras: list[str], stage: str
+    ) -> list[str]:
+        """Build ``mumps -run ENTRYREF [args...]`` inside the container.
+
+        Every arg is shell-quoted so spaces / quotes / dollar signs
+        survive the ``bash -lc`` hop. Extras flow to ``$ZCMDLINE``.
+        Note: any paths in ``extras`` must be valid *inside the
+        container* — host-side paths only work if they land under the
+        bind-mount root (``$HOME/m-work`` by default).
+        """
+        parts = ["mumps", "-run", entryref, *extras]
+        body = " ".join(shlex.quote(p) for p in parts)
+        script = self._shell_script(stage, body)
+        return [*self._exec_prefix(), "bash", "-lc", script]
+
     def build_direct_cmd(self, stage: str) -> list[str]:
         script = self._shell_script(stage, "mumps -direct")
         return [*self._exec_prefix(), "bash", "-lc", script]
@@ -301,6 +334,14 @@ class SSHEngine:
         return self._ssh_argv(
             self._remote_script(stage, f"mumps -run %XCMD {shlex.quote(m_cmd)}")
         )
+
+    def build_run_cmd(
+        self, entryref: str, extras: list[str], stage: str
+    ) -> list[str]:
+        """Build ``mumps -run ENTRYREF [args...]`` for a remote ssh hop."""
+        parts = ["mumps", "-run", entryref, *extras]
+        body = " ".join(shlex.quote(p) for p in parts)
+        return self._ssh_argv(self._remote_script(stage, body))
 
     def build_direct_cmd(self, stage: str) -> list[str]:
         return self._ssh_argv(self._remote_script(stage, "mumps -direct"))

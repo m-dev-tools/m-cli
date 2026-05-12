@@ -719,21 +719,47 @@ The workflow is a **starter, not a vendor lock.** Common customizations: pin a s
 
 ### 6.10 `m run`
 
-Thin wrapper around `ydb -run ENTRYREF`.
+Launches a routine entryref through the **active engine transport**
+(docker / SSH / local YottaDB, auto-resolved by
+`m_cli.engine.detect_engine`). Same surface regardless of transport
+— the only thing that changes is whether the subprocess shells into a
+container, hops over SSH, or `exec`s a local `mumps`.
 
 ```bash
-m run HELLO                            # → ydb -run ^HELLO
-m run EN^HELLO                         # → ydb -run EN^HELLO
-m run --routines ./routines HELLO      # prepend ./routines onto $ydb_routines
+m run HELLO                            # → engine.build_run_cmd("^HELLO", [], stage)
+m run EN^HELLO                         # → engine.build_run_cmd("EN^HELLO", [], stage)
+m run --routines ./routines HELLO      # prepend ./routines onto the stage path
 m run --routines ./routines --routines ./third_party HELLO   # repeatable
 m run HELLO -- arg1 arg2               # extra args flow through to $ZCMDLINE
 ```
 
-**Resolution order for the ydb binary.** `$YDB` (explicit, useful in CI) → `$ydb_dist/ydb` (canonical YDB install layout) → `ydb` on `$PATH`. `m run` exits 2 if no binary is found.
+**Transport resolution** mirrors `m doctor`'s `_transport_intent` —
+`$M_CLI_ENGINE` override → running m-test-engine container (canonical
+default) → vista-meta SSH if `conn.env` exists → local YottaDB. If
+none of those is available, `m run` exits 1 (`EngineNotConfigured`)
+with the three-way guidance.
 
-**Entryref normalization.** Routine name uppercased and truncated to 8 chars (M's routine-name limit). Label name uppercased but kept full-length (ydb itself is permissive). Bare-routine form (`HELLO`) becomes `^HELLO`; labelled form (`EN^HELLO`) is passed through.
+**Entryref normalization.** Routine name uppercased and truncated to
+8 chars (M's routine-name limit). Label name uppercased but
+kept full-length (ydb itself is permissive). Bare-routine form
+(`HELLO`) becomes `^HELLO`; labelled form (`EN^HELLO`) is passed
+through.
 
-**Exit-code passthrough.** The subprocess `returncode` is returned directly so M's `HALT`/`$ECODE`-driven exit codes flow back to the caller. Stdout and stderr are inherited (not captured), so `m run` is safe in pipelines and interactive sessions alike.
+**Stage composition.** `engine.stage_routines(cwd)` resolves the
+project's routine path for the chosen transport (host path for local;
+in-container path under the bind-mount root for docker; SCP-uploaded
+remote path for SSH). `--routines PATH` (repeatable) prepends extra
+entries to that stage — caveat: for docker / SSH the paths must
+already be visible to the container / remote host.
+
+**Exit-code passthrough.** The subprocess `returncode` is returned
+directly so M's `HALT` / `$ECODE`-driven exit codes flow back to the
+caller. Stdout and stderr are inherited (not captured) so `m run` is
+safe in pipelines and interactive sessions alike.
+
+**History.** Originally shipped in Phase 3a as a local-only
+`ydb -run` wrapper. Migrated to `detect_engine()` on 2026-05-11 —
+see [`evolution.md`](evolution.md) under "Engine refactor follow-ups".
 
 ---
 

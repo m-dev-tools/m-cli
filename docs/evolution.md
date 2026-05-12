@@ -23,6 +23,7 @@ shaped the way they are without having to reverse-engineer commit history.
 - [Deferred items and known quirks](#deferred-items-and-known-quirks)
 - [Retirements](#retirements)
 - [Renames / namespace moves](#renames--namespace-moves)
+- [Engine refactor follow-ups](#engine-refactor-follow-ups)
 - [Bootstrap substrate](#bootstrap-substrate)
 
 ## Origin: the four-tier strategy
@@ -407,6 +408,79 @@ names see a clean error directing them to the new namespace.
 
 **Top-level count.** 14 commands (down from 18). `m stdlib`
 adds 5 sub-verbs; total distinct invocations: 28 (unchanged).
+
+## Engine refactor follow-ups
+
+The engine-phase3 work (merged 2026-05-11) introduced
+`detect_engine()` as the canonical resolver across local / docker /
+SSH, made docker the default, and grew the `m engine` verb family.
+But the runtime tools (`m test`, `m coverage`, `m run`) were never
+migrated to the new resolver — they continued calling
+`read_connection()` directly, which only returns an `SSHEngine`.
+On docker-only hosts (the canonical default after `4f4b88c`) this
+meant those tools silently worked only if a stale vista-meta
+`conn.env` happened to exist; on hosts without one they returned
+"vista-meta connection not configured" despite a healthy
+`m-test-engine` container.
+
+This section tracks the migration of those tools to
+`detect_engine()`.
+
+### `m run` migrated to `detect_engine()` (2026-05-11)
+
+**What changed.** `m run` now resolves its transport via
+`detect_engine()` and dispatches through a new
+`engine.build_run_cmd(entryref, extras, stage)` method on each
+Engine class (LocalEngine / DockerEngine / SSHEngine). Behaviour
+is identical for the user: `m run "^FOO" -- arg1 arg2` runs the
+routine and feeds `$ZCMDLINE`. What's different is **where** it
+runs — host process on a local-YDB box; `docker exec
+m-test-engine bash -lc 'mumps -run ^FOO arg1 arg2'` on a
+docker-only box; SSH hop on a vista-meta-configured box.
+
+**Mechanics.**
+- `LocalEngine.build_run_cmd` returns
+  `["env", "ydb_routines=...", "mumps", "-run", entryref, *extras]`.
+- `DockerEngine.build_run_cmd` shell-quotes every arg via
+  `shlex.quote` so spaces / quotes / dollar signs survive the
+  `bash -lc` hop, then wraps in `docker exec <container> bash -lc`.
+- `SSHEngine.build_run_cmd` does the same shell-quoting then
+  routes through `_ssh_argv` / `_remote_script`.
+- `m_cli/run/cli.py` rewritten: drops the legacy
+  `resolve_ydb_binary` path, calls `detect_engine()`,
+  `engine.stage_routines(cwd)`, then `engine.build_run_cmd(...)`.
+  Missing-engine now returns 1 (DOMAIN_FAILURE) per CLI-UX guide
+  §3.7 — was 2 (usage error) before; matches the PR-4 pattern.
+- Legacy helpers in `m_cli/run/runner.py`
+  (`resolve_ydb_binary`, `build_env`, `build_command`) preserved
+  for library backcompat — some downstream tooling may still
+  import them. Tests cover both surfaces.
+
+**Smoke test.** Live host (docker-only, m-test-engine running)
+ran `m run "^HELLO" -- arg1 "two words"` successfully — output
+"`hello from m run via docker, $ZCMDLINE=arg1 two words`",
+exit 0. The shell-quoting hop preserved the spaces in
+"two words" through `docker exec → bash -lc → mumps -run`.
+
+**Pre-existing tests.** All 19 `test_run.py` tests rewritten to
+inject a `FakeEngine` via `monkeypatch.setattr` on
+`m_cli.run.cli.detect_engine` instead of a fake ydb binary. The
+pure-helper tests (parse_entryref, resolve_ydb_binary,
+build_env, build_command) are kept untouched as library-API
+regression gates.
+
+### Still open: `m test` and `m coverage`
+
+Same pattern — both currently call `read_connection()` directly,
+both lock the user to SSH. On docker-only hosts these commands
+silently fail (or worse, silently produce zero output and report
+"0/0 passed" as a `m test` "failure"). Migration is mechanically
+similar: replace `read_connection()` with `detect_engine()`,
+replace `build_xcmd_ssh_cmd(conn, ...)` / `build_suite_ssh_cmd(conn,
+...)` with the polymorphic dispatcher wrappers, and update
+`seed_for_paths` to take any Engine. Not done in the same commit
+as the `m run` migration to keep blast radius small and the smoke
+test focused.
 
 ## Bootstrap substrate
 
