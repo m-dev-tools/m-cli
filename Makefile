@@ -1,4 +1,4 @@
-.PHONY: install test test-lf watch lint format mypy cov check lint-modern lint-modern-baseline lint-modern-setup push pull hooks seed unseed test-vista engine-up engine-down engine-status manifest check-manifest check-docs-prose scope-check
+.PHONY: install bootstrap test test-lf watch lint format mypy cov check lint-modern lint-modern-baseline lint-modern-setup push pull hooks seed unseed test-vista engine-up engine-down engine-status manifest check-manifest check-docs-prose scope-check
 
 PYTHON := .venv/bin/python
 PYTEST := .venv/bin/pytest
@@ -42,6 +42,48 @@ M_TEST_ENGINE ?= $(HOME)/projects/m-test-engine
 install:
 	uv sync --extra dev
 	$(MAKE) hooks
+
+# ── Bootstrap: one-shot turnkey install for fresh checkouts ─────────
+#
+# Assumes cwd is m-cli root and that git/docker/python3.12/uv/make
+# are already installed (the `setup.sh` script in m-dev-tools/.github
+# wraps this with OS-aware pre-flight checks; this target is the
+# inside-m-cli half of that flow).
+#
+# Steps:
+#   1. Clone the 3 sibling repos m-cli depends on / works with
+#      (tree-sitter-m, m-standard, m-stdlib). Idempotent — skips
+#      anything already cloned.
+#   2. `make install` — uv sync the venv + pre-commit hooks.
+#   3. `m engine install` + `m engine start` — pull and run the
+#      m-test-engine Docker container.
+#   4. `m doctor` — verify everything is green.
+bootstrap:
+	@echo ">>> Cloning sibling repos under $$(dirname $$PWD)..."
+	@cd .. && for r in tree-sitter-m m-standard m-stdlib; do \
+	  if [ -d "$$r/.git" ]; then \
+	    echo "    $$r already cloned — skipping"; \
+	  else \
+	    echo "    cloning $$r..."; \
+	    git clone "https://github.com/m-dev-tools/$$r" || exit 1; \
+	  fi; \
+	done
+	@echo ""
+	@echo ">>> Installing m-cli into .venv..."
+	@$(MAKE) install
+	@echo ""
+	@echo ">>> Bringing up m-test-engine..."
+	@$(M) engine install
+	@$(M) engine start
+	@echo ""
+	@echo ">>> Verifying with m doctor..."
+	@$(M) doctor
+	@echo ""
+	@echo ">>> Bootstrap complete."
+	@echo "    PATH suggestion (paste into ~/.bashrc or ~/.zshrc):"
+	@echo "      export PATH=\"$$PWD/.venv/bin:\$$PATH\""
+	@echo "    Then start with the walkthrough:"
+	@echo "      $$PWD/docs/m-cli-tdd-lifecycle-walkthrough.md"
 
 hooks:
 	$(PRECOMMIT) install --hook-type pre-commit --hook-type pre-push
