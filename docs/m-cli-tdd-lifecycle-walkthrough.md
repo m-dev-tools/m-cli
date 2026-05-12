@@ -674,25 +674,6 @@ $ m coverage --routines routines/REQSTATS.m --tests tests --format=lcov
 LCOV output is consumable by `genhtml`, Codecov, Coveralls — wire
 it into CI for trend-tracking dashboards.
 
-### 6.1 Engine bug discovered + fixed mid-walkthrough
-
-The first coverage run reported `0/4 labels covered (0.0%)` — the
-trace data was being captured inside the container but never
-reached the parser. Root cause: `DockerEngine._exec_prefix` was
-returning `["docker", "exec", ...]` without `-i`, so when
-`m coverage` piped the trace script via stdin, docker silently
-discarded it.
-
-Fix landed as a one-line change in `src/m_cli/engine.py` (committed
-mid-walkthrough — see the corresponding `feat(engine)` commit).
-After the fix, coverage reports correctly. The pre-existing test
-suite caught no regression because handler-level tests inject
-mocks rather than running the real subprocess.
-
-This kind of "bug discovered only in live smoke" is exactly the
-case for keeping a doc like this around as a periodic smoke gate
-on the toolchain itself.
-
 ---
 
 ## 7. Introspection — `m capabilities` and `m plugins`
@@ -782,11 +763,11 @@ similar `m stdlib doc` / `search` plumbing).
   M-MOD-020 false positives, which are warnings not errors).
 - **`m ci init --write` correctly emits a CI workflow** that runs
   the same gates the developer just ran locally.
-- **A real engine bug was found and fixed mid-walkthrough**:
-  `docker exec` was missing `-i`, so `m coverage`'s trace script
-  was being discarded. Without an end-to-end smoke test like this
-  one, that bug would only have surfaced when a real user tried to
-  measure coverage.
+- **A canonical user-error TDD arc** (§5.4) showed `m test`'s
+  expected/actual diffs catching a one-character off-by-one in
+  `classify` across three test layers (direct, cascade, end-to-end)
+  with nine distinct failure symptoms — RED → fix → GREEN in one
+  edit.
 
 The application lives at **`~/m-work/reqstats/`** for re-running
 any step. Re-run the full chain with:
