@@ -152,7 +152,7 @@ See [Engine support](#engine-support).
 
 ### Bootstrap for working with M code
 
-The [walkthrough](docs/m-cli-tdd-lifecycle-walkthrough.md) shows the
+The [walkthrough](docs/m-tdd-lifecycle-walkthrough.md) shows the
 full TDD lifecycle of an M data-analysis app from a fresh install,
 exercising every `m <subcommand>`. Re-runnable on any docker-capable
 host — read that doc once after install to validate the toolchain is
@@ -444,7 +444,9 @@ m-cli/
 | [`docs/worked-example-accsum.md`](docs/worked-example-accsum.md) | A real M routine walked end-to-end through fmt + lint + test. |
 | [`docs/evolution.md`](docs/evolution.md) | **Archaeology.** How m-cli was built, in chronological order. Read this only if you care *why* the tool is shaped this way. |
 | [`docs/vista-meta-bootstrap.md`](docs/vista-meta-bootstrap.md) | **Archaeology.** How the VistA corpus was used during initial development, and the explicit verification that m-cli is no longer dependent on it. |
-| [CLI UX conventions guide](https://github.com/m-dev-tools/.github/blob/main/docs/dev-practices/cli-ux-conventions-guide.md) | **Org-level.** Rules every `m <subcommand>` follows: bare-dispatcher overview, `--help` to stdout, exit-code vocabulary (0 success / 1 domain / 2 usage), unknown-flag routing. Pinned by `tests/test_cli_ux_contract.py`. |
+| [`docs/cli-frameworks/cli-ux-conventions-guide.md`](docs/cli-frameworks/cli-ux-conventions-guide.md) | **Org-level (vendored).** Rules every `m <subcommand>` follows: bare-dispatcher overview, `--help` to stdout, exit-code vocabulary (0 success / 1 domain / 2 usage), unknown-flag routing. Pinned by `tests/test_cli_ux_contract.py`. |
+| [`docs/cli-frameworks/cli-ux-plan.md`](docs/cli-frameworks/cli-ux-plan.md) | **Org-level (vendored).** Companion remediation plan for the conventions guide — review summary + open questions before implementation. |
+| [`docs/cli-frameworks/cli-python-frameworks.md`](docs/cli-frameworks/cli-python-frameworks.md) | **Reference.** Comparative landscape of Python CLI frameworks (argparse / Click / Typer / Fire / …) with current stars, activity, and why m-cli stays on argparse. |
 
 ## Licence
 

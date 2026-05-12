@@ -1,7 +1,7 @@
 """CLI-UX conventions contract gate.
 
 Pins the rules from
-[`cli-ux-conventions-guide.md`](https://github.com/m-dev-tools/.github/blob/main/docs/dev-practices/cli-ux-conventions-guide.md)
+[`cli-ux-conventions-guide.md`](../docs/cli-frameworks/cli-ux-conventions-guide.md)
 against the installed `m` binary. Sliced per remediation PR per
 `docs/plans/cli-ux-conventions-remediation.md` §5.
 """
@@ -18,9 +18,7 @@ M = Path(__file__).resolve().parents[1] / ".venv" / "bin" / "m"
 
 
 def run(*argv: str, cwd: str | None = None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [str(M), *argv], capture_output=True, text=True, cwd=cwd
-    )
+    return subprocess.run([str(M), *argv], capture_output=True, text=True, cwd=cwd)
 
 
 # ────────────────────────────────────────────────────────────────────────
@@ -149,9 +147,7 @@ class TestCiInitPreviewVsWrite:
         assert "m-ci.yml" in r.stdout
         assert "m fmt --check" in r.stdout
 
-    def test_ci_init_bare_preview_tells_user_how_to_opt_in(
-        self, tmp_path: Path
-    ) -> None:
+    def test_ci_init_bare_preview_tells_user_how_to_opt_in(self, tmp_path: Path) -> None:
         r = run("ci", "init", "--path", str(tmp_path))
         assert "--write" in r.stdout
 
@@ -226,9 +222,7 @@ class TestUnknownFlagRoutesToSubparser:
         "verb",
         ["list", "doc", "search", "examples", "errors", "manifest"],
     )
-    def test_nested_stdlib_unknown_flag_shows_subverb_usage(
-        self, verb: str
-    ) -> None:
+    def test_nested_stdlib_unknown_flag_shows_subverb_usage(self, verb: str) -> None:
         """Same routing rule but at the `m stdlib <verb>` depth."""
         r = run("stdlib", verb, "--__bogus__")
         assert r.returncode == 2, (verb, r.stdout, r.stderr)
@@ -285,6 +279,7 @@ class TestDomainFailuresExit1:
         assert r.returncode == 1, (cmd, r.stdout, r.stderr)
         assert "manifest" in r.stderr.lower(), (cmd, r.stderr)
 
+
 # ────────────────────────────────────────────────────────────────────────
 # PR 5 — cwd default for fmt/lint/coverage; nothing-to-do exits 0 for
 # test/watch (and the no-files-in-cwd fallback for fmt/lint/coverage)
@@ -296,9 +291,7 @@ class TestCwdDefaultsAndNothingToDo:
     do" is success, not failure."""
 
     @pytest.mark.parametrize("cmd", ["fmt", "lint", "coverage"])
-    def test_bare_in_empty_dir_exits_0_with_message(
-        self, cmd: str, tmp_path: Path
-    ) -> None:
+    def test_bare_in_empty_dir_exits_0_with_message(self, cmd: str, tmp_path: Path) -> None:
         """Bare invocation in a directory with no .m files: cwd is the
         default scope, finds nothing, exits 0 with a stdout message — no
         more confusing exit-2 'no .m files found' error."""
@@ -308,9 +301,7 @@ class TestCwdDefaultsAndNothingToDo:
         assert r.stdout, (cmd, r.stdout, r.stderr)
 
     @pytest.mark.parametrize("cmd", ["fmt", "lint"])
-    def test_bare_in_cwd_with_m_files_processes_them(
-        self, cmd: str, tmp_path: Path
-    ) -> None:
+    def test_bare_in_cwd_with_m_files_processes_them(self, cmd: str, tmp_path: Path) -> None:
         """Cwd-default should actually find .m files in cwd."""
         (tmp_path / "FOO.m").write_text("FOO ; hello\n  QUIT\n")
         r = run(cmd, cwd=str(tmp_path))
@@ -319,9 +310,7 @@ class TestCwdDefaultsAndNothingToDo:
         assert r.returncode in (0, 1), (cmd, r.stdout, r.stderr)
 
     @pytest.mark.parametrize("cmd", ["test", "watch"])
-    def test_no_suites_discoverable_exits_0(
-        self, cmd: str, tmp_path: Path
-    ) -> None:
+    def test_no_suites_discoverable_exits_0(self, cmd: str, tmp_path: Path) -> None:
         """`m test` / `m watch` in an empty dir: nothing to test is not
         a failure — exit 0 with a stdout note."""
         extra: list[str] = ["--once"] if cmd == "watch" else []

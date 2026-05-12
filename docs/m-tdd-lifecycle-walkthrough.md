@@ -317,7 +317,7 @@ Next: commit the workflow and push to a branch with GitHub Actions enabled.
 ```
 
 `m ci init` is **preview by default** (anti-pattern #4 from the
-[CLI-UX guide](https://github.com/m-dev-tools/.github/blob/main/docs/dev-practices/cli-ux-conventions-guide.md)) — same shape as `kubectl apply --dry-run`. Pass `--write` only
+[CLI-UX guide](cli-frameworks/cli-ux-conventions-guide.md)) — same shape as `kubectl apply --dry-run`. Pass `--write` only
 when you actually want the mutation.
 
 ---

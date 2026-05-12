@@ -5,7 +5,8 @@ that bare `m` and bare `m ci` print on invocation. The command list is
 sourced from the live `argparse._SubParsersAction.choices` registry so
 new subcommands appear automatically — no hand-maintained list to drift.
 
-Rules served: `cli-ux-conventions-guide.md` §3.1 in the org `.github` repo.
+Rules served: `cli-ux-conventions-guide.md` §3.1 (vendored at
+`docs/cli-frameworks/cli-ux-conventions-guide.md`).
 """
 
 from __future__ import annotations
@@ -42,8 +43,7 @@ def print_overview(
 
     article = "an" if word[:1].lower() in "aeiou" else "a"
     out.write(
-        f"\nRun '{parser.prog} <{word}> --help' "
-        f"for more information about {article} {word}.\n"
+        f"\nRun '{parser.prog} <{word}> --help' for more information about {article} {word}.\n"
     )
     return 0
 
@@ -58,6 +58,4 @@ def _iter_choices(
     private attribute is the standard idiom; `.choices` would give us the
     parsers but not their help text.
     """
-    return [
-        (action.dest, action.help or "") for action in sub_action._choices_actions
-    ]
+    return [(action.dest, action.help or "") for action in sub_action._choices_actions]

@@ -21,13 +21,19 @@ Each doc is labeled `[TYPE · type? · connection · connection?]`.
 
 - **`cli-menu-system.md`** — `[REFERENCE · function]` Master tabular reference of every `m <subcommand>` arranged in developer-journey order, tagged by lifecycle stage (env health / setup / inner loop / integration), with a 5-circle frequency rating per command and cross-cutting notes on exit codes, engine binding, and configuration.
 - **`evolution.md`** — `[HISTORY · BUILD-LOG · history · implementation]` Chronological narrative of how m-cli was built tier by tier, milestone by milestone, with performance journey and deferred items.
-- **`m-cli-tdd-lifecycle-walkthrough.md`** — `[WORKED-EXAMPLE · TUTORIAL · SMOKE-TEST · function]` End-to-end transcript building `reqstats` (an HTTP-access-log summarizer) using STDCSV/STDMATH/STDJSON/STDASSERT. Doubles as a smoke gate that every `m <subcommand>` works on a docker-only host; finished app left at `~/m-work/reqstats/` for re-running any step.
+- **`m-tdd-lifecycle-walkthrough.md`** — `[WORKED-EXAMPLE · TUTORIAL · SMOKE-TEST · function]` End-to-end transcript building `reqstats` (an HTTP-access-log summarizer) using STDCSV/STDMATH/STDJSON/STDASSERT. Doubles as a smoke gate that every `m <subcommand>` works on a docker-only host; finished app left at `~/m-work/reqstats/` for re-running any step.
 - **`guide.md`** — `[GUIDE · REFERENCE · function · architecture]` Comprehensive user-facing reference covering every subcommand, configuration, profiles, and the four-tier framework m-cli implements.
 - **`m-linting-user-guide.md`** — `[GUIDE · function]` How-to guide for `m lint`: profiles, severity, thresholds, output formats, inline disables, and CLI flags.
 - **`plugin-development.md`** — `[GUIDE · SPEC · function · architecture]` Contract and walkthrough for registering out-of-tree subcommands via the `m_cli.plugins` entry-point group.
 - **`pre-commit.md`** — `[GUIDE · INTEGRATION · function]` Downstream pre-commit integration recipe for `m-fmt-check`, `m-fmt`, and `m-lint` hooks via `language: system`.
 - **`vista-meta-bootstrap.md`** — `[HISTORY · EXPLAINER · history · design]` Records how the vista-meta YottaDB container bootstrapped m-cli development and why m-cli is now engine-independent.
 - **`worked-example-accsum.md`** — `[WORKED-EXAMPLE · TUTORIAL · function]` End-to-end TDD walkthrough building an `accsum` access-log summariser to demonstrate every `m` subcommand in context.
+
+## `cli-frameworks/` — CLI ergonomics conventions and Python-framework landscape
+
+- **`cli-frameworks/cli-ux-conventions-guide.md`** — `[RESEARCH · REFERENCE · GUIDE · design · function]` Canonical org-level rules for every `m <subcommand>` — dispatcher vs leaf taxonomy, bare-invocation behavior, `--help` to stdout, exit-code vocabulary (0 / 1 / 2), unknown-flag routing. Pinned by `tests/test_cli_ux_contract.py`. Vendored from the org `.github` repo.
+- **`cli-frameworks/cli-ux-plan.md`** — `[PLAN · SUMMARY · planning · implementation]` Companion remediation plan for the conventions guide — findings, severity table, proposed changes, open editorial questions (Q1–Q8), and suggested seven-PR sequencing.
+- **`cli-frameworks/cli-python-frameworks.md`** — `[RESEARCH · REFERENCE · SURVEY · design]` Comparative landscape of Python CLI frameworks (argparse / Click / Typer / Fire / docopt / cleo / argh / plac / rich-click) with current GitHub stars, 12-month activity metrics, feature matrix, decision tree, and the resolved position on why m-cli stays on argparse.
 
 ## `plans/` — design proposals, surveys, status reports, and implementation plans tracking m-cli's roadmap
 

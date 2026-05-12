@@ -292,7 +292,7 @@ YottaDB. Runtime tools (testing column) auto-detect transport via
 (default) → local YDB → SSH.
 
 **Exit codes.** Every command follows the org
-[CLI-UX conventions guide](https://github.com/m-dev-tools/.github/blob/main/docs/dev-practices/cli-ux-conventions-guide.md)
+[CLI-UX conventions guide](cli-frameworks/cli-ux-conventions-guide.md)
 §3.7:
 
 - **0** — success (also "nothing to do" for `m test` / `m watch` /
