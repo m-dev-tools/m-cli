@@ -76,9 +76,12 @@ refresh the JSON — a few times per week, not continuously.
 ## Master table — the developer core cycle
 
 The 10 commands that drive the day-to-day TDD inner loop, plus the
-two scaffolders that get a project into that loop. Reading order is
-the journey: project setup → editor background → format/lint →
-build → test/watch → ad-hoc run → coverage gate.
+two scaffolders that get a project into that loop. Reading order
+groups the **continuously-used** (`⟳`) commands together as the
+always-on backbone of the inner loop (LSP daemon + editor-save
+fmt/lint + the test watcher), then the **manual** (`▶`) commands
+the developer actively types each cycle (`build` → `test` → `run`
+→ `coverage`).
 
 M-stdlib reference lookups (`m doc` / `m search` / `m examples` /
 `m errors` / `m manifest`) split out into the
@@ -114,9 +117,9 @@ A few patterns worth calling out before reading the column:
 | 3 | inner loop | `⟳` | `m lsp` | `●●●●●` | `1× session start`, then continuous (~8 hr) | Background always-on once your editor is wired: Language Server over stdio — diagnostics, formatting, code actions, hover, completion, document symbols, code lenses, folding, signature help, document highlight, go-to-definition, find-references, workspace symbols |
 | 4 | inner loop | `⟳` | `m fmt [PATHS]` | `●●●●●` | **editor-save (50–200×/day at process level)**; manual `0–3×/day` | After writing code: round-trip formatter (default = identity); presets `canonical` / `pythonic` / `pythonic-lower` / `compact`; `--check` / `--diff` / `--stdout` |
 | 5 | inner loop | `⟳` | `m lint [PATHS]` | `●●●●●` | **continuous via LSP**; manual `0–3×/day` (CI / pre-commit gate) | After formatting: engine-neutral linter; profiles `default` / `modern` / `pedantic` / `pythonic` / `xindex` / `vista` / `sac` / `all`; `--target-engine` / `--threshold` / `--error-on` / `--jobs` |
-| 6 | inner loop | `▶` | `m build [PATHS]` | `●○○○○` | `0–3×/day` (mostly CI) | Compile-only sanity check: warm-compile `.m` files via the engine compiler; `--check` cleans up `.o` byproducts for CI |
-| 7 | inner loop | `▶` | `m test [PATHS]` | `●●●●○` | **`5–30×/day`** if invoked manually; **~0** if `m watch` is running | Run the suite: parser-aware suite + test discovery (`*TST.m`, `t<Upper>(pass,fail)`); `STDASSERT` protocol; `FILE.m::tLabel` selector; `--changed` / `--seed` / `--env` / `--update-snapshots` / `--timings` / `--timeout`; text / TAP / JSON / JUnit output |
-| 8 | inner loop | `⟳` | `m watch [PATHS]` | `●●●●○` | `1× start`, then runs all session — **collapses dozens of `m test` runs** | Long-running TDD loop: polling file watcher (no inotify dep); source→suite affinity (`FOO.m` → `FOOTST.m`); `--once` / `--interval` / `--filter` |
+| 6 | inner loop | `⟳` | `m watch [PATHS]` | `●●●●○` | `1× start`, then runs all session — **collapses dozens of `m test` runs** | Long-running TDD loop: polling file watcher (no inotify dep); source→suite affinity (`FOO.m` → `FOOTST.m`); `--once` / `--interval` / `--filter` |
+| 7 | inner loop | `▶` | `m build [PATHS]` | `●○○○○` | `0–3×/day` (mostly CI) | Compile-only sanity check: warm-compile `.m` files via the engine compiler; `--check` cleans up `.o` byproducts for CI |
+| 8 | inner loop | `▶` | `m test [PATHS]` | `●●●●○` | **`5–30×/day`** if invoked manually; **~0** if `m watch` is running | Run the suite: parser-aware suite + test discovery (`*TST.m`, `t<Upper>(pass,fail)`); `STDASSERT` protocol; `FILE.m::tLabel` selector; `--changed` / `--seed` / `--env` / `--update-snapshots` / `--timings` / `--timeout`; text / TAP / JSON / JUnit output |
 | 9 | inner loop | `▶` | `m run ENTRYREF` | `●○○○○` | `0–10×/day` (debug-driven; bursts during incident response) | Ad-hoc execution for debugging or one-offs: thin wrapper around `ydb -run` — resolves binary via `$YDB` / `$ydb_dist` / `PATH`; `--routines` prepending; rc passthrough |
 | 10 | inner loop | `▶` | `m coverage [PATHS]` | `●○○○○` | `1–3×/day` (pre-commit; PR gate) | Gate before commit / PR: label + line + branch coverage via YDB `view "TRACE"`; text / `text --lines` / JSON / LCOV output; `--min-percent` CI gate; `--uncovered` |
 
