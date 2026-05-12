@@ -179,6 +179,12 @@ class LocalEngine:
 
     def stage_routines(self, start: Path) -> str:
         """No copy — return the local routine dirs as a space-separated list."""
+        return self.stage_path(start)
+
+    def stage_path(self, start: Path) -> str:
+        """Pure path computation (no SCP / no upload). Same as
+        :meth:`stage_routines` for local/docker; for SSH the
+        upload happens only in :meth:`stage_routines`."""
         root = project_root(start)
         dirs = [str(root / sub) for sub in _ROUTINE_DIRS if (root / sub).is_dir()]
         return " ".join(dirs) if dirs else str(root)
@@ -273,6 +279,10 @@ class DockerEngine:
         <project-relative-to-/m-work>``. Otherwise falls back to
         ``self.bind_root`` directly (legacy single-mount).
         """
+        return self.stage_path(start)
+
+    def stage_path(self, start: Path) -> str:
+        """Pure: in-container path with no side effects."""
         root = project_root(start).resolve()
         try:
             rel = root.relative_to(_host_shared_root().resolve())
@@ -353,7 +363,7 @@ class SSHEngine:
         remote stage first).
         """
         root = project_root(start)
-        stage = remote_stage(start)
+        stage = self.stage_path(start)
         files = _collect_routines(root)
         _ssh_run(
             self,
@@ -362,6 +372,10 @@ class SSHEngine:
         if files:
             _scp_upload(self, files, stage)
         return stage
+
+    def stage_path(self, start: Path) -> str:
+        """Pure: the remote stage path. No SCP."""
+        return remote_stage(start)
 
 
 # Backward-compat alias. Old code imports `Connection` and
@@ -554,10 +568,18 @@ def seed_routines(start: Path, conn: SSHEngine | None = None) -> str:
 
 
 def seed_for_paths(
-    paths: list[Path], conn: SSHEngine | None = None
+    paths: list[Path], conn: Engine | None = None
 ) -> dict[Path, str]:
-    """Seed every distinct project root in ``paths``."""
-    conn = conn or read_connection()
+    """Seed every distinct project root in ``paths``.
+
+    ``conn`` accepts any Engine (LocalEngine / DockerEngine /
+    SSHEngine) — the type-annotation reads "Engine" via the union
+    alias. When not provided, ``detect_engine()`` resolves the active
+    transport (docker → SSH → local). Historically this defaulted to
+    SSH-only ``read_connection()``; migrated 2026-05-11 so that
+    docker-only hosts work without a stale ``conn.env``.
+    """
+    conn = conn or detect_engine()
     by_root: dict[Path, str] = {}
     for p in paths:
         root = project_root(p)

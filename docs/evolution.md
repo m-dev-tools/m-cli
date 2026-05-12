@@ -469,18 +469,58 @@ pure-helper tests (parse_entryref, resolve_ydb_binary,
 build_env, build_command) are kept untouched as library-API
 regression gates.
 
-### Still open: `m test` and `m coverage`
+### `m test` and `m coverage` migrated to `detect_engine()` (2026-05-11)
 
-Same pattern — both currently call `read_connection()` directly,
-both lock the user to SSH. On docker-only hosts these commands
-silently fail (or worse, silently produce zero output and report
-"0/0 passed" as a `m test` "failure"). Migration is mechanically
-similar: replace `read_connection()` with `detect_engine()`,
-replace `build_xcmd_ssh_cmd(conn, ...)` / `build_suite_ssh_cmd(conn,
-...)` with the polymorphic dispatcher wrappers, and update
-`seed_for_paths` to take any Engine. Not done in the same commit
-as the `m run` migration to keep blast radius small and the smoke
-test focused.
+Same migration as `m run`, applied to the two remaining runtime
+tools that still called `read_connection()` directly. Pre-fix
+symptom: on docker-only hosts (the canonical default since
+`4f4b88c`), `m test` and `m coverage` silently produced "0/0 passed"
+output — the user reads it as "tests ran but had no assertions",
+when in reality the SSH transport to a non-running vista-meta
+host returned empty output and the parser reported zero results.
+
+**Mechanical changes.**
+
+- 5 call sites + 3 imports across
+  `src/m_cli/test/{cli,runner}.py` and
+  `src/m_cli/coverage/{cli,runner}.py`: each
+  `conn = read_connection()` becomes `conn = detect_engine()`;
+  imports updated accordingly. The polymorphic dispatcher wrappers
+  (`build_suite_ssh_cmd` / `build_xcmd_ssh_cmd` /
+  `build_direct_ssh_cmd`) already accepted any Engine, so call
+  sites that pass `conn` into them didn't need updating — only
+  the construction of `conn` changed.
+- Type annotations on `run_suite` / `run_case` (in
+  `test/runner.py`) and `run_coverage` (in `coverage/runner.py`)
+  broadened from `conn: Connection | None` (SSHEngine-only) to
+  `conn: Engine | None` (any transport).
+- `m_cli.engine.seed_for_paths` retyped to accept any Engine and
+  default to `detect_engine()` instead of `read_connection()`.
+
+**The runner-side bug uncovered during the smoke test.** The
+runtime tools also hardcoded `stage = remote_stage(suite.path)` —
+which returns the SSH-style `$HOME/export/seed/<proj>` path that
+makes no sense for docker. The fix: a new pure
+`stage_path(start)` method on each Engine class (LocalEngine /
+DockerEngine / SSHEngine). For Local/Docker it returns the same
+path their existing `stage_routines()` does, with no side effects.
+For SSH it returns the legacy `remote_stage(start)` without the
+SCP. The runners now use `conn.stage_path(...)` per suite, while
+`seed_for_paths` keeps using `stage_routines()` (with the SCP
+side-effect) once upfront.
+
+**Smoke test (live on the host that uncovered the bug).** With
+`~/data/vista-meta/conn.env` moved aside so detect_engine
+unambiguously resolved DockerEngine, ran `m test HELLOTST.m`
+against a self-contained smoke suite in `$HOME/m-work` — got
+"1 suite(s), 1 passed, 2/2 assertions passed". Pre-migration:
+"1 failed, 0/0 assertions" (silent SSH-unreachable). `m coverage`
+ran cleanly without the conn.env error. conn.env restored
+after the test.
+
+**Pre-existing tests** all kept passing (1521 / 1 skipped) — they
+inject `RunnerFn` at the runner boundary and bypass
+`detect_engine()` / `read_connection()` entirely.
 
 ## Bootstrap substrate
 

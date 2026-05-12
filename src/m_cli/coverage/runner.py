@@ -42,10 +42,9 @@ from m_cli.coverage.branches import (
     join_branch_coverage,
 )
 from m_cli.engine import (
-    Connection,
+    Engine,
     build_direct_ssh_cmd,
-    read_connection,
-    remote_stage,
+    detect_engine,
 )
 from m_cli.test.discovery import TestSuite, is_suite_file
 from m_cli.workspace import LabelLocation, WorkspaceIndex
@@ -187,7 +186,7 @@ def run_coverage(
     suites: list[TestSuite],
     *,
     runner: RunnerFn | None = None,
-    conn: Connection | None = None,
+    conn: Engine | None = None,
     suite_filter: list[str] | None = None,
     with_branches: bool = False,
 ) -> CoverageResult:
@@ -225,8 +224,8 @@ def run_coverage(
     # routine, if no suites) — every project's .m files share one
     # stage dir so a single ydb_routines value works for all.
     seed = selected_suites[0].path if selected_suites else routine_paths[0]
-    conn = conn or read_connection()
-    stage = remote_stage(seed)
+    conn = conn or detect_engine()
+    stage = conn.stage_path(seed)
     cmd = build_direct_ssh_cmd(conn, stage)
     stdout, rc = runner(cmd, script, None)
 

@@ -20,7 +20,7 @@ from m_cli.coverage.runner import (
     discover_routines_and_suites,
     run_coverage,
 )
-from m_cli.engine import EngineNotConfigured, read_connection, seed_for_paths
+from m_cli.engine import EngineNotConfigured, detect_engine, seed_for_paths
 
 
 def coverage_command(args: argparse.Namespace) -> int:
@@ -50,7 +50,7 @@ def coverage_command(args: argparse.Namespace) -> int:
             return 2
 
     try:
-        conn = read_connection()
+        conn = detect_engine()
         seed_for_paths(routines + [s.path for s in suites], conn)
     except EngineNotConfigured as e:
         print(f"m coverage: {e}", file=sys.stderr)

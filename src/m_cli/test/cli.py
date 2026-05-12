@@ -16,7 +16,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from m_cli.engine import EngineNotConfigured, read_connection, seed_for_paths
+from m_cli.engine import EngineNotConfigured, detect_engine, seed_for_paths
 from m_cli.test.changed import changed_to_suites, find_changed_m_files
 from m_cli.test.discovery import TestSuite, discover, find_test_cases, is_suite_file
 from m_cli.test.output import write_output
@@ -66,7 +66,7 @@ def test_command(args: argparse.Namespace) -> int:
         return 0
 
     try:
-        conn = read_connection()
+        conn = detect_engine()
         seed_for_paths([s.path for s in suites], conn)
     except EngineNotConfigured as e:
         print(f"m test: {e}", file=sys.stderr)
@@ -157,7 +157,7 @@ def _run_single_case(selector: tuple[Path, str], args: argparse.Namespace) -> in
         _list_suites([TestSuite(name=case.suite, path=suite_path, cases=[case])])
         return 0
     try:
-        conn = read_connection()
+        conn = detect_engine()
         seed_for_paths([case.path], conn)
     except EngineNotConfigured as e:
         print(f"m test: {e}", file=sys.stderr)

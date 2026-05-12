@@ -19,11 +19,10 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from m_cli.engine import (
-    Connection,
+    Engine,
     build_suite_ssh_cmd,
     build_xcmd_ssh_cmd,
-    read_connection,
-    remote_stage,
+    detect_engine,
 )
 from m_cli.test.discovery import TestCase, TestSuite
 
@@ -211,7 +210,7 @@ def run_suite(
     suite: TestSuite,
     *,
     runner: RunnerFn | None = None,
-    conn: Connection | None = None,
+    conn: Engine | None = None,
     seeds: list[str] | None = None,
     env_files: list[str] | None = None,
     update_snapshots: bool = False,
@@ -236,8 +235,8 @@ def run_suite(
     and is the right place to add ``with^STDFIX`` if the author wants
     per-test rollback.
     """
-    conn = conn or read_connection()
-    stage = remote_stage(suite.path)
+    conn = conn or detect_engine()
+    stage = conn.stage_path(suite.path)
     seeds = seeds or []
     env_files = env_files or []
     prelude = (
@@ -273,7 +272,7 @@ def run_case(
     case: TestCase,
     *,
     runner: RunnerFn | None = None,
-    conn: Connection | None = None,
+    conn: Engine | None = None,
     isolation: bool = True,
     seeds: list[str] | None = None,
     env_files: list[str] | None = None,
@@ -298,8 +297,8 @@ def run_case(
     application code that wants tag bookkeeping and an error-trap
     re-raise; the runner only needs the rollback.
     """
-    conn = conn or read_connection()
-    stage = remote_stage(case.path)
+    conn = conn or detect_engine()
+    stage = conn.stage_path(case.path)
     protocol = case.protocol
     invoke_test = f"do {case.label}^{case.suite}(.pass,.fail)"
     if isolation:
