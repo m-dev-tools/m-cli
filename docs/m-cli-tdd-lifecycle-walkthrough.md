@@ -504,7 +504,126 @@ Use `--error-on=error` to gate CI on hard errors only, ignoring style:
 m lint --error-on=error routines/ tests/
 ```
 
-### 5.4 Useful inner-loop verbs not run here
+### 5.4 RED → GREEN: detecting and fixing a logic bug
+
+The happy-path transcript above shows GREEN test runs. The interesting
+case is what happens when something breaks. Inject a one-character
+off-by-one into `classify` — integer-divide by `10` instead of `100`:
+
+```diff
+ classify(status) ; @summary  HTTP status → bucket name (2xx/3xx/4xx/5xx/other)
+  if status<200!(status>599) quit "other"
+- quit (status\100)_"xx"
++ quit (status\10)_"xx"
+```
+
+`m test` catches it immediately with `expected/actual` diffs per
+failed assertion:
+
+```text
+$ m test tests
+m test: 1 suite(s), 0 passed, 1 failed, 6/15 assertions passed, 9 failed
+FAIL  REQSTATSTST  (6/15 passed)
+    - 200 is 2xx
+        expected: =2xx
+        actual:   =20xx
+    - 301 is 3xx
+        expected: =3xx
+        actual:   =30xx
+    - 404 is 4xx
+        expected: =4xx
+        actual:   =40xx
+    - 500 is 5xx
+        expected: =5xx
+        actual:   =50xx
+    - two 2xx
+        expected: =2
+        actual:   =
+    - one 5xx
+        expected: =1
+        actual:   =
+    - 4000 bytes 2xx
+        expected: =4000
+        actual:   =
+    - JSON mentions 2xx
+        expected: to contain "2xx"
+        actual:   "{"class":{"20xx":{...},"50xx":{...}},…}"
+    - JSON mentions 5xx
+        expected: to contain "5xx"
+        actual:   "{"class":{"20xx":{...},"50xx":{...}},…}"
+```
+
+**Exit code 1** — CI gates fail correctly. Nine distinct symptoms
+from one character; that locality is exactly what "many small unit
+tests" buys you over a single end-to-end assertion. Three layers
+report the same root cause:
+
+- **Direct (`tClassify`):** 4 failures. `classify(200)` returned
+  `20xx` instead of `2xx` — the integer-division divisor is wrong.
+- **Cascade (`tAggregateCounts`/`tAggregateBytes`):** 3 failures.
+  The aggregator writes into `out("class",bucket,…)` keyed by
+  classify's return value. Bucket name is wrong → the expected
+  bucket key (`"2xx"`) is missing → `$get(...)` returns `""`.
+- **End-to-end (`tSummarizeJson`):** 2 failures. The JSON output
+  surfaces the wrong bucket names (`20xx`, `50xx`) — the
+  `actual:` field shows the entire failing JSON, making the
+  shape of the bug visible without spelunking through globals.
+
+For CI integration, the same run in TAP format:
+
+```text
+$ m test tests --format=tap
+TAP version 13
+1..15
+not ok 1 - REQSTATSTST: 200 is 2xx
+  ---
+  expected: =2xx
+  actual:   =20xx
+  ...
+not ok 2 - REQSTATSTST: 301 is 3xx
+  …
+```
+
+To zoom in on just the failing label while debugging:
+
+```text
+$ m test tests/REQSTATSTST.m::tClassify
+m test: 1 suite(s), 0 passed, 1 failed, 1/5 assertions passed, 4 failed
+FAIL  REQSTATSTST::tClassify  (1/5 passed)
+    - 200 is 2xx
+        expected: =2xx
+        actual:   =20xx
+    …
+```
+
+The diff pattern is unmistakable: every result is `N0xx` where it
+should be `Nxx`. Integer-dividing 200 by `10` yields `20`; dividing
+by `100` yields `2`. Revert the change:
+
+```diff
+ classify(status) ; @summary  HTTP status → bucket name (2xx/3xx/4xx/5xx/other)
+  if status<200!(status>599) quit "other"
+- quit (status\10)_"xx"
++ quit (status\100)_"xx"
+```
+
+Re-run:
+
+```text
+$ m test tests
+m test: 1 suite(s), 1 passed, 15/15 assertions passed
+ok  REQSTATSTST  (15/15 passed)
+```
+
+GREEN. **Total round-trip from RED to GREEN: one edit, one re-run.**
+
+This is the canonical TDD inner-loop signal: a precise failure
+report locates the wrong line of code to within a single
+character. The same kind of feedback is what
+`m fmt`/`m lint`/`m coverage` provide for their respective
+concerns — together they make the toolchain a four-way safety net.
+
+### 5.5 Useful inner-loop verbs not run here
 
 - **`m watch`** — long-running file watcher. Start it in a terminal
   pane; every save re-runs the affected suite. Skipped in this
