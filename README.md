@@ -66,15 +66,46 @@ Ubuntu, `brew install git docker python@3.12 uv` on macOS — then
 `curl -LsSf https://astral.sh/uv/install.sh | sh` for uv if it's not
 in your package manager.
 
-### One-paste install
+### Turnkey installer (recommended)
 
-m-cli's distribution model is **clone-and-install**: `pyproject.toml`
-declares [`tree-sitter-m`](https://github.com/m-dev-tools/tree-sitter-m)
-(parser) and [`m-standard`](https://github.com/m-dev-tools/m-standard)
-(language reference) as sibling checkouts.
-[`m-stdlib`](https://github.com/m-dev-tools/m-stdlib) is the standard
-library; needed when you write M code that uses it. Clone all four
-under one directory, install m-cli, start the engine, verify:
+The
+[`setup.sh`](https://github.com/m-dev-tools/.github/blob/main/setup.sh)
+script in the org-policy repo does OS detection, pre-flight checks for
+the prerequisites above, clones m-cli, and runs `make bootstrap`
+internally (which handles the remaining sibling clones + engine
+install + start + `m doctor` verify). Review before running:
+
+```bash
+curl -O https://raw.githubusercontent.com/m-dev-tools/.github/main/setup.sh
+less ./setup.sh                         # always read scripts before bashing
+bash ./setup.sh                         # interactive; -y for non-interactive
+```
+
+For the convinced:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/m-dev-tools/.github/main/setup.sh)
+```
+
+If a prerequisite is missing, `setup.sh` prints the matching
+`apt`/`brew`/`dnf`/`pacman` command and exits — it never `sudo`s on
+your behalf.
+
+### Direct clone (if you've already got m-cli)
+
+If you'd rather skip the wrapper and run the inside-m-cli half
+yourself, the `bootstrap` target does the same work — clones the
+sibling repos, installs the venv, brings up the engine, runs
+`m doctor`:
+
+```bash
+git clone https://github.com/m-dev-tools/m-cli ~/m-dev-tools/m-cli
+cd ~/m-dev-tools/m-cli && make bootstrap
+```
+
+### One-paste install (no Makefile target)
+
+If you want everything spelled out without any Makefile abstraction:
 
 ```bash
 mkdir -p ~/m-dev-tools && cd ~/m-dev-tools && \
