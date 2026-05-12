@@ -773,7 +773,9 @@ underlying handlers were the original top-level `m doc` / `m search` /
 moves" for the rationale).
 
 ```bash
-m stdlib                                     # gh-style overview of the 5 verbs
+m stdlib                                     # gh-style overview of the 6 verbs
+m stdlib list                                # every module + one-line synopsis
+m stdlib list --json                         # same, as JSON for tooling
 m stdlib doc STDJSON                         # module overview
 m stdlib doc STDJSON.parse                   # single-label long form
 m stdlib doc parse                           # fuzzy lookup across modules

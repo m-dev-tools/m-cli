@@ -29,6 +29,7 @@ from m_cli._overview import print_overview
 from m_cli.doc import doc_command
 from m_cli.doc.errors import errors_command
 from m_cli.doc.examples import examples_command
+from m_cli.doc.list_modules import list_command
 from m_cli.doc.manifest import manifest_command
 from m_cli.doc.search import search_command
 
@@ -45,6 +46,7 @@ def add_stdlib_arguments(subparsers: argparse._SubParsersAction) -> None:  # typ
         metavar="<action>",
     )
 
+    _add_list(actions)
     _add_doc(actions)
     _add_search(actions)
     _add_examples(actions)
@@ -64,6 +66,32 @@ def add_stdlib_arguments(subparsers: argparse._SubParsersAction) -> None:  # typ
 
 
 # ── individual sub-actions ───────────────────────────────────────────
+
+
+def _add_list(actions: argparse._SubParsersAction) -> None:  # type: ignore[type-arg]
+    p = actions.add_parser(
+        "list",
+        help="List every m-stdlib module with its one-line synopsis",
+        description=(
+            "Print every module in the m-stdlib manifest with its "
+            "synopsis, one per line, sorted alphabetically. The "
+            "discoverability entry point: \"what's in the standard "
+            "library?\" Use `m stdlib doc MODULE` to dig into any one."
+        ),
+    )
+    p.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit the list as a JSON array",
+    )
+    p.add_argument(
+        "--manifest",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Path to dist/stdlib-manifest.json (default: walk up from cwd)",
+    )
+    p.set_defaults(func=list_command)
 
 
 def _add_doc(actions: argparse._SubParsersAction) -> None:  # type: ignore[type-arg]

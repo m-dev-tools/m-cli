@@ -125,15 +125,16 @@ A few patterns worth calling out before reading the column:
 
 ## M-stdlib reference — library lookups
 
-Five sub-verbs nested under the `m stdlib` namespace (grouped there
+Six sub-verbs nested under the `m stdlib` namespace (grouped there
 since 2026-05-11 — see [`evolution.md`](evolution.md) "Renames /
-namespace moves"). They surface the
+namespace moves"; `list` added in the same week). They surface the
 [m-stdlib](https://github.com/m-dev-tools/m-stdlib) manifest as a
 developer-facing reference. Not part of the daily edit-run-test
 cycle — reach for them when integrating against the library:
-look up an API (`m stdlib doc` / `search` / `examples`), trace an
-error code back to its raising labels (`m stdlib errors`), or pull
-JSON for jq pipelines (`m stdlib manifest`).
+discover what's available (`m stdlib list`), look up an API
+(`m stdlib doc` / `search` / `examples`), trace an error code
+back to its raising labels (`m stdlib errors`), or pull JSON for
+jq pipelines (`m stdlib manifest`).
 
 All `▶` manual. Frequency depends heavily on what the developer is
 doing that day — heavy when wiring up new library calls, near-zero
@@ -141,11 +142,12 @@ on internal-only work.
 
 | # | Run | Command | Use | Typical use | What it does |
 |---|---|---|---|---|---|
-| 1 | `▶` | `m stdlib doc [SYMBOL]` | `●●○○○` | `0–15×/day` (heavy when integrating m-stdlib; near-0 on pure-internal days) | Research a library API before you call it: godoc-style symbol lookup over the m-stdlib manifest — module overview, single-label long form, or fuzzy lookup |
-| 2 | `▶` | `m stdlib search <query>` | `●○○○○` | `0–5×/day` (when you don't know the symbol name) | Fuzzy lookup when you don't know the symbol name: full-text AND-style search over synopsis / description / examples; tiered ranking (synopsis > description > examples) |
-| 3 | `▶` | `m stdlib examples [MODULE]` | `●○○○○` | `0–3×/day` | See real usage patterns: print every `@example` from the manifest, prefixed with `module.label:` (greppable) |
-| 4 | `▶` | `m stdlib errors` | `◐○○○○` | `0–2×/day` (when debugging a `$ECODE`) | Figure out where a `$ECODE` came from: inverted index of every `U-STD*` error code → the modules and labels that raise it |
-| 5 | `▶` | `m stdlib manifest [path]` | `◐○○○○` | `<1×/day` (mostly tooling) | Lower-level JSON pull for tooling / agents: emit the resolved m-stdlib manifest (or a `STDJSON` / `STDJSON.parse` sub-path) as JSON — pipe-friendly for `jq` |
+| 1 | `▶` | `m stdlib list` | `●○○○○` | `0–2×/day` (discoverability — "what's in stdlib?") | List every m-stdlib module with its one-line synopsis, sorted; `--json` for tooling |
+| 2 | `▶` | `m stdlib doc [SYMBOL]` | `●●○○○` | `0–15×/day` (heavy when integrating m-stdlib; near-0 on pure-internal days) | Research a library API before you call it: godoc-style symbol lookup over the m-stdlib manifest — module overview, single-label long form, or fuzzy lookup |
+| 3 | `▶` | `m stdlib search <query>` | `●○○○○` | `0–5×/day` (when you don't know the symbol name) | Fuzzy lookup when you don't know the symbol name: full-text AND-style search over synopsis / description / examples; tiered ranking (synopsis > description > examples) |
+| 4 | `▶` | `m stdlib examples [MODULE]` | `●○○○○` | `0–3×/day` | See real usage patterns: print every `@example` from the manifest, prefixed with `module.label:` (greppable) |
+| 5 | `▶` | `m stdlib errors` | `◐○○○○` | `0–2×/day` (when debugging a `$ECODE`) | Figure out where a `$ECODE` came from: inverted index of every `U-STD*` error code → the modules and labels that raise it |
+| 6 | `▶` | `m stdlib manifest [path]` | `◐○○○○` | `<1×/day` (mostly tooling) | Lower-level JSON pull for tooling / agents: emit the resolved m-stdlib manifest (or a `STDJSON` / `STDJSON.parse` sub-path) as JSON — pipe-friendly for `jq` |
 
 ## Environment & introspection — low-frequency / one-shot
 
@@ -191,7 +193,7 @@ Sorted from most-used to least, ignoring textual nuance:
 | `●●●●○` (4) | `m test` · `m watch` |
 | `●●●○○` (3) | — |
 | `●●○○○` (2) | `m stdlib doc` |
-| `●○○○○` (1) | `m doctor` · `m engine start` · `m engine status` · `m engine restart` · `m engine stop` · `m engine exec` · `m engine shell` · `m engine logs` · `m stdlib search` · `m stdlib examples` · `m run` · `m coverage` |
+| `●○○○○` (1) | `m doctor` · `m engine start` · `m engine status` · `m engine restart` · `m engine stop` · `m engine exec` · `m engine shell` · `m engine logs` · `m stdlib list` · `m stdlib search` · `m stdlib examples` · `m run` · `m coverage` |
 | `◐○○○○` (½) | `m engine install` · `m engine version` · `m engine reset` · `m new` · `m ci init` · `m stdlib errors` · `m stdlib manifest` · `m plugins` |
 | `○○○○○` (0) | `m engine capabilities` · `m capabilities` |
 
@@ -256,7 +258,8 @@ m
 ├── ci                  CI scaffolding
 │   └── init                preview / scaffold m-ci.yml (--write)
 ├── run <entryref>      run an M routine via `ydb -run`
-├── stdlib              m-stdlib reference (doc/search/...)
+├── stdlib              m-stdlib reference (list/doc/search/...)
+│   ├── list                list every module with its synopsis
 │   ├── doc [symbol]        godoc-style symbol lookup
 │   ├── search <query>      full-text search over the manifest
 │   ├── examples [module]   print every @example
@@ -266,8 +269,8 @@ m
 └── capabilities        machine-readable command surface (JSON)
 ```
 
-14 top-level commands · 11 `m engine` subverbs · 5 `m stdlib`
-subverbs · 1 `m ci` subverb · 28 distinct invocations end-to-end.
+14 top-level commands · 11 `m engine` subverbs · 6 `m stdlib`
+subverbs · 1 `m ci` subverb · 29 distinct invocations end-to-end.
 
 ## Lifecycle quick view
 
@@ -278,7 +281,7 @@ The same surface, sliced by lifecycle stage instead of domain.
 | **environmental health** | `m doctor` · `m engine status` · `m engine install` · `m engine start` · `m engine stop` · `m engine restart` · `m engine logs` · `m engine shell` · `m engine exec` · `m engine version` · `m engine reset` · `m engine capabilities` · `m plugins` |
 | **setup project** | `m new` · `m ci init` |
 | **inner loop** | `m fmt` · `m lint` · `m lsp` · `m test` · `m watch` · `m coverage` · `m run` |
-| **integration** | `m stdlib doc` · `m stdlib search` · `m stdlib manifest` · `m stdlib examples` · `m stdlib errors` · `m capabilities` |
+| **integration** | `m stdlib list` · `m stdlib doc` · `m stdlib search` · `m stdlib manifest` · `m stdlib examples` · `m stdlib errors` · `m capabilities` |
 
 ## Cross-cutting notes
 

@@ -83,8 +83,8 @@ class TestBareDispatcher:
         assert r.returncode == 0, r.stderr
         assert "USAGE" in r.stdout
         assert "m stdlib <action>" in r.stdout
-        # Must list all 5 verbs.
-        for verb in ("doc", "search", "examples", "errors", "manifest"):
+        # Must list all 6 verbs.
+        for verb in ("list", "doc", "search", "examples", "errors", "manifest"):
             assert f"  {verb}:" in r.stdout, (verb, r.stdout)
         assert r.stderr == ""
 
@@ -224,7 +224,7 @@ class TestUnknownFlagRoutesToSubparser:
 
     @pytest.mark.parametrize(
         "verb",
-        ["doc", "search", "examples", "errors", "manifest"],
+        ["list", "doc", "search", "examples", "errors", "manifest"],
     )
     def test_nested_stdlib_unknown_flag_shows_subverb_usage(
         self, verb: str
