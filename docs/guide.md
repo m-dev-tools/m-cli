@@ -50,8 +50,7 @@ doc_type: [GUIDE, REFERENCE]
   - [6.8 `m new`](#68-m-new)
   - [6.9 `m ci init`](#69-m-ci-init)
   - [6.10 `m run`](#610-m-run)
-  - [6.11 `m build`](#611-m-build)
-  - [6.12 `m doc`](#612-m-doc)
+  - [6.11 `m doc`](#611-m-doc)
 - [7. Project configuration](#7-project-configuration)
 - [8. Editor integration (VS Code)](#8-editor-integration-vs-code)
 - [9. Library API for downstream tools](#9-library-api-for-downstream-tools)
@@ -79,7 +78,6 @@ m doctor    — diagnose the M development environment
 m new       — scaffold a new M project (zero-deps starter)
 m ci init   — emit a GitHub Actions workflow running the four gates
 m run       — thin `ydb -run ENTRYREF` wrapper
-m build     — warm-compile a directory of M routines
 m doc       — extract `@summary` annotations into Markdown / HTML
 ```
 
@@ -178,7 +176,6 @@ The table below mirrors the categories in [§7 of m-tool-gap-analysis.md](../../
 | 14 | 3 | Complexity metrics | MAJOR | ✅ Done | `m lint --rules=modern` | M-MOD-005 (cyclomatic), M-MOD-006 (cognitive), M-MOD-007 (dot-block depth), M-MOD-008 (argument count), M-MOD-009 (commands-per-line), all per-label. Configurable thresholds. |
 | 15 | 3 | Fixture management | MAJOR | ⏸️ Deferred | (TESTRUN library in m-tools) | The TESTRUN assertion library in `m-tools/routines/tests/TESTRUN.m` covers basic test-runner fixtures. A deeper fixture system is out of scope for `m-cli`. |
 | 16 | 4 | Snapshot testing | MAJOR | ⏸️ Deferred | (none) | Tier 4. |
-| 17 | 4 | Build / tasks | PARTIAL | ✅ Done | [`m build`](#611-m-build) | Phase 3a: walks `.m` files and runs `ydb <file>` on each — the engine compiles routines to sibling `.o` files. `--check` mode cleans up the `.o` byproducts so CI gates that just want a "does this compile?" check don't pollute the working tree. |
 | 18 | 4 | Runtime / REPL | PARTIAL | ➖ Out of scope | (engine concern) | Engine-shipped (`ydb`, `iris terminal`); not a source-level concern. |
 | 19 | 4 | Syntax check | PARTIAL | ✅ Done (implicit) | tree-sitter parse + M-XINDX-021 | Parse errors surface as `m lint` diagnostics; the parser is the syntax check. |
 | 20 | 4 | Profiling | ENGINE-SPECIFIC | ➖ Out of scope | (engine concern) | IRIS-only (`^%SYS.MONLBL`); YDB lacks it. Not source-level. |
@@ -740,39 +737,7 @@ m run HELLO -- arg1 arg2               # extra args flow through to $ZCMDLINE
 
 ---
 
-### 6.11 `m build`
-
-Warm-compile a directory of M routines via `ydb <file>` (which YottaDB invokes as the routine compiler).
-
-```bash
-m build                            # walk ./ for *.m and compile each
-m build routines tests             # explicit roots
-m build --check routines           # compile + clean up .o byproducts (CI)
-m build --quiet routines           # suppress per-file `ok` lines
-```
-
-Discovery is recursive; explicit `.m` files are accepted alongside directories; results are deduped by resolved path and sorted by filename.
-
-**Output format.**
-
-```
-routines/HELLO.m: ok
-routines/BAD.m: compile failed (rc=1)
-  %YDB-E-LABELMISSING, Label EN referenced but not defined in HELLO
-  %YDB-E-ZLINKFILE, Error while zlinking "BAD.m"
-
-5 compiled, 1 failed
-```
-
-Exits `0` if every file compiled, `1` if any failed, `2` on usage error (no ydb binary, or no `.m` files in the given paths).
-
-**`--check` mode** identifies any `.o` files this run created and removes them at the end. CI gates that just want to know "does this compile?" use `--check` to avoid polluting the working tree. Files that already had an `.o` sibling at start-time are preserved.
-
-The compiler subprocess is injectable (`runner=...` kwarg on `build_command`) so unit tests cover discovery, error aggregation, and the `--check` cleanup contract without needing real ydb.
-
----
-
-### 6.12 `m doc`
+### 6.11 `m doc`
 
 Extract `@summary` docstrings from M source into Markdown or HTML.
 
@@ -796,7 +761,7 @@ Double-semicolon lines (`;;<directive>`) are excluded from human-prose extractio
 
 **HTML output** — same structure wrapped in a `<!doctype html>` document with a tiny inline stylesheet. Renders cleanly without external assets, suitable for emailing or hosting on a static site.
 
-**Reuses the parser.** `m_cli.lsp.structure.find_labels` does the AST walk; `m_cli.build.runner.discover_files` does the file walk. New code in `m_cli.doc` is purely the docstring-extraction + render layer.
+**Reuses the parser.** `m_cli.lsp.structure.find_labels` does the AST walk; in-module file walking does the file walk. New code in `m_cli.doc` is purely the docstring-extraction + render layer.
 
 ---
 
@@ -935,7 +900,7 @@ Strategic phases beyond Tier 1 (in dependency order):
 | **D** | M-MOD modernization track, Phases 1–8 (35 rules) | ✅ Done | Profiles, two-axis severity, configurable thresholds, modern-corpus regression gate. |
 | **Phase 7** | Data-flow infrastructure + path-sensitive rules (M-MOD-024/025/026/027/017) | ✅ Done | Per-label CFG, definite-assignment, lock/transaction/etrap/dollar_test analyzers. |
 | **Phase 9 (MVP)** | Taint analysis (M-MOD-036) | 🟡 MVP shipped | `READ` + formals as sources; `@expr` / `XECUTE` sinks; `$L`/`$A` sanitizers; `[lint.taint]` config schema; by-reference DO/JOB call modeling. |
-| **Phase 3a** | Quick-win subcommands per [language-cli-survey.md §6.2](language-cli-survey.md): `m doctor`, `m new`, `m ci init`, `m run`, `m build`, `m doc` | ✅ Done | Six independent items closing §4.1 ranks 8, 2, 12, 11, 9, 4. Each ships with tests, dispatcher wiring, and §6 reference docs. `m new` projects pass `m fmt --check && m lint && m test && m coverage` on a clean clone (the §6.2 exit criterion). |
+| **Phase 3a** | Quick-win subcommands per [language-cli-survey.md §6.2](language-cli-survey.md): `m doctor`, `m new`, `m ci init`, `m run`, `m doc` (originally also shipped `m build`; retired 2026-05-11 — see [evolution.md](evolution.md)) | ✅ Done | Five live items closing §4.1 ranks 8, 2, 12, 11, 4. Each ships with tests, dispatcher wiring, and §6 reference docs. `m new` projects pass `m fmt --check && m lint && m test && m coverage` on a clean clone (the §6.2 exit criterion). |
 
 ### What's still open
 
@@ -965,4 +930,4 @@ Drawn from [§3.1 of m-tooling-tier1.md](../../m-tools/docs/m-tooling-tier1.md#3
 
 ---
 
-*This guide tracks the state of `m-cli` as of 2026-05-06 (after Phase 3a — `m doctor`, `m new`, `m ci init`, `m run`, `m build`, `m doc`). For the per-session changelog, see `git log`. For the comprehensive lint reference (rule-by-rule, with worked examples), see [docs/m-linting-user-guide.md](m-linting-user-guide.md). For strategic context, the canonical references are [m-tool-gap-analysis.md](../../m-tools/docs/m-tool-gap-analysis.md), [m-tooling-tier1.md](../../m-tools/docs/m-tooling-tier1.md), and [language-cli-survey.md](language-cli-survey.md).*
+*This guide tracks the state of `m-cli` as of 2026-05-11 (after Phase 3a — `m doctor`, `m new`, `m ci init`, `m run`, `m doc`; `m build` retired on 2026-05-11, see [evolution.md](evolution.md)). For the per-session changelog, see `git log`. For the comprehensive lint reference (rule-by-rule, with worked examples), see [docs/m-linting-user-guide.md](m-linting-user-guide.md). For strategic context, the canonical references are [m-tool-gap-analysis.md](../../m-tools/docs/m-tool-gap-analysis.md), [m-tooling-tier1.md](../../m-tools/docs/m-tooling-tier1.md), and [language-cli-survey.md](language-cli-survey.md).*

@@ -1,30 +1,6 @@
 {
   "version": "0.1.0",
   "subcommands": {
-    "build": {
-      "purpose": "Warm-compile M routines via the engine compiler",
-      "options": [
-        {
-          "name": "paths",
-          "help": "Files or directories to compile (default: current directory)",
-          "default": null,
-          "choices": null
-        },
-        {
-          "name": "--check",
-          "help": "After compiling, remove any `.o` files this run produced. Use in CI gates that just want a 'does it compile?' check without polluting the working tree.",
-          "default": false,
-          "choices": null
-        },
-        {
-          "name": "--quiet",
-          "help": "Suppress per-file `ok` lines and the final summary",
-          "default": false,
-          "choices": null
-        }
-      ],
-      "examples": []
-    },
     "capabilities": {
       "purpose": "Emit a machine-readable view of every m subcommand (JSON)",
       "options": [

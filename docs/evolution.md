@@ -21,6 +21,7 @@ shaped the way they are without having to reverse-engineer commit history.
 - [Cross-cutting — LSP, scaffolding, plugins](#cross-cutting--lsp-scaffolding-plugins)
 - [Performance milestones](#performance-milestones)
 - [Deferred items and known quirks](#deferred-items-and-known-quirks)
+- [Retirements](#retirements)
 - [Bootstrap substrate](#bootstrap-substrate)
 
 ## Origin: the four-tier strategy
@@ -215,7 +216,7 @@ rules consume the same index.
 
 - `m new` — project scaffolder (Makefile, `.m-cli.toml`, `tests/`, CI)
 - `m run` — ad-hoc routine execution
-- `m build` — compile / package
+- `m build` — compile / package *(retired 2026-05-11 — see "Retirements" below; the M runtime auto-compiles on first call, so this was redundant with `m test` and named after compile-mandatory toolchains that don't fit MUMPS)*
 - `m doctor` — environment self-check (ydb, parser, m-standard, manifests)
 - `m doc` / `m search` / `m manifest` / `m examples` / `m errors` —
   m-stdlib documentation surface, manifest-driven
@@ -287,6 +288,73 @@ LSP daemon makes them meaningful.
   `~/vista-meta/vista/vista-m-host/Packages/...` path. It's a maintainer
   microbenchmark, not part of the user surface; portability across
   machines is not a goal.
+
+## Retirements
+
+Commands that shipped in earlier phases but were later removed
+because experience showed they didn't earn their place in the
+surface. Recorded here so the history of *why something is no
+longer there* is as legible as the history of why something
+shipped.
+
+### `m build` — retired 2026-05-11
+
+**What it was.** Shipped in Phase 3a (2026-05-06) as one of the
+six quick-win subcommands from [`plans/language-cli-survey.md`
+§6.2](plans/language-cli-survey.md) (rank 9). It walked `.m` files
+in the given paths and invoked `ydb <file>` on each — YottaDB's
+MUMPS compiler, which emits a sibling `.o` object file. A `--check`
+mode cleaned up generated `.o` files for CI use.
+
+**Why it was removed.** Honest accounting after the
+[`cli-menu-system.md`](cli-menu-system.md) frequency-rating
+exercise showed `m build` doesn't earn a slot in the daily-use
+surface:
+
+1. **Redundant with `m test`.** YottaDB auto-compiles on first
+   reference (`$ZRO`). Every routine your tests touch is compiled
+   anyway — a syntax error in a referenced routine surfaces as a
+   test-time compile failure, same exit code, same diagnostic. No
+   incremental signal from running `m build` separately.
+2. **Wrong language analogy.** MUMPS is interpreted (like Python,
+   not like Go or Rust). Python's `python -m compileall` parallels
+   what `m build` does (bytecode warmup) but it's almost never used
+   in daily Python dev. Python's *namespaced* "build" command
+   (`python -m build`) is for PEP 517 package distribution — a
+   different concept entirely. `m build` sat in a naming-and-frequency
+   gap that doesn't exist for an interpreted language.
+3. **Tree-sitter-m + `m lint` already catch more.** The parser-driven
+   linter flags real problems the YottaDB compiler accepts (style,
+   portability, dead code, untested patterns). Compile-rejects are
+   a tiny remainder once lint is green.
+4. **Narrow remaining use cases don't justify a daily-loop verb.**
+   The legitimate scenarios — CI syntax-gate over untested code,
+   post-bulk-refactor sanity sweep, pre-deploy `.o` warmup — are
+   either rare interactive use (≤ once per quarter) or scripted
+   (CI / CD pipelines). For those, `ydb <file>` directly is five
+   lines of bash; the m-cli convenience layer was thin.
+
+**What replaces it.** Nothing on the m-cli surface. For the
+remaining narrow use cases:
+
+- **CI syntax gate over untested code**: shell into a loop
+  (`for f in $(find . -name '*.m'); do ydb "$f" || exit 1; done`)
+  or wait for the eventual `m lint --strict` / `m check` proposal
+  to integrate the YottaDB compiler as one validator among several.
+- **Post-refactor sanity sweep**: same one-liner.
+- **Pre-deploy `.o` warmup**: belongs in the deploy pipeline, not
+  in the developer-facing CLI.
+
+**Mechanical changes.** `src/m_cli/build/` package removed;
+`m build` subparser unwired from `src/m_cli/cli.py`;
+`tests/test_build.py` removed; the `m build` row dropped from
+`tests/test_cli_ux_contract.py`; `dist/commands.json` regenerated;
+references scrubbed from `README.md`, `AGENTS.md`,
+`docs/cli-menu-system.md`, `docs/guide.md`,
+`docs/worked-example-accsum.md`. The `docs/plans/` historical
+documents (language-cli-survey, iris-ydb-portability,
+cli-ux-conventions-remediation) are left as-is — they're frozen
+plan records, not as-is references.
 
 ## Bootstrap substrate
 

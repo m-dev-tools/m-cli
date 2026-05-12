@@ -30,7 +30,7 @@ exposes:
     - m coverage                             # YDB view "TRACE"-based; text/json/lcov; --branch; --min-percent gate
     - m lsp                                  # LSP server: diagnostics, fmt, code actions, hover, completion, document symbols, code lenses, folding, signature help, document highlight, go-to-definition, find-references, workspace symbol search
     - m doc / m search / m manifest / m examples / m errors  # m-stdlib reference surface
-    - m new / m run / m build / m doctor / m ci init         # project scaffolding + helpers
+    - m new / m run / m doctor / m ci init                   # project scaffolding + helpers
     - m plugins                              # list out-of-tree subcommands registered via m_cli.plugins entry-point group
   pre_commit_hooks: [m-fmt-check, m-fmt, m-lint]
   rule_packs:
@@ -241,8 +241,7 @@ src/m_cli/
 ├── doctor/                 # m doctor — environment self-check
 ├── new/                    # m new — project scaffolder
 ├── ci/                     # m ci init — CI workflow scaffolding
-├── run/                    # m run — ad-hoc routine execution
-└── build/                  # m build — compile / package
+└── run/                    # m run — ad-hoc routine execution
 tests/                      # one test file per source module
 scripts/                    # corpus-validation drivers + benches + opt-in vista-meta loaders
 ```

@@ -25,8 +25,8 @@ new top-level subcommand lands.
 - **setup project** — bootstrap a new codebase or wire it into CI
   (`m new`, `m ci init`).
 - **inner loop** — what you run dozens of times a day while writing
-  code: format, lint, hover/completion, build, run, test, watch,
-  measure coverage.
+  code: format, lint, hover/completion, run, test, watch, measure
+  coverage.
 - **integration** — surfaces consumed by downstream tools, AI agents,
   and humans reading library docs: the m-stdlib reference family
   (`m doc` / `m search` / `m manifest` / `m examples` / `m errors`)
@@ -75,14 +75,13 @@ refresh the JSON — a few times per week, not continuously.
 
 ## Master table — the developer core cycle
 
-The 10 commands that drive the day-to-day TDD inner loop, plus the
+The 9 commands that drive the day-to-day TDD inner loop, plus the
 two scaffolders that get a project into that loop. Reading order
 groups the **continuously-used** (`⟳`) commands together as the
 always-on backbone of the inner loop (LSP daemon + editor-save
 fmt/lint + the test watcher), then the **manual** (`▶`) commands
 the developer types: the core test cycle (`test` → `run` →
-`coverage`), with `build` sitting below as a less-frequent
-sanity-check / CI step rather than a core inner-loop verb.
+`coverage`).
 
 M-stdlib reference lookups (`m doc` / `m search` / `m examples` /
 `m errors` / `m manifest`) split out into the
@@ -122,7 +121,6 @@ A few patterns worth calling out before reading the column:
 | 7 | inner loop | `▶` | `m test [PATHS]` | `●●●●○` | **`5–30×/day`** if invoked manually; **~0** if `m watch` is running | Run the suite: parser-aware suite + test discovery (`*TST.m`, `t<Upper>(pass,fail)`); `STDASSERT` protocol; `FILE.m::tLabel` selector; `--changed` / `--seed` / `--env` / `--update-snapshots` / `--timings` / `--timeout`; text / TAP / JSON / JUnit output |
 | 8 | inner loop | `▶` | `m run ENTRYREF` | `●○○○○` | `0–10×/day` (debug-driven; bursts during incident response) | Ad-hoc execution for debugging or one-offs: thin wrapper around `ydb -run` — resolves binary via `$YDB` / `$ydb_dist` / `PATH`; `--routines` prepending; rc passthrough |
 | 9 | inner loop | `▶` | `m coverage [PATHS]` | `●○○○○` | `1–3×/day` (pre-commit; PR gate) | Gate before commit / PR: label + line + branch coverage via YDB `view "TRACE"`; text / `text --lines` / JSON / LCOV output; `--min-percent` CI gate; `--uncovered` |
-| 10 | inner loop | `▶` | `m build [PATHS]` | `●○○○○` | `0–3×/day` (mostly CI) | Less-frequent sanity check (more often hit by CI than typed by developers): warm-compile `.m` files via the engine compiler; `--check` cleans up `.o` byproducts for CI |
 
 ## M-stdlib reference — library lookups
 
@@ -189,7 +187,7 @@ Sorted from most-used to least, ignoring textual nuance:
 | `●●●●○` (4) | `m test` · `m watch` |
 | `●●●○○` (3) | — |
 | `●●○○○` (2) | `m doc` |
-| `●○○○○` (1) | `m doctor` · `m engine start` · `m engine status` · `m engine restart` · `m engine stop` · `m engine exec` · `m engine shell` · `m engine logs` · `m search` · `m examples` · `m build` · `m run` · `m coverage` |
+| `●○○○○` (1) | `m doctor` · `m engine start` · `m engine status` · `m engine restart` · `m engine stop` · `m engine exec` · `m engine shell` · `m engine logs` · `m search` · `m examples` · `m run` · `m coverage` |
 | `◐○○○○` (½) | `m engine install` · `m engine version` · `m engine reset` · `m new` · `m ci init` · `m errors` · `m manifest` · `m plugins` |
 | `○○○○○` (0) | `m engine capabilities` · `m capabilities` |
 
@@ -254,7 +252,6 @@ m
 ├── ci                  CI scaffolding
 │   └── init                preview / scaffold m-ci.yml (--write)
 ├── run <entryref>      run an M routine via `ydb -run`
-├── build               warm-compile .m files
 ├── doc [symbol]        godoc-style m-stdlib symbol lookup
 ├── search <query>      full-text search over the m-stdlib
 ├── manifest [path]     emit m-stdlib manifest as JSON
@@ -264,8 +261,8 @@ m
 └── capabilities        machine-readable command surface (JSON)
 ```
 
-19 top-level commands · 11 `m engine` subverbs · 1 `m ci` subverb ·
-29 distinct invocations end-to-end.
+18 top-level commands · 11 `m engine` subverbs · 1 `m ci` subverb ·
+28 distinct invocations end-to-end.
 
 ## Lifecycle quick view
 
@@ -275,7 +272,7 @@ The same surface, sliced by lifecycle stage instead of domain.
 |---|---|
 | **environmental health** | `m doctor` · `m engine status` · `m engine install` · `m engine start` · `m engine stop` · `m engine restart` · `m engine logs` · `m engine shell` · `m engine exec` · `m engine version` · `m engine reset` · `m engine capabilities` · `m plugins` |
 | **setup project** | `m new` · `m ci init` |
-| **inner loop** | `m fmt` · `m lint` · `m lsp` · `m build` · `m test` · `m watch` · `m coverage` · `m run` |
+| **inner loop** | `m fmt` · `m lint` · `m lsp` · `m test` · `m watch` · `m coverage` · `m run` |
 | **integration** | `m doc` · `m search` · `m manifest` · `m examples` · `m errors` · `m capabilities` |
 
 ## Cross-cutting notes

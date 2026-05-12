@@ -199,7 +199,6 @@ class TestUnknownFlagRoutesToSubparser:
             "coverage",
             "lsp",
             "doctor",
-            "build",
             "doc",
             "search",
             "manifest",
@@ -265,25 +264,6 @@ class TestDomainFailuresExit1:
         )
         assert r.returncode == 1, (cmd, r.stdout, r.stderr)
         assert "manifest" in r.stderr.lower(), (cmd, r.stderr)
-
-    def test_missing_ydb_binary_exits_1(self, tmp_path: Path) -> None:
-        import os
-
-        env = {
-            **os.environ,
-            "PATH": str(tmp_path),  # no `ydb` here
-        }
-        env.pop("YDB", None)
-        env.pop("ydb_dist", None)
-        r = subprocess.run(
-            [str(M), "build", str(tmp_path)],
-            capture_output=True,
-            text=True,
-            env=env,
-        )
-        assert r.returncode == 1, (r.stdout, r.stderr)
-        assert "ydb" in r.stderr.lower(), r.stderr
-
 
 # ────────────────────────────────────────────────────────────────────────
 # PR 5 — cwd default for fmt/lint/coverage; nothing-to-do exits 0 for

@@ -12,7 +12,6 @@ from pathlib import Path
 
 from m_cli import __version__
 from m_cli._overview import print_overview
-from m_cli.build import build_command
 from m_cli.capabilities import capabilities_command
 from m_cli.ci import ci_command
 from m_cli.coverage.cli import add_arguments as add_coverage_arguments
@@ -680,42 +679,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run_parser.set_defaults(func=run_command)
 
-    # `m build`
-    build_parser = subparsers.add_parser(
-        "build",
-        help="Warm-compile M routines via the engine compiler",
-        description=(
-            "Walk the given paths for `.m` files and run `ydb <file>` "
-            "on each — YottaDB compiles the routine to a sibling `.o` "
-            "on success and prints a per-file error block on failure. "
-            "Errors are surfaced uniformly with a `FILE: compile failed "
-            "(rc=N)` header followed by the engine output. Exits 1 on "
-            "any failure."
-        ),
-    )
-    build_parser.add_argument(
-        "paths",
-        nargs="*",
-        type=Path,
-        help="Files or directories to compile (default: current directory)",
-    )
-    build_parser.add_argument(
-        "--check",
-        action="store_true",
-        help=(
-            "After compiling, remove any `.o` files this run produced. "
-            "Use in CI gates that just want a 'does it compile?' check "
-            "without polluting the working tree."
-        ),
-    )
-    build_parser.add_argument(
-        "-q",
-        "--quiet",
-        action="store_true",
-        help="Suppress per-file `ok` lines and the final summary",
-    )
-    build_parser.set_defaults(func=build_command)
-
     # `m doc` — godoc-style symbol lookup over the m-stdlib manifest
     # (per discoverability-and-tooling-plan.md § 4.1, WB1). The
     # legacy path-based extract-to-Markdown behaviour is now
@@ -949,7 +912,7 @@ def build_parser() -> argparse.ArgumentParser:
     # subcommands appear in the bare `m` listing alongside built-ins.
     _ROOT_TAGLINE = (
         "Engine-neutral source tooling (fmt/lint/doc); "
-        "runtime tools (test/coverage/build) target YottaDB."
+        "runtime tools (test/coverage) target YottaDB."
     )
     parser.set_defaults(
         func=lambda _a: print_overview(parser, subparsers, tagline=_ROOT_TAGLINE),

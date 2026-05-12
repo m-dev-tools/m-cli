@@ -50,7 +50,7 @@ m coverage --min-percent=85
 | `m watch`    | ✅ | Polling file watcher; source→suite affinity; `--once` / `--interval` / `--filter`. |
 | `m lsp`      | ✅ | LSP server over stdio — diagnostics, formatting, code actions, hover, completion, document symbols, code lenses, folding, signature help, document highlight, go-to-definition, find-references, workspace symbol search. |
 | `m doc` / `m search` / `m manifest` / `m examples` / `m errors` | ✅ | Manifest-driven m-stdlib reference. |
-| `m new` / `m run` / `m build` / `m doctor` / `m ci init` | ✅ | Project scaffolding, ad-hoc execution, build, environment self-check, CI scaffolding. |
+| `m new` / `m run` / `m doctor` / `m ci init` | ✅ | Project scaffolding, ad-hoc execution, environment self-check, CI scaffolding. |
 | `m plugins`  | ✅ | Lists out-of-tree subcommands registered via the `m_cli.plugins` entry-point group. |
 
 Pre-commit hooks (`m-fmt-check`, `m-fmt`, `m-lint`) ship in
@@ -245,7 +245,6 @@ Manifest source:
 m new myproj                                  # scaffold TDD-ready M package
 m ci init                                     # drop a CI workflow into .github/
 m run path/to/routine.m                       # run a routine end-to-end
-m build                                       # compile / package
 m doctor                                      # self-check: ydb, parser, m-standard, manifests
 m plugins                                     # list registered out-of-tree subcommands
 ```
@@ -355,8 +354,7 @@ m-cli/
 │   ├── doctor/                   # m doctor — environment self-check
 │   ├── new/                      # m new   — project scaffolder
 │   ├── ci/                       # m ci    — CI scaffolding
-│   ├── run/                      # m run   — ad-hoc routine execution
-│   └── build/                    # m build — compile / package
+│   └── run/                      # m run   — ad-hoc routine execution
 ├── tests/                        # one test file per source module
 ├── scripts/                      # corpus-validation drivers + benches
 ├── docs/                         # guide + plugin contract + design notes (see below)

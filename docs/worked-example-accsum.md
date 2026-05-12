@@ -551,25 +551,11 @@ returns the JSON-encoded summary). Test, re-format, re-lint, re-cover.
 
 ---
 
-## 11. Ship — `m build` and `m run`
+## 11. Ship — `m run`
 
-Before tagging a release, warm-compile every routine. `m build` runs
-each `.m` file through `ydb` and surfaces compile errors uniformly:
-
-```text
-$ m build routines
-routines/ACCSUM.m            OK
-routines/ACCSUMASRT.m        OK
-2 files compiled, 0 errors.
-
-$ m build --check routines
-routines/ACCSUM.m            OK
-routines/ACCSUMASRT.m        OK
-2 files would compile.
-(--check cleans up .o byproducts so CI sees the exact pre-state.)
-```
-
-Run end-to-end against a sample CSV:
+YottaDB auto-compiles each routine on first reference, so there's
+no separate build step before shipping. Run end-to-end against a
+sample CSV:
 
 ```text
 $ m run "^ACCSUM" -- --input docs/fixtures/access-tiny.csv --top 3
@@ -756,10 +742,9 @@ application is the application — nothing else.
 | 7 | `m fmt --check` | Confirm formatter clean (auto-runs via hook). |
 | 8 | `m lint` | Catch real issues; rerun with `--rules=pedantic` for releases. |
 | 9 | `m coverage --min-percent=85` | Honest coverage gate. |
-| 10 | `m build` | Warm-compile every routine before shipping. |
-| 11 | `m run "^ACCSUM"` | Execute end-to-end against sample input. |
-| 12 | `extract_routine_doc` (lib API) | Generate `docs/ACCSUM.md` from embedded comments. |
-| 13 | `m ci init` | Emit a GitHub Actions workflow that does the same. |
+| 10 | `m run "^ACCSUM"` | Execute end-to-end against sample input. |
+| 11 | `extract_routine_doc` (lib API) | Generate `docs/ACCSUM.md` from embedded comments. |
+| 12 | `m ci init` | Emit a GitHub Actions workflow that does the same. |
 
 Every command is small, composable, and named after what it does.
 That, more than any single feature, is what makes the toolchain
