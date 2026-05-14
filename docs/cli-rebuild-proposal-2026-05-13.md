@@ -1114,3 +1114,110 @@ The earlier figure assumed solo human translation pace.
   the right choice for an M-language CLI.
 
 Don't roll our own.
+
+---
+
+## Addendum — decision log
+
+Two amendments reshaped this proposal after the initial draft was
+posted. Recorded here so the reasoning trail survives future re-reads.
+
+### A1 — Translation cost recalibrated (2026-05-13, commit `db9475f`)
+
+**Trigger.** User question, paraphrased: "given that the engines and
+CLI are written in Python and (mostly) working, isn't language
+translation one of your strengths? Isn't the rewrite smaller than
+you advertised?"
+
+**Honest accounting.** Yes. The original "~3-4 months" figure
+assumed solo human translation without AI assistance and was wrong
+for the actual collaboration model. With test-driven AI-assisted
+translation against the existing pinned test corpus (~1,527 tests):
+
+| Component                                              | Effort       |
+| ------------------------------------------------------ | ------------ |
+| Cobra dispatcher + Charm styling layer                 | ~1 week      |
+| Tree-sitter-m integration + parser layer               | ~3-5 days    |
+| Fmt rule corpus (~14 rules) + idempotency tests        | ~3-5 days    |
+| Lint rule corpus (~80 rules)                           | ~2 weeks     |
+| Dataflow / taint analyzer (`flow/*`)                   | ~1-2 weeks   |
+| Native YDB binding layer (`m_cli/ydb`)                 | ~1 week      |
+| Test / coverage / run / engine.exec on native bindings | ~1 week      |
+| Polish, edge cases, completion, docs                   | ~1 week      |
+| **Total**                                              | **5-9 weeks**|
+
+**What stays expensive regardless of AI assistance.** The LSP rewrite
+(pygls is Python-only — either reimplement on `go.lsp.dev/jsonrpc2`
+or keep LSP as a Python subprocess the Go binary execs); plugin
+contract redesign (Python entry-points → cobra-style `$PATH`); corpus
+regression-gate verification (`make lint-vista` over tens of thousands
+of routines runs in CI minutes-to-hours, not seconds).
+
+**Impact on the doc.** §6.1 weaknesses bullet refreshed; §6.5
+scorecard's "Migration cost" cell for A moved from `$$$$` to `$$$`;
+§7.2 replaced the "~3-4 months" line with the budget table above;
+appendix scorecard's "Migration ease" for A revised 1 → 2.
+
+### A2 — Native YottaDB Go bindings folded in (2026-05-13, commit `db9475f`)
+
+**Trigger.** User question, paraphrased: "YottaDB has native Go
+C-API bindings — Go can talk to YDB on the metal. Is that a factor?"
+
+**Why it tips the calculus.** YottaDB ships official Go bindings
+over the SimpleAPI / SimpleThreadAPI in libyottadb.so. The Go process
+loads YDB once at startup, then makes in-process calls. Across every
+runtime verb:
+
+- `m test` — no fork+exec per suite (was ~89 ms per suite per the
+  engine audit); load YDB once, run all 48 suites in-process.
+- `m coverage` — ZBREAK callbacks delivered as structured Go calls
+  rather than parsed from trace globals.
+- `m run` / `m engine exec` — direct routine invocation; no
+  argv-mangling + `$ZCMDLINE` parsing.
+- Errors arrive as `ydb.Error{Code, CondCode, Msg}` structs, not as
+  text to scrape (`%YDB-E-INVCMD, Invalid command keyword…`).
+- Test isolation moves from per-`tCase` M-level STDFIX wrappers to
+  framework-level `ydb.Transaction(...)`.
+
+This is a *capability axis*, not just a performance tweak. The other
+three finalists either lack official bindings or would require
+hand-shimmed FFI:
+
+- **TS / Node** — no first-party bindings. Possible via N-API; would
+  mean hand-writing the C shim.
+- **Rust** — `bindgen` over `libyottadb.h` is straightforward, but
+  there's no upstream-maintained binding; would be a one-person
+  project.
+- **Python** — `lang_python` bindings exist over the SimpleAPI, but
+  the current m-cli codebase doesn't use them (shells out to
+  `ydb -run`). Migrating Python m-cli to native bindings is a
+  separate workstream that wouldn't gain Go's startup-time or
+  single-binary advantages.
+
+**Catches surfaced (see §8.6).** CGO requirement (cross-compilation
+needs a YDB sysroot per target; libyottadb.so is dynamic so static
+linking is harder); YDB version coupling (binding speaks one ABI —
+pin via the m-test-engine manifest's `ydb_version`); multi-engine
+future weakens if m-cli ever supports IRIS (clean answer: native YDB
+primary, `IRISEngine` as a parallel subprocess transport); CGO
+call overhead ~100 ns per crossing (irrelevant outside tight loops,
+which lint/fmt never enter); Docker engine rationale weakens (still
+need libyottadb.so locally; `m engine` family shrinks).
+
+**Impact on the doc.** §6.1 strengths gained a native-YDB bullet;
+new §8.6 walks the today-vs-native deltas and catches; architecture
+diagram in §8.1 redrawn to show native + docker + ssh transports +
+the `m_cli/ydb` CGO package; appendix scorecard gained a
+"Native YDB DB access" column (A: 3, B: 1, C: 2, D: 1, status quo: 1);
+**recommendation order flipped from D → A → B to A → D → B** —
+Finalist A is now the *practical* recommendation, not the
+aspirational one.
+
+### A3 — Open: anything missing?
+
+If a third factor surfaces that materially changes the recommendation
+(e.g., upstream M tooling decisions, IRIS support landing as a
+must-have, a Bun-based TS option pulling startup time under 10 ms),
+log it here as A4+ rather than rewriting in place. Decision-log
+entries are append-only; the inline doc reflects the current best
+answer, the addendum keeps the trail.
