@@ -406,10 +406,12 @@ Startup time:      ~3-10 ms cold
   SimpleAPI / SimpleThreadAPI in libyottadb.so — Go code calls into
   the running database in-process. No `ydb -run` subprocess per test;
   no parsing of `%YDB-E-…` text errors; ZBREAK coverage callbacks
-  delivered as structured Go calls instead of trace-file scraping.
-  This is a capability axis that **only Go gets cleanly** at m-cli's
-  scale (see [§8.6](#86-native-yottadb-integration-the-decisive-factor)).
-  Saves the YDB-output-parsing code we'd otherwise reimplement.
+  delivered as structured Go calls instead of trace-file scraping
+  (see [§8.6](#86-native-yottadb-integration-the-decisive-factor)).
+  Note: YDB also ships bindings for Python (`lang_python`), Rust, Lua,
+  Node.js, and others, so this isn't a *uniquely* Go advantage — it's
+  one of several axes on which Go wins. The original draft of this
+  doc overstated Go's uniqueness here; see Addendum A4.
 
 **Weaknesses**
 - **m-cli's Python engines** (lint rules in `_modern.py`, fmt rules in
@@ -544,7 +546,7 @@ Startup time:      ~100-200 ms (Python interpreter)
 | Community / "feels modern"      | ✓✓✓              | ✓✓              | ✓✓                  | ✓✓               |
 | Reuses Python engines           | (worker mode)    | (worker mode)   | (worker mode)       | ✓ (native)       |
 | tree-sitter binding quality     | ✓✓ (Go)         | ✓ (Node)        | ✓✓✓ (native)        | ✓✓ (Python)     |
-| **Native YDB DB access**        | **✓✓✓ (official Go bindings)** | ⚠ (CGO/FFI possible) | ✓✓ (bindgen) | ⚠ (lang_python exists, unused) |
+| **Native YDB DB access**        | ✓✓✓ (official Go bindings) | ✓✓ (Node bindings exist; official status varies) | ✓✓✓ (official Rust crate) | ✓✓✓ (official `lang_python` exists; m-cli doesn't use it today) |
 | Completion generation           | ✓✓✓ (built in)  | ✓✓✓ (built in) | ✓✓ (clap_complete) | ✓ (typer helper)|
 | First-class examples in `--help`| ✓                | ✓✓              | ✓                   | ✓                |
 
@@ -569,6 +571,21 @@ the language**. Adopt:
 This delivers ~80% of the aesthetic and schema gains at ~20% of the
 rewrite cost. The Python engines (lint, fmt, tree-sitter, m-standard)
 keep working unchanged.
+
+**Optional engine-layer upgrade — `lang_python`.** YottaDB also ships
+official Python bindings (`lang_python`, sometimes referred to as
+YDBPython) over the SimpleAPI. m-cli today shells out to `ydb -run`
+for every test / coverage / run invocation; the same model the Go
+recommendation seeks to replace can be replaced *inside Python* by
+migrating the runtime tools (`m test` / `m coverage` / `m run`) to
+`lang_python` calls. This is a meaningful upgrade independent of
+Typer + Rich, and it closes most of the subprocess-overhead gap that
+motivates the Go push. The engine module (`m_cli.engine` /
+`engine_driver.py`) is where this work lives; it doesn't touch
+lint/fmt at all. Treat it as P6 in the remediation plan or as a
+parallel workstream. *This option only became visible after the
+initial draft of this doc was wrong about `lang_python`'s status —
+see Addendum A4.*
 
 **This is what I'd actually do.** It's the responsible answer for a
 single-developer hobbyist project where the audits found process
@@ -882,26 +899,61 @@ loop" and "imperceptible."
    / dev parity, but the centrality drops. The `m engine` subcommand
    family shrinks accordingly.
 
-#### Why this tips the recommendation
+#### Why this matters for Go specifically — but not uniquely
 
-Across Finalists A / B / C / D, only Go has *first-class, officially
-maintained, production-grade* native YDB bindings shipping with the
-database itself.
+**Correction landed 2026-05-13 (Addendum A4).** An earlier version of
+this section claimed Go was the *only* finalist with first-class,
+officially maintained, production-grade native YDB bindings. That was
+wrong. YottaDB publishes bindings across several languages:
 
-- TypeScript / Node: no first-party bindings. FFI via node-ffi or
-  N-API is possible but means hand-writing the C shim.
-- Rust: bindgen over `libyottadb.h` is straightforward, but no
-  upstream maintainer; the Rust binding would be a one-person project.
-- Python: lang_python bindings exist via the SimpleAPI but the
-  m-cli codebase doesn't use them today (it shells out to `ydb -run`).
-  Migrating Python m-cli to native bindings is a separate workstream
-  that wouldn't gain Go's startup-time or single-binary advantages.
+- **Go** — official, mature, production-grade.
+- **Python** — official `lang_python` (YDBPython) over the SimpleAPI.
+  m-cli's codebase doesn't use this today (it shells out to
+  `ydb -run`); migrating to it is a real engine-layer option for
+  Finalist D (see §7.1).
+- **Rust** — official upstream Rust binding (the YottaDB Rust crate)
+  also exists. This *strengthens* Finalist C beyond what the original
+  scorecard captured.
+- **Lua, Node.js, and others** — bindings exist; official-vs-community
+  status varies. Node has at least one well-known binding family
+  (`nodem` and successors) — official maintainership status warrants
+  verification before committing Finalist B to it.
 
-This is the capability axis the original draft missed. Native YDB
-moves Go from "tied with TS for best schema-first option" to "the
-unambiguous answer for a 2026-quality M-tooling CLI." Combined with
-the recalibrated 5-9 week effort (above), the aspirational
-recommendation in §7.2 becomes the *practical* one.
+So native in-process YDB access is *available* in every finalist's
+ecosystem — though Go's maturity and ergonomics are still solidly
+ahead of the rest by reputation. The native-binding factor doesn't
+uniquely tip the recommendation to Go on its own.
+
+**What does still favour Go.** With the native-DB axis equalised
+(or nearly so), Go's advantage rests on the other four:
+
+1. Single static binary distribution (Python loses; TS loses unless
+   Bun is adopted; Rust ties; Go wins).
+2. Sub-10 ms startup (Python and Node lose; Rust and Go win).
+3. Cobra's ecosystem maturity for the CLI surface specifically
+   (broadest cohort of "modern systems CLI" precedent — Stripe, gh,
+   fly, Tailscale, kubectl, Helm, Hugo).
+4. The Charm libraries' aesthetic head start (Lip Gloss / Bubble Tea /
+   Glamour give Stripe / gh-quality output with low ceremony).
+
+Rust matches Go on (1) and (2) but trails on (3) and (4) at m-cli's
+scale; its strongest case is "future-proof, fastest, smallest binary"
+rather than "the obvious modern systems-CLI stack."
+
+**Net effect on the recommendation.** Order stays **A → D → B**, but
+the reasoning shifts. A wins on the framework + ecosystem + distribution
+stack, *not* on a unique native-DB capability. D's case strengthens
+because `lang_python` closes most of the subprocess-overhead gap that
+motivated the Go push — making "stay Python, upgrade the engine
+layer, fix UX via Typer + Rich + remediation plan" a more competitive
+fallback than the previous framing implied. C (Rust) deserves
+re-examination: with native YDB confirmed and the speed/binary
+advantages it already had, the only thing holding it back is
+migration cost and the smaller modern-CLI cohort.
+
+Combined with the recalibrated 5-9 week effort (above), A remains the
+*practical* recommendation. But the gap to D narrowed, and C deserves
+more credit than the original draft gave it.
 
 ---
 
@@ -1074,17 +1126,19 @@ Decision: **multi-channel from day 1, or release-only initially?**
 
 The finalists across 12 criteria, scored 0-3 (0 = bad, 3 = excellent).
 The scoring is my opinion; the user is encouraged to redo it with their
-own weights. **Revised 2026-05-13** to reflect AI-assisted translation
-effort (Migration ease ↑ for A) and the native-YDB capability axis
-(new column).
+own weights. **Revised 2026-05-13** in three passes: original draft;
+recalibration for AI-assisted translation effort (Migration ease ↑ for
+A, ~5-9 weeks vs. ~3-4 months) plus addition of the Native-YDB column;
+final correction for YDB's actual multi-language binding landscape
+(see Addenda A1/A2/A4).
 
-| Stack                          | Schema | Aesthetic | Portable | Startup | Plugins | Migration ease | Community | Reuse engines | tree-sitter | **Native YDB** | Completion | Examples in help | Total |
-| ------------------------------ | :----: | :-------: | :------: | :-----: | :-----: | :------------: | :-------: | :-----------: | :---------: | :------------: | :--------: | :--------------: | ----: |
-| **A**: Go + Cobra + Charm      | 2     | 3         | 3        | 3       | 2       | 2†             | 3         | 1*            | 3           | **3**         | 3           | 3                | **31** |
-| **B**: TS + Oclif + Ink        | 3     | 3         | 1        | 1       | 3       | 1              | 2         | 1*            | 2           | **1**         | 3           | 3                | **24** |
-| **C**: Rust + clap + ratatui   | 2     | 2         | 3        | 3       | 1       | 0              | 2         | 1*            | 3           | **2**         | 2           | 2                | **23** |
-| **D**: Py + Typer + Rich       | 1     | 3         | 1        | 1       | 2       | 3              | 3         | 3             | 3           | **1**         | 2           | 2                | **25** |
-| status quo (argparse + display)| 1     | 1         | 1        | 1       | 2       | 3              | 2         | 3             | 3           | **1**         | 1           | 1                | **20** |
+| Stack                          | Schema | Aesthetic | Portable | Startup | Plugins | Migration ease | Community | Reuse engines | tree-sitter | **Native YDB**‡ | Completion | Examples in help | Total |
+| ------------------------------ | :----: | :-------: | :------: | :-----: | :-----: | :------------: | :-------: | :-----------: | :---------: | :-------------: | :--------: | :--------------: | ----: |
+| **A**: Go + Cobra + Charm      | 2     | 3         | 3        | 3       | 2       | 2†             | 3         | 1*            | 3           | **3**          | 3           | 3                | **31** |
+| **B**: TS + Oclif + Ink        | 3     | 3         | 1        | 1       | 3       | 1              | 2         | 1*            | 2           | **2**          | 3           | 3                | **25** |
+| **C**: Rust + clap + ratatui   | 2     | 2         | 3        | 3       | 1       | 0              | 2         | 1*            | 3           | **3**          | 2           | 2                | **24** |
+| **D**: Py + Typer + Rich       | 1     | 3         | 1        | 1       | 2       | 3              | 3         | 3             | 3           | **3**          | 2           | 2                | **27** |
+| status quo (argparse + display)| 1     | 1         | 1        | 1       | 2       | 3              | 2         | 3             | 3           | **1**          | 1           | 1                | **20** |
 
 *"Reuse engines" scores 1 for non-Python options because engines can be
 kept as workers, but it's friction; Python keeps 3 because native call.
@@ -1093,25 +1147,47 @@ kept as workers, but it's friction; Python keeps 3 because native call.
 translation: ~5-9 weeks rather than the original ~3-4 months estimate.
 The earlier figure assumed solo human translation pace.
 
-"Native YDB" reflects the maturity of in-process database access:
-- 3 = official upstream bindings, production-grade (Go).
-- 2 = bindgen-based but no upstream maintainer (Rust).
-- 1 = FFI possible but unused / hand-shimmed (Python's
-  lang_python exists but m-cli doesn't use it; Node FFI is
-  theoretically possible).
+‡"Native YDB" reflects the maturity of in-process database access.
+**Revised after Addendum A4** when the actual binding landscape was
+surfaced (YDB ships official bindings for Go, Python, Rust, Lua, and
+Node.js among others):
+- 3 = official upstream bindings, production-grade — applies to **Go**
+  (mature), **Rust** (the YottaDB Rust crate), and **Python**
+  (`lang_python` / YDBPython, though m-cli's codebase doesn't use it
+  today — migration is feasible as a parallel workstream; see §7.1).
+- 2 = bindings exist but official-vs-community status varies and would
+  need verification before committing — applies to **Node** (`nodem`
+  and successors).
+- 1 = no real in-process option exercised today (status quo's
+  subprocess approach).
 
-**Revised order of consideration: A → D → B.**
+The earlier scoring (Go=3, Rust=2 "bindgen-based", Python=1 "unused",
+Node=1 "FFI possible") undercounted three ecosystems' bindings; the
+A4 amendment fixes it.
 
-- **A** (Go + Cobra + Charm + native YDB) — the *practical*
-  recommendation now that translation cost and native-YDB capability
-  have been factored in. Decade-durable, fastest runtime, single
-  static binary + libyottadb.so. 5-9 weeks of focused work.
-- **D** (Python + Typer + Rich) — the *fallback* if the YDB-binding
-  CGO complexity is judged not worth it, or if bandwidth says "ship
-  the audits' fixes in-place and revisit." Still a meaningful upgrade.
-- **B** (TS + Oclif + Ink) — only if schema-first is the *single*
-  non-negotiable and giving up native YDB is acceptable. Probably not
-  the right choice for an M-language CLI.
+**Order of consideration remains A → D → B** — but the gap narrowed:
+
+- **A** (Go + Cobra + Charm) — still the *practical* recommendation,
+  but for different reasons than before. Native-DB access is no longer
+  uniquely A's; A wins on the *combination* of single static binary
+  distribution, sub-10 ms startup, Cobra's modern-CLI ecosystem
+  maturity (Stripe / gh / fly precedent), and the Charm aesthetic
+  head start. 5-9 weeks of focused work.
+- **D** (Python + Typer + Rich) — a stronger fallback than the
+  original scoring suggested. `lang_python` makes "stay Python,
+  upgrade the engine layer to in-process YDB, fix UX via Typer + Rich
+  + remediation plan" a real path that captures most of the
+  subprocess-overhead win without a language rewrite. Migration cost
+  remains the lowest of any finalist.
+- **B** (TS + Oclif + Ink) — schema-first ceiling holds, but the
+  case is weakest for an M-language CLI given Node startup overhead
+  and the unclear official-binding status.
+- **C** (Rust + clap + ratatui) — deserves more credit than the
+  original scoring gave it. With native YDB confirmed and the
+  speed/binary advantages it already had, the only remaining gaps
+  are framework-ecosystem maturity for "modern systems CLIs" and
+  migration cost. If those criteria carry less weight in the
+  user's own scoring, C is competitive with A.
 
 Don't roll our own.
 
@@ -1213,11 +1289,78 @@ the `m_cli/ydb` CGO package; appendix scorecard gained a
 Finalist A is now the *practical* recommendation, not the
 aspirational one.
 
-### A3 — Open: anything missing?
+### A4 — YDB binding landscape corrected (2026-05-13)
 
-If a third factor surfaces that materially changes the recommendation
-(e.g., upstream M tooling decisions, IRIS support landing as a
-must-have, a Bun-based TS option pulling startup time under 10 ms),
-log it here as A4+ rather than rewriting in place. Decision-log
-entries are append-only; the inline doc reflects the current best
-answer, the addendum keeps the trail.
+**Trigger.** User correction, verbatim: *"yottadb has go, rust,
+python, lua, and other bindings too."*
+
+**What was wrong.** Addendum A2 (the original native-YDB write-up)
+asserted that "across Finalists A / B / C / D, only Go has
+first-class, officially maintained, production-grade native YDB
+bindings." That statement matched what I had top-of-mind, not the
+actual ecosystem. YottaDB publishes bindings across many languages:
+
+- **Go** — official, mature.
+- **Python** — official `lang_python` / YDBPython over the SimpleAPI.
+- **Rust** — official upstream Rust crate.
+- **Lua** — bindings exist.
+- **Node.js** — at least one well-known binding family (`nodem` and
+  successors); official-maintainership status warrants verification.
+- And others (Perl, possibly Java via JNI).
+
+**Consequences for the recommendation.**
+
+1. The "decisive factor" framing of A2 weakens. Native in-process DB
+   access is *available* in every finalist's ecosystem, not unique
+   to Go. The scorecard's Native-YDB column had to be redrawn — Go
+   stays at 3, but Python and Rust move from 1/2 to 3; Node moves
+   from 1 to 2.
+2. **Finalist D becomes meaningfully stronger.** With `lang_python`
+   available, "stay Python, upgrade the engine layer to in-process
+   YDB" is a real path that captures most of the subprocess-overhead
+   gap that motivated the Go push. §7.1 grew a paragraph documenting
+   this as an optional engine-layer upgrade (effectively a P6 in the
+   remediation plan).
+3. **Finalist C deserves more credit.** Native YDB confirmed, plus
+   the existing speed and single-binary advantages it already had,
+   means Rust's only remaining gaps are framework-ecosystem maturity
+   for "modern systems CLIs" and migration cost. A user who weights
+   those criteria less than I did would find C competitive with A.
+4. **A still wins overall**, but on a different basis: framework +
+   ecosystem + distribution stack (single static binary, sub-10 ms
+   startup, Cobra precedent across Stripe/gh/fly/Tailscale, Charm
+   aesthetic) rather than a unique capability axis. The recommendation
+   order stays **A → D → B**, but the *gap* between A and D narrowed.
+
+**Impact on the doc.**
+
+- §6.1 strengths bullet rephrased — Go bindings still mature, but
+  the doc no longer implies uniqueness.
+- §6.5 scorecard's Native-YDB row redrawn (TS: 1 → 2; Rust: 2 → 3;
+  Python: 1 → 3).
+- §7.1 gained an "Optional engine-layer upgrade — `lang_python`"
+  paragraph documenting the in-process Python path.
+- §8.6 — the "Why this tips the recommendation" subsection
+  rewritten as "Why this matters for Go specifically — but not
+  uniquely." A's advantage now traced to the framework/ecosystem
+  combination, not native bindings alone.
+- Appendix scorecard redrawn (B total 24 → 25; C total 23 → 24;
+  D total 25 → 27; A unchanged at 31). New per-stack reasoning
+  paragraphs added below the table to reflect that D and C moved
+  up in the corrected analysis.
+
+This addendum supersedes the language in A2 wherever the two
+conflict. A2's effort table and the today-vs-native comparison
+remain accurate; what's wrong is the bottom-line "only Go" claim
+and the implied uniqueness driving the recommendation. A4 is the
+load-bearing correction.
+
+### A-future — Open: anything missing?
+
+If a further factor surfaces that materially changes the
+recommendation (e.g., upstream M tooling decisions, IRIS support
+landing as a must-have, a Bun-based TS option pulling startup time
+under 10 ms, lang_python's API turning out to lack a feature m-cli
+needs), log it here as A5+ rather than rewriting in place.
+Decision-log entries are append-only; the inline doc reflects the
+current best answer, the addendum keeps the trail.
