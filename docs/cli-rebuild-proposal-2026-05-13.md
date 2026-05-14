@@ -31,6 +31,7 @@ which off-the-shelf framework would carry the most weight?
 6. [Finalist stacks compared](#6-finalist-stacks-compared)
 7. [Recommendation](#7-recommendation)
 8. [Proposed architecture for m-cli v2](#8-proposed-architecture-for-m-cli-v2)
+   - [8.6 Native YottaDB integration — the decisive factor](#86-native-yottadb-integration--the-decisive-factor)
 9. [Migration plan — 90-day arc](#9-migration-plan--90-day-arc)
 10. [Open questions](#10-open-questions)
 
@@ -401,15 +402,30 @@ Startup time:      ~3-10 ms cold
 - Cross-platform out of the box (Linux/macOS/Windows).
 - M-tree-sitter has Go bindings (tree-sitter-go is first-class).
 - Cobra completion gen is mature: bash/zsh/fish/powershell.
+- **Native YottaDB bindings.** YDB ships official Go bindings over the
+  SimpleAPI / SimpleThreadAPI in libyottadb.so — Go code calls into
+  the running database in-process. No `ydb -run` subprocess per test;
+  no parsing of `%YDB-E-…` text errors; ZBREAK coverage callbacks
+  delivered as structured Go calls instead of trace-file scraping.
+  This is a capability axis that **only Go gets cleanly** at m-cli's
+  scale (see [§8.6](#86-native-yottadb-integration-the-decisive-factor)).
+  Saves the YDB-output-parsing code we'd otherwise reimplement.
 
 **Weaknesses**
 - **m-cli's Python engines** (lint rules in `_modern.py`, fmt rules in
   `fmt/rules.py`, the `_keywords.py` m-standard loader, the tree-sitter
-  AST walkers) would need to be **rewritten in Go** or kept as **Python
-  workers** (subprocess + JSON-RPC). Neither is free; both are
-  realistic.
+  AST walkers) need to be **rewritten in Go** or kept as **Python
+  workers**. With test-driven AI-assisted translation the realistic
+  effort is **5-9 weeks for native Go engines**, not the 3-4 months
+  the proposal originally quoted. The earliest sandbagged estimate
+  assumed solo human translation without AI assistance and was wrong.
+  Worker-bridge fallback remains an option if appetite changes
+  mid-flight.
 - Cobra's schema export is good but not as elegant as Oclif's
   `oclif.manifest.json`. Glue code required.
+- CGO required for the YDB bindings. Static linking gets harder
+  (`libyottadb.so` is dynamic); cross-compilation needs a YDB
+  sysroot per target. Tractable but real (see §8.6 catches).
 - The wider Python tooling (`uv`, `ruff`, `mypy`, `pytest`) becomes
   irrelevant for the CLI itself.
 
@@ -524,10 +540,11 @@ Startup time:      ~100-200 ms (Python interpreter)
 | Portability (single binary)     | ✓✓✓              | ⚠ (Bun helps)   | ✓✓✓                 | ✗ (Python needed)|
 | Startup time                    | ✓✓✓ (3-10ms)    | ✗ (150-250ms)   | ✓✓✓ (1-3ms)         | ✗ (150-250ms)   |
 | Plugin model                    | ✓ (`$PATH`)      | ✓✓✓ (Oclif)    | ✗ (subprocess only) | ✓ (entry points) |
-| Migration cost                  | $$$$ (rewrite)   | $$$$ (rewrite)  | $$$$$ (rewrite)    | $$ (port)        |
+| Migration cost                  | $$$ (5-9 wk)     | $$$$ (rewrite)  | $$$$$ (rewrite)     | $$ (port)        |
 | Community / "feels modern"      | ✓✓✓              | ✓✓              | ✓✓                  | ✓✓               |
 | Reuses Python engines           | (worker mode)    | (worker mode)   | (worker mode)       | ✓ (native)       |
 | tree-sitter binding quality     | ✓✓ (Go)         | ✓ (Node)        | ✓✓✓ (native)        | ✓✓ (Python)     |
+| **Native YDB DB access**        | **✓✓✓ (official Go bindings)** | ⚠ (CGO/FFI possible) | ✓✓ (bindgen) | ⚠ (lang_python exists, unused) |
 | Completion generation           | ✓✓✓ (built in)  | ✓✓✓ (built in) | ✓✓ (clap_complete) | ✓ (typer helper)|
 | First-class examples in `--help`| ✓                | ✓✓              | ✓                   | ✓                |
 
@@ -581,10 +598,38 @@ This delivers:
 - Cobra's command-tree as the schema; export to JSON for
   capabilities/completion/IDE consumers.
 - A plugin ecosystem on par with Heroku's.
+- **Native YottaDB integration via the official Go SimpleAPI bindings**
+  — the runtime tools (`m test`, `m coverage`, `m run`, `m engine exec`)
+  stop being subprocess shepherds and become in-process clients of the
+  database. This is the model `psql` / `redis-cli` / kubectl follow.
+  See §8.6 for the architectural impact.
 
-It costs ~3-4 months of focused rewrite. For a hobbyist project, that's
-a significant ask. For a project that wants to *be the CLI for M
-language tooling*, it's the right investment.
+**Effort, recalibrated.** The original draft of this proposal quoted
+"~3-4 months of focused rewrite." That figure assumed solo human
+translation without AI assistance and was too conservative.
+
+With test-driven AI-assisted translation against the existing pinned
+test suite (~1,527 tests in `tests/`), the realistic budget is
+**5-9 weeks** to ship v1.0 with native Go engines + native YDB
+bindings. Breakdown:
+
+| Component                                              | Effort     |
+| ------------------------------------------------------ | ---------- |
+| Cobra dispatcher + Charm styling layer                 | ~1 week    |
+| Tree-sitter-m integration + parser layer               | ~3-5 days  |
+| Fmt rule corpus (~14 rules) + idempotency tests        | ~3-5 days  |
+| Lint rule corpus (~80 rules across XINDEX / M-MOD / vista) | ~2 weeks   |
+| Dataflow / taint analyzer (`flow/*` — hardest module)  | ~1-2 weeks |
+| Native YDB binding layer (`m_cli/ydb` Go pkg)          | ~1 week    |
+| Test / coverage / run / engine.exec on native bindings | ~1 week    |
+| Polish, edge cases, completion, docs                   | ~1 week    |
+| **Total**                                              | **5-9 weeks** |
+
+Things that don't get cheaper with translation assistance: the LSP
+rewrite (pygls is Python-only — either reimplement on `go.lsp.dev/jsonrpc2`
+or keep LSP as a Python subprocess the Go binary execs); the plugin
+contract redesign; verification against the m-corpus regression gates
+(`make lint-vista`).
 
 ### 7.3 The "Oclif option" — Finalist B, if schema-first is sacred
 
@@ -612,52 +657,79 @@ from the **engine** (M analysis, tree-sitter, lint/fmt rules).
 ### 8.1 Layered architecture
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│  m (Go binary, ~5 MB static)                             │
-│                                                          │
-│  ┌─────────────────────────────────────────────────────┐ │
-│  │  Cobra dispatcher                                   │ │
-│  │  - command tree (built from schema/*.yaml)          │ │
-│  │  - flag parsing, validation, help rendering         │ │
-│  │  - exit-code policy enforcement                     │ │
-│  └─────────────────────────────────────────────────────┘ │
-│                                                          │
-│  ┌─────────────────────────────────────────────────────┐ │
-│  │  Aesthetic layer (Lip Gloss / Glamour / Bubbles)    │ │
-│  │  - colours, tables, progress, markdown, diff        │ │
-│  │  - TTY-awareness; switches to plain when piped      │ │
-│  └─────────────────────────────────────────────────────┘ │
-│                                                          │
-│  ┌─────────────────────────────────────────────────────┐ │
-│  │  Output / schema layer                              │ │
-│  │  - one renderer per (verb × format)                 │ │
-│  │  - JSON outputs validated against schemas at test   │ │
-│  │  - text outputs styled via Lip Gloss                │ │
-│  └─────────────────────────────────────────────────────┘ │
-│                                                          │
-│  ┌─────────────────────────────────────────────────────┐ │
-│  │  Worker bridge (JSON-RPC over stdio OR native Go)   │ │
-│  │  - lint/fmt/test/coverage drive Python workers (v0) │ │
-│  │  - rewrite to native Go (v1+) as bandwidth allows   │ │
-│  └─────────────────────────────────────────────────────┘ │
-└──────────────────────────────────────────────────────────┘
-                            ▲
-                            │ JSON-RPC
-                            ▼
-┌──────────────────────────────────────────────────────────┐
-│  Python workers (today's m-cli internals, intact)        │
-│  - tree-sitter-m parser                                  │
-│  - lint rule engine (M-MOD-*, M-XINDX-*, vista, sac)     │
-│  - fmt rule engine                                       │
-│  - test runner (YDB subprocess)                          │
-│  - coverage runner (ZBREAK instrumentation)              │
-└──────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────┐
+│  m (Go binary, ~5 MB static + libyottadb.so dynamic)           │
+│                                                                │
+│  ┌───────────────────────────────────────────────────────────┐ │
+│  │  Cobra dispatcher                                         │ │
+│  │  - command tree (built from schema/*.yaml)                │ │
+│  │  - flag parsing, validation, help rendering               │ │
+│  │  - exit-code policy enforcement                           │ │
+│  └───────────────────────────────────────────────────────────┘ │
+│                                                                │
+│  ┌───────────────────────────────────────────────────────────┐ │
+│  │  Aesthetic layer (Lip Gloss / Glamour / Bubbles)          │ │
+│  │  - colours, tables, progress, markdown, diff              │ │
+│  │  - TTY-awareness; switches to plain when piped            │ │
+│  └───────────────────────────────────────────────────────────┘ │
+│                                                                │
+│  ┌───────────────────────────────────────────────────────────┐ │
+│  │  Output / schema layer                                    │ │
+│  │  - one renderer per (verb × format)                       │ │
+│  │  - JSON outputs validated against schemas at test         │ │
+│  │  - text outputs styled via Lip Gloss                      │ │
+│  └───────────────────────────────────────────────────────────┘ │
+│                                                                │
+│  ┌─────────────────────────┐    ┌────────────────────────────┐ │
+│  │  Source engines (Go)    │    │  Runtime engines (Go)      │ │
+│  │  - tree-sitter-m parser │    │  - test runner             │ │
+│  │  - lint rules           │    │  - coverage (ZBREAK cbs)   │ │
+│  │  - fmt rules            │    │  - m run / engine exec     │ │
+│  │  - dataflow / taint     │    │  - transactional isolation │ │
+│  │  (translated 1:1 from   │    │                            │ │
+│  │   Python; no YDB calls) │    │  uses m_cli/ydb pkg ──────┐│ │
+│  └─────────────────────────┘    └────────────────────────────┘ │
+│                                            │                   │
+│                                            ▼                   │
+│  ┌───────────────────────────────────────────────────────────┐ │
+│  │  m_cli/ydb — CGO wrapper over the official Go SimpleAPI   │ │
+│  │  - Get/Set/Kill/Order/Subscript on globals + locals       │ │
+│  │  - TStart/TCommit/TRollback                               │ │
+│  │  - Lock acquire/release                                   │ │
+│  │  - $$F^ROUTINE(args) invocation                           │ │
+│  │  - ZBREAK callback registration for coverage              │ │
+│  │  - Structured (errno, condition_code, message) errors     │ │
+│  └───────────────────────────────────────────────────────────┘ │
+│                                            │                   │
+└────────────────────────────────────────────┼───────────────────┘
+                                             │ CGO
+                                             ▼
+                              ┌──────────────────────────────┐
+                              │  libyottadb.so (in-process)  │
+                              └──────────────────────────────┘
+                              ┌──────────────────────────────┐
+                              │  DockerEngine / SSHEngine    │
+                              │  (subprocess transports —    │
+                              │   used when libyottadb.so is │
+                              │   not available locally)     │
+                              └──────────────────────────────┘
 ```
 
-The Python workers are exactly today's `m_cli.lint.runner`,
-`m_cli.fmt.formatter`, etc. They get a thin JSON-RPC wrapper that
-exposes them as long-lived subprocesses. The Go shell speaks to them
-the same way an LSP client speaks to its server.
+Two transport modes, **native preferred**:
+
+- **`NativeEngine` (CGO into libyottadb.so)** — primary path. The Go
+  process loads YDB once at startup, then makes in-process calls. No
+  fork/exec per test. No output parsing. Direct access to globals,
+  transactions, locks, and routine invocation.
+- **`DockerEngine` / `SSHEngine`** — subprocess fallbacks for the
+  cases native doesn't fit: containerised YDB (CI / dev parity),
+  remote YDB (legacy vista-meta), or hosts without a local YDB
+  install. Both go through `docker exec` / `ssh` + text parsing,
+  same as today.
+
+The runtime detects which transport is available via the existing
+`detect_engine()` pattern. The source engines (lint/fmt) never touch
+the engine layer — they're pure AST work.
 
 ### 8.2 Why the worker split is the right initial cut
 
@@ -752,6 +824,84 @@ decides whether to call `RenderText` (TTY, default) or `RenderJSON`
 (`--json`, or stdout is not a TTY). Summary lines go to stderr
 automatically; bodies go to stdout automatically. `-q` suppresses
 summary. **The verb cannot get this wrong.**
+
+### 8.6 Native YottaDB integration — the decisive factor
+
+YottaDB ships official Go bindings over the SimpleAPI (single-threaded)
+and SimpleThreadAPI (worker-pool friendly). The Go process loads
+`libyottadb.so` once at startup, then makes in-process calls — no
+subprocess shepherding, no text parsing.
+
+This isn't a nice-to-have. It changes what the runtime verbs *are*.
+
+#### Today vs native
+
+| Surface              | Today (Python + subprocess)                                                            | Native Go bindings                                                  |
+| -------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `m test` (per suite) | fork + `ydb -run ^SUITE` + ~90 ms startup + capture stdout + parse `^STDASSERT` format | One-time YDB load; `ydb.Call("^SUITE")` returns assertion struct    |
+| `m coverage`         | Inject ZBREAK from M code; trace writes globals; parse on exit                          | Register ZBREAK *callback* in Go; receive (routine, line, hits) per event |
+| Error handling       | Parse `Error occurred: 150373050,%XCMD+5^%XCMD,%YDB-E-INVCMD, …`                       | Receive `ydb.Error{Code: 150373050, CondCode: "INVCMD", Msg: "…"}` |
+| Test isolation       | Each `tCase` writes `TSTART`/`TROLLBACK` inline (STDFIX wrapper)                       | Framework wraps every test in `ydb.Transaction(...)` — zero M code |
+| `m run`              | fork + argv mangling + `$ZCMDLINE` parsing in M                                        | `ydb.Run("LBL^RTN", args...)` — args passed structurally           |
+| `m engine exec`      | `docker exec` → `bash -lc` → `mumps -run %XCMD` → capture output                       | Direct call. Or goes away in favour of `m exec` as a built-in REPL |
+| Live globals browser | (doesn't exist; would require shelling out)                                            | Trivial — `ydb.Order(global, subscript)` walks the database         |
+
+Performance impact captured in the audit: today `m test` on a 48-suite
+corpus burns ~48 × 90 ms ≈ 4.3 s in YDB startup alone, before any test
+runs. Native bindings collapse that to one load (~10 ms). For lint/fmt
+this is moot — those tools never touch the database — but for `m test`
+/ `m coverage` it's the difference between "tolerable in the inner
+loop" and "imperceptible."
+
+#### The catches, surfaced honestly
+
+1. **CGO required.** Cross-compilation now needs a YDB sysroot per
+   target architecture; static linking is harder because libyottadb.so
+   is dynamic; the "single binary, copy and run" story becomes
+   "binary + libyottadb.so available at runtime." Still markedly
+   simpler than Python's "interpreter + venv + packages." For users
+   without a local YDB install, fall back to `DockerEngine`.
+2. **YDB version coupling.** The Go binding speaks one SimpleAPI ABI.
+   m-cli either pins a YDB version or feature-detects at runtime. We
+   already de facto pin via the m-test-engine manifest's
+   `ydb_version: r2.02`; formalise it.
+3. **Multi-engine future.** If m-cli ever wants to support IRIS
+   (InterSystems' M implementation), native YDB bindings tie m-cli
+   tighter to YottaDB. The clean answer: native YDB as primary,
+   `IRISEngine` as a parallel subprocess transport when/if needed.
+   Subprocess-based today's design hides this trade-off — native
+   makes it explicit.
+4. **CGO call overhead** (~100 ns per crossing). Irrelevant for tests,
+   coverage, run. Matters only if anything ends up in a tight inner
+   loop that crosses the boundary repeatedly; lint/fmt never do.
+5. **Docker rationale weakens.** Today `m engine` exists partly
+   because installing YDB is painful — Docker is the easy onboarding.
+   Native bindings still need libyottadb.so installed; the Docker path
+   becomes "run m-cli inside a YDB container" rather than "m-cli on
+   your laptop shells out to YDB in a container." Still useful for CI
+   / dev parity, but the centrality drops. The `m engine` subcommand
+   family shrinks accordingly.
+
+#### Why this tips the recommendation
+
+Across Finalists A / B / C / D, only Go has *first-class, officially
+maintained, production-grade* native YDB bindings shipping with the
+database itself.
+
+- TypeScript / Node: no first-party bindings. FFI via node-ffi or
+  N-API is possible but means hand-writing the C shim.
+- Rust: bindgen over `libyottadb.h` is straightforward, but no
+  upstream maintainer; the Rust binding would be a one-person project.
+- Python: lang_python bindings exist via the SimpleAPI but the
+  m-cli codebase doesn't use them today (it shells out to `ydb -run`).
+  Migrating Python m-cli to native bindings is a separate workstream
+  that wouldn't gain Go's startup-time or single-binary advantages.
+
+This is the capability axis the original draft missed. Native YDB
+moves Go from "tied with TS for best schema-first option" to "the
+unambiguous answer for a 2026-quality M-tooling CLI." Combined with
+the recalibrated 5-9 week effort (above), the aspirational
+recommendation in §7.2 becomes the *practical* one.
 
 ---
 
@@ -922,32 +1072,45 @@ Decision: **multi-channel from day 1, or release-only initially?**
 
 ## Appendix — quick reference matrix
 
-The 7 finalists across 12 criteria, scored 0-3 (0 = bad, 3 = excellent).
+The finalists across 12 criteria, scored 0-3 (0 = bad, 3 = excellent).
 The scoring is my opinion; the user is encouraged to redo it with their
-own weights.
+own weights. **Revised 2026-05-13** to reflect AI-assisted translation
+effort (Migration ease ↑ for A) and the native-YDB capability axis
+(new column).
 
-| Stack                    | Schema | Aesthetic | Portable | Startup | Plugins | Migration ease | Community | Reuse engines | tree-sitter | Completion | Examples in help | Total |
-| ------------------------ | :----: | :-------: | :------: | :-----: | :-----: | :------------: | :-------: | :-----------: | :---------: | :--------: | :--------------: | ----: |
-| **A**: Go + Cobra + Charm | 2     | 3         | 3        | 3       | 2       | 1              | 3         | 1*            | 3           | 3          | 3                | **27** |
-| **B**: TS + Oclif + Ink   | 3     | 3         | 1        | 1       | 3       | 1              | 2         | 1*            | 2           | 3          | 3                | **23** |
-| **C**: Rust + clap + ratatui | 2  | 2         | 3        | 3       | 1       | 0              | 2         | 1*            | 3           | 2          | 2                | **21** |
-| **D**: Py + Typer + Rich  | 1     | 3         | 1        | 1       | 2       | 3              | 3         | 3             | 3           | 2          | 2                | **24** |
-| status quo (argparse + display) | 1 | 1     | 1        | 1       | 2       | 3              | 2         | 3             | 3           | 1          | 1                | **19** |
+| Stack                          | Schema | Aesthetic | Portable | Startup | Plugins | Migration ease | Community | Reuse engines | tree-sitter | **Native YDB** | Completion | Examples in help | Total |
+| ------------------------------ | :----: | :-------: | :------: | :-----: | :-----: | :------------: | :-------: | :-----------: | :---------: | :------------: | :--------: | :--------------: | ----: |
+| **A**: Go + Cobra + Charm      | 2     | 3         | 3        | 3       | 2       | 2†             | 3         | 1*            | 3           | **3**         | 3           | 3                | **31** |
+| **B**: TS + Oclif + Ink        | 3     | 3         | 1        | 1       | 3       | 1              | 2         | 1*            | 2           | **1**         | 3           | 3                | **24** |
+| **C**: Rust + clap + ratatui   | 2     | 2         | 3        | 3       | 1       | 0              | 2         | 1*            | 3           | **2**         | 2           | 2                | **23** |
+| **D**: Py + Typer + Rich       | 1     | 3         | 1        | 1       | 2       | 3              | 3         | 3             | 3           | **1**         | 2           | 2                | **25** |
+| status quo (argparse + display)| 1     | 1         | 1        | 1       | 2       | 3              | 2         | 3             | 3           | **1**         | 1           | 1                | **20** |
 
 *"Reuse engines" scores 1 for non-Python options because engines can be
 kept as workers, but it's friction; Python keeps 3 because native call.
 
-The top three (A: 27, D: 24, B: 23) are all defensible. C (Rust) is
-held back only by migration cost — if cost weren't a factor, it would
-challenge A.
+†"Migration ease" for A revised from 1 → 2 to reflect AI-assisted
+translation: ~5-9 weeks rather than the original ~3-4 months estimate.
+The earlier figure assumed solo human translation pace.
 
-**Recommended order of consideration: D → A → B.**
+"Native YDB" reflects the maturity of in-process database access:
+- 3 = official upstream bindings, production-grade (Go).
+- 2 = bindgen-based but no upstream maintainer (Rust).
+- 1 = FFI possible but unused / hand-shimmed (Python's
+  lang_python exists but m-cli doesn't use it; Node FFI is
+  theoretically possible).
 
-- **D** if you want the audits' problems fixed *and* the project
-  habitable for the next 2 years on hobbyist bandwidth.
-- **A** if you want m-cli to be the canonical M-tooling CLI for the
-  next decade, and you have 3-4 months to invest.
-- **B** if schema-first is the *only* criterion and the rest is
-  negotiable.
+**Revised order of consideration: A → D → B.**
+
+- **A** (Go + Cobra + Charm + native YDB) — the *practical*
+  recommendation now that translation cost and native-YDB capability
+  have been factored in. Decade-durable, fastest runtime, single
+  static binary + libyottadb.so. 5-9 weeks of focused work.
+- **D** (Python + Typer + Rich) — the *fallback* if the YDB-binding
+  CGO complexity is judged not worth it, or if bandwidth says "ship
+  the audits' fixes in-place and revisit." Still a meaningful upgrade.
+- **B** (TS + Oclif + Ink) — only if schema-first is the *single*
+  non-negotiable and giving up native YDB is acceptable. Probably not
+  the right choice for an M-language CLI.
 
 Don't roll our own.
